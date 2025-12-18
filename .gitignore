@@ -30,8 +30,12 @@ next-env.d.ts
 dist/
 dist
 
-# Environment files (comprehensive coverage)
+# Environment files (allow .env.example but ignore actual .env files)
+*.env
+*.env.*
+!.env.example
 
+# Tokens and credentials
 *token.json*
 *credentials.json*
 
@@ -77,97 +81,7 @@ agenthub/agents/youtube/db
 .cache/
 
 # Mobile development
-android-sdk/ frontend/node_modules/.cache/default-development/0.pack
-frontend/node_modules/.cache/default-development/0.pack
--e 
-# Environment files
-*.env
-*.env.*
-frontend/node_modules/.cache/default-development/1.pack
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
+android-sdk/
 -e 
 # Environment files
 *.env
