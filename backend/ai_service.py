@@ -1,4 +1,4 @@
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from openai import AsyncOpenAI
 import os
 import logging
 from typing import Dict, List, Optional
@@ -10,13 +10,14 @@ logger = logging.getLogger(__name__)
 
 class AIService:
     def __init__(self):
-        self.api_key = os.getenv("EMERGENT_LLM_KEY")
-        self.chats: Dict[str, LlmChat] = {}  # user_id -> LlmChat instance
-        self.available_models = ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-4.1', 'gpt-4.1-mini']
-        self.default_model = 'gpt-5'  # Using top OpenAI model
+        self.api_key = os.getenv("OPENAI_API_KEY")
+        self.client = AsyncOpenAI(api_key=self.api_key) if self.api_key else None
+        self.chats: Dict[str, List[Dict]] = {}  # user_id -> conversation history
+        self.available_models = ['gpt-4o', 'gpt-4', 'gpt-3.5-turbo']
+        self.default_model = 'gpt-4o'  # Using OpenAI's best available model
     
-    def get_chat(self, user_id: str, first_name: str = "User") -> LlmChat:
-        """Get or create chat instance for user with personalization"""
+    def get_chat_history(self, user_id: str, first_name: str = "User") -> List[Dict]:
+        """Get or create chat history for user with personalization"""
         if user_id not in self.chats:
             system_message = f"""You are the AI brain of Amarktai Network, an autonomous cryptocurrency trading system with FULL CONTROL over the entire dashboard.
 
@@ -53,11 +54,7 @@ Market Intelligence Available:
 
 Be conversational, helpful, and proactive. Warn about risks immediately. Suggest optimal actions. Remember previous conversations and build on them."""
             
-            self.chats[user_id] = LlmChat(
-                api_key=self.api_key,
-                session_id=user_id,
-                system_message=system_message
-            ).with_model("openai", self.default_model)
+            self.chats[user_id] = [{"role": "system", "content": system_message}]
         
         return self.chats[user_id]
     
@@ -68,22 +65,42 @@ Be conversational, helpful, and proactive. Warn about risks immediately. Suggest
     async def process_command_with_context(self, user_id: str, message: str, first_name: str, context: List[Dict]) -> Dict:
         """Process user command with AI including conversation context"""
         try:
-            # Get fresh chat instance (with latest context)
-            chat = self.get_chat(user_id, first_name)
+            if not self.client:
+                raise Exception("OpenAI API key not configured")
+            
+            # Get conversation history
+            history = self.get_chat_history(user_id, first_name)
+            
+            # Add user message
+            history.append({"role": "user", "content": message})
             
             # Log for debugging
             logger.info(f"AI Processing for {first_name} (user {user_id}): {message[:50]}...")
             
-            user_message = UserMessage(text=message)
-            response = await chat.send_message(user_message)
+            # Call OpenAI API
+            response = await self.client.chat.completions.create(
+                model=self.default_model,
+                messages=history,
+                temperature=0.7,
+                max_tokens=500
+            )
             
-            logger.info(f"AI Response: {response[:100]}...")
+            ai_message = response.choices[0].message.content
+            
+            # Add assistant response to history
+            history.append({"role": "assistant", "content": ai_message})
+            
+            # Keep history manageable (last 20 messages)
+            if len(history) > 21:  # 1 system + 20 messages
+                self.chats[user_id] = [history[0]] + history[-20:]
+            
+            logger.info(f"AI Response: {ai_message[:100]}...")
             
             # Parse command intent
-            intent = self._extract_intent(message, response)
+            intent = self._extract_intent(message, ai_message)
             
             return {
-                'response': response,
+                'response': ai_message,
                 'intent': intent,
                 'timestamp': datetime.now(timezone.utc).isoformat()
             }

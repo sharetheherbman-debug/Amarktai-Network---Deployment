@@ -1,28 +1,29 @@
 """
 AI Model Assignments
 
-SystemAI: gpt-5.1 - Daily strategy & risk decisions
-TradeAI: gpt-4o-2024-11-20 - Trade execution decisions
-ReportingAI: gpt-4-turbo - Email reports & summaries
-ChatOpsAI: gpt-4o-realtime-preview - WebSocket chat
+SystemAI: gpt-4o - Daily strategy & risk decisions
+TradeAI: gpt-4o - Trade execution decisions
+ReportingAI: gpt-4 - Email reports & summaries
+ChatOpsAI: gpt-4o - WebSocket chat
 """
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from openai import AsyncOpenAI
 from logger_config import logger
 import os
 
 
 class AIModels:
     def __init__(self):
-        self.api_key = os.environ.get('EMERGENT_LLM_KEY')
+        self.api_key = os.environ.get('OPENAI_API_KEY')
+        self.client = AsyncOpenAI(api_key=self.api_key) if self.api_key else None
     
     async def system_ai(self, message: str, context: str = "") -> str:
-        """SystemAI - gpt-5.1 for daily strategy decisions"""
+        """SystemAI - gpt-4o for daily strategy decisions"""
         try:
-            chat = LlmChat(
-                api_key=self.api_key,
-                session_id="system_ai",
-                system_message=f"""You are SystemAI, the global risk and strategy controller for Amarktai trading system.
+            if not self.client:
+                return "OpenAI API key not configured"
+                
+            system_message = f"""You are SystemAI, the global risk and strategy controller for Amarktai trading system.
 
 {context}
 
@@ -33,17 +34,26 @@ Your role:
 - Make big-picture system decisions
 
 Be concise and data-driven."""
-            ).with_model("openai", "gpt-4o")  # Using gpt-4o (gpt-5.1 not available yet)
             
-            response = await chat.send_message(UserMessage(text=message))
-            return response.text if hasattr(response, 'text') else str(response)
+            response = await self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": message}
+                ],
+                temperature=0.7
+            )
+            return response.choices[0].message.content
         except Exception as e:
             logger.error(f"SystemAI error: {e}")
             return "System AI temporarily unavailable"
     
     async def trade_ai(self, features: dict) -> dict:
-        """TradeAI - gpt-4o-2024-11-20 for trade execution"""
+        """TradeAI - gpt-4o for trade execution"""
         try:
+            if not self.client:
+                return {"decision": "SKIP", "confidence": 0, "reasoning": "API key not configured"}
+                
             message = f"""Analyze this trade opportunity:
 
 Pair: {features.get('pair')}
@@ -58,14 +68,15 @@ AI Signals:
 Decide: LONG, SHORT, or SKIP
 Provide confidence (0-1)"""
             
-            chat = LlmChat(
-                api_key=self.api_key,
-                session_id="trade_ai",
-                system_message="You are TradeAI. Analyze signals and make LONG/SHORT/SKIP decisions with confidence scores."
-            ).with_model("openai", "gpt-4o")
-            
-            response = await chat.send_message(UserMessage(text=message))
-            text = response.text if hasattr(response, 'text') else str(response)
+            response = await self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are TradeAI. Analyze signals and make LONG/SHORT/SKIP decisions with confidence scores."},
+                    {"role": "user", "content": message}
+                ],
+                temperature=0.7
+            )
+            text = response.choices[0].message.content
             
             # Parse response
             decision = "SKIP"
@@ -90,8 +101,11 @@ Provide confidence (0-1)"""
             return {"decision": "SKIP", "confidence": 0, "reasoning": "AI unavailable"}
     
     async def reporting_ai(self, data: dict) -> str:
-        """ReportingAI - gpt-4-turbo for email reports"""
+        """ReportingAI - gpt-4 for email reports"""
         try:
+            if not self.client:
+                return f"Daily Report\n\n{data}"
+                
             message = f"""Generate a professional daily trading report email:
 
 Data:
@@ -103,14 +117,15 @@ Create a clear, concise summary with:
 3. Notable events
 4. Recommendations"""
             
-            chat = LlmChat(
-                api_key=self.api_key,
-                session_id="reporting_ai",
-                system_message="You are ReportingAI. Generate professional, human-readable trading reports."
-            ).with_model("openai", "gpt-4o")
-            
-            response = await chat.send_message(UserMessage(text=message))
-            return response.text if hasattr(response, 'text') else str(response)
+            response = await self.client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "You are ReportingAI. Generate professional, human-readable trading reports."},
+                    {"role": "user", "content": message}
+                ],
+                temperature=0.7
+            )
+            return response.choices[0].message.content
         except Exception as e:
             logger.error(f"ReportingAI error: {e}")
             return f"Daily Report\n\n{data}"

@@ -1,8 +1,8 @@
 """
 Multi-Model AI Router
-Routes different tasks to appropriate AI models (GPT-5.1, GPT-4o, GPT-4)
+Routes different tasks to appropriate AI models (gpt-4o, gpt-4, gpt-3.5-turbo)
 """
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from openai import AsyncOpenAI
 from logger_config import logger
 from config import AI_MODELS
 import os
@@ -10,15 +10,25 @@ import os
 
 class AIModelsRouter:
     def __init__(self):
-        self.api_key = os.environ.get('EMERGENT_LLM_KEY')
-        self.models = AI_MODELS
+        self.api_key = os.environ.get('OPENAI_API_KEY')
+        self.client = AsyncOpenAI(api_key=self.api_key) if self.api_key else None
+        # Map config model names to actual OpenAI models
+        self.models = {
+            'system_brain': 'gpt-4o',  # Best for strategic decisions
+            'trade_decision': 'gpt-4o',  # Best for trading
+            'reporting': 'gpt-4',  # Good for reports
+            'chatops': 'gpt-4o'  # Best for chat
+        }
     
     async def system_brain_decision(self, prompt: str, context: dict) -> str:
         """
-        GPT-5.1 - System Brain
+        GPT-4o - System Brain
         For: Autopilot decisions, risk management, strategic planning
         """
         try:
+            if not self.client:
+                return "OpenAI API key not configured"
+                
             system_message = f"""You are the Amarktai System Brain - the highest-level AI controller.
 
 Your role: Make strategic decisions about autopilot, capital allocation, risk management.
@@ -28,18 +38,19 @@ Current system state:
 
 Think strategically. Consider long-term growth, risk mitigation, and optimal capital deployment."""
 
-            chat = LlmChat(
-                api_key=self.api_key,
-                session_id="system_brain",
-                system_message=system_message
-            ).with_model("openai", self.models['system_brain'])
-            
-            response = await chat.send_message(UserMessage(text=prompt))
-            return response.text if hasattr(response, 'text') else str(response)
+            response = await self.client.chat.completions.create(
+                model=self.models['system_brain'],
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7
+            )
+            return response.choices[0].message.content
         
         except Exception as e:
             logger.error(f"System brain error: {e}")
-            # Fallback to GPT-4o
+            # Fallback to trade decision
             return await self.trade_decision(prompt, context)
     
     async def trade_decision(self, prompt: str, context: dict) -> str:
@@ -48,6 +59,9 @@ Think strategically. Consider long-term growth, risk mitigation, and optimal cap
         For: Individual bot trading decisions, technical analysis
         """
         try:
+            if not self.client:
+                return "OpenAI API key not configured"
+                
             system_message = f"""You are the Amarktai Trade Execution Brain.
 
 Your role: Make fast, accurate trading decisions for individual bots.
@@ -57,14 +71,15 @@ Context:
 
 Focus on: Technical patterns, entry/exit timing, position sizing."""
 
-            chat = LlmChat(
-                api_key=self.api_key,
-                session_id="trade_brain",
-                system_message=system_message
-            ).with_model("openai", self.models['trade_decision'])
-            
-            response = await chat.send_message(UserMessage(text=prompt))
-            return response.text if hasattr(response, 'text') else str(response)
+            response = await self.client.chat.completions.create(
+                model=self.models['trade_decision'],
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7
+            )
+            return response.choices[0].message.content
         
         except Exception as e:
             logger.error(f"Trade decision error: {e}")
@@ -76,6 +91,9 @@ Focus on: Technical patterns, entry/exit timing, position sizing."""
         For: Daily summaries, performance reports, email content
         """
         try:
+            if not self.client:
+                return "OpenAI API key not configured"
+                
             system_message = f"""You are the Amarktai Reporting Brain.
 
 Your role: Generate clear, concise reports and summaries.
@@ -85,14 +103,15 @@ Data to summarize:
 
 Focus on: Key metrics, insights, actionable recommendations."""
 
-            chat = LlmChat(
-                api_key=self.api_key,
-                session_id="reporting_brain",
-                system_message=system_message
-            ).with_model("openai", self.models['reporting'])
-            
-            response = await chat.send_message(UserMessage(text=prompt))
-            return response.text if hasattr(response, 'text') else str(response)
+            response = await self.client.chat.completions.create(
+                model=self.models['reporting'],
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7
+            )
+            return response.choices[0].message.content
         
         except Exception as e:
             logger.error(f"Report generation error: {e}")
@@ -104,6 +123,9 @@ Focus on: Key metrics, insights, actionable recommendations."""
         For: Dashboard chat, real-time commands, user interaction
         """
         try:
+            if not self.client:
+                return "OpenAI API key not configured"
+                
             system_message = f"""You are the Amarktai ChatOps Brain - real-time assistant.
 
 Your role: Respond quickly to user queries and execute commands.
@@ -113,14 +135,16 @@ System context:
 
 Be: Fast, accurate, helpful. Execute commands when requested."""
 
-            chat = LlmChat(
-                api_key=self.api_key,
-                session_id=f"chatops_{user_id}",
-                system_message=system_message
-            ).with_model("openai", self.models['chatops'])
-            
-            response = await chat.send_message(UserMessage(text=prompt))
-            return response.text if hasattr(response, 'text') else str(response)
+            response = await self.client.chat.completions.create(
+                model=self.models['chatops'],
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=500
+            )
+            return response.choices[0].message.content
         
         except Exception as e:
             logger.error(f"ChatOps error: {e}")

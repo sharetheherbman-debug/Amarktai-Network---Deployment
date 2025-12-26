@@ -13,14 +13,15 @@ from database import (
 from engines.bot_manager import bot_manager
 from engines.trade_limiter import trade_limiter
 from logger_config import logger
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from openai import AsyncOpenAI
 import os
 import json
 
 
 class AIProductionHandler:
     def __init__(self):
-        self.api_key = os.environ.get('EMERGENT_LLM_KEY')
+        self.api_key = os.environ.get('OPENAI_API_KEY')
+        self.client = AsyncOpenAI(api_key=self.api_key) if self.api_key else None
         
     async def get_system_context(self, user_id: str) -> dict:
         """Get complete system state"""

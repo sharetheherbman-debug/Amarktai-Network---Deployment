@@ -142,6 +142,15 @@ async def lifespan(app: FastAPI):
     ai_scheduler.stop()
     autopilot_production.stop()
     risk_management.stop()
+    
+    # Close CCXT async sessions
+    try:
+        from paper_trading_engine import paper_engine
+        await paper_engine.close_exchanges()
+        logger.info("✅ CCXT sessions closed")
+    except Exception as e:
+        logger.error(f"Error closing CCXT sessions: {e}")
+    
     await close_db()
     logger.info("🔴 All systems stopped")
 
@@ -833,13 +842,13 @@ async def test_api_key(provider: str, user_id: str = Depends(get_current_user)):
     elif provider == 'openai':
         # Test OpenAI key
         try:
-            from emergentintegrations.llm.chat import LlmChat, UserMessage
-            chat = LlmChat(
-                api_key=key['api_key'], 
-                session_id="test",
-                system_message="You are a helpful assistant."
-            ).with_model("openai", "gpt-4o-2024-11-20")
-            response = await chat.send_message(UserMessage(text="Hi"))
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=key['api_key'])
+            response = await client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": "Hi"}],
+                max_tokens=10
+            )
             
             await api_keys_collection.update_one(
                 {"id": key['id']},
@@ -859,12 +868,12 @@ async def test_api_key(provider: str, user_id: str = Depends(get_current_user)):
             if "Incorrect API key" in error_msg or "invalid" in error_msg.lower():
                 raise HTTPException(
                     status_code=400, 
-                    detail="Invalid OpenAI API key. Please provide a valid key with model access, or use the Emergent Universal Key feature."
+                    detail="Invalid OpenAI API key. Please provide a valid key with model access."
                 )
             elif "does not have access to model" in error_msg:
                 raise HTTPException(
                     status_code=400,
-                    detail="Your OpenAI API key doesn't have access to GPT models. Please upgrade your OpenAI plan or use the Emergent Universal Key (which has GPT-4 access). Contact support@emergent.ai for help."
+                    detail="Your OpenAI API key doesn't have access to GPT models. Please upgrade your OpenAI plan."
                 )
             else:
                 raise HTTPException(status_code=400, detail=f"OpenAI test failed: {error_msg[:200]}")
@@ -2656,6 +2665,7 @@ try:
     from routes.wallet_endpoints import router as wallet_router
     from routes.system_health_endpoints import router as health_router
     from routes.admin_endpoints import router as admin_router
+    from routes.alerts import router as alerts_router
     
     app.include_router(phase5_router)
     app.include_router(phase6_router)
@@ -2665,8 +2675,9 @@ try:
     app.include_router(wallet_router)
     app.include_router(health_router)
     app.include_router(admin_router)
+    app.include_router(alerts_router)
     
-    logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin")
+    logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Alerts")
 except Exception as e:
     logger.warning(f"Could not load endpoints: {e}")
 
@@ -2680,8 +2691,10 @@ except Exception as e:
 try:
     from routes.system import router as system_router  # type: ignore
     from routes.trades import router as trades_router  # type: ignore
+    from routes.health import router as health_router  # type: ignore
     app.include_router(system_router)
     app.include_router(trades_router)
+    app.include_router(health_router)
 
     # Real‑time SSE router can be enabled via the ENABLE_REALTIME flag.
     import os
