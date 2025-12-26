@@ -2256,7 +2256,7 @@ async def get_performance_rankings(user_id: str = Depends(get_current_user)):
 async def manual_capital_reallocation(user_id: str = Depends(get_current_user)):
     """Manually trigger capital reallocation"""
     try:
-        from capital_allocator import capital_allocator
+        from engines.capital_allocator import capital_allocator
         result = await capital_allocator.reallocate_capital(user_id)
         return result
     except Exception as e:
@@ -2267,7 +2267,7 @@ async def manual_capital_reallocation(user_id: str = Depends(get_current_user)):
 async def manual_profit_reinvestment(user_id: str = Depends(get_current_user)):
     """Manually trigger profit reinvestment"""
     try:
-        from capital_allocator import capital_allocator
+        from engines.capital_allocator import capital_allocator
         result = await capital_allocator.reinvest_daily_profits(user_id)
         return result
     except Exception as e:

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from logger_config import logger
 from bot_lifecycle import bot_lifecycle
 from performance_ranker import performance_ranker
-from capital_allocator import capital_allocator
+from engines.capital_allocator import capital_allocator
 from market_regime import market_regime_detector
 from database import users_collection, bots_collection
 from engines.self_healing import self_healing
