@@ -29,12 +29,12 @@ apt update && apt upgrade -y
 # 2. Install Required Packages
 echo ""
 echo "📦 Installing required packages..."
+
+# Install Python 3 (Ubuntu 24.04 comes with 3.12 by default)
 apt install -y \
-    python3.11 \
-    python3.11-venv \
+    python3 \
+    python3-venv \
     python3-pip \
-    nodejs \
-    npm \
     nginx \
     mongodb \
     git \
@@ -42,10 +42,28 @@ apt install -y \
     wget \
     supervisor
 
-# 3. Install Yarn
+# Install Node.js 20.x from NodeSource (recommended for Ubuntu 24.04)
+# Skip if already installed to avoid conflicts
+if ! command -v node &> /dev/null; then
+    echo "📦 Installing Node.js 20.x from NodeSource..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt install -y nodejs
+    echo -e "${GREEN}✅ Node.js installed${NC}"
+else
+    NODE_VERSION=$(node --version)
+    echo -e "${GREEN}✅ Node.js already installed: ${NODE_VERSION}${NC}"
+fi
+
+# 3. Install Yarn (if not already installed)
 echo ""
-echo "📦 Installing Yarn..."
-npm install -g yarn
+if ! command -v yarn &> /dev/null; then
+    echo "📦 Installing Yarn..."
+    npm install -g yarn
+    echo -e "${GREEN}✅ Yarn installed${NC}"
+else
+    YARN_VERSION=$(yarn --version)
+    echo -e "${GREEN}✅ Yarn already installed: ${YARN_VERSION}${NC}"
+fi
 
 # 4. Start and Enable MongoDB
 echo ""
@@ -72,13 +90,25 @@ echo ""
 echo "🐍 Setting up Python backend..."
 cd /var/amarktai/backend
 
-# Create virtual environment
-python3.11 -m venv .venv
+# Create virtual environment using system python3 (3.12 on Ubuntu 24.04)
+if [ ! -d ".venv" ]; then
+    python3 -m venv .venv
+    echo -e "${GREEN}✅ Virtual environment created${NC}"
+else
+    echo -e "${YELLOW}⚠️ Virtual environment already exists${NC}"
+fi
+
 source .venv/bin/activate
 
 # Install dependencies
 pip install --upgrade pip
-pip install -r requirements.txt
+if [ -f "requirements.txt" ]; then
+    pip install -r requirements.txt
+    echo -e "${GREEN}✅ Python dependencies installed${NC}"
+else
+    echo -e "${RED}❌ requirements.txt not found${NC}"
+    exit 1
+fi
 
 # Copy env file
 if [ ! -f .env ]; then

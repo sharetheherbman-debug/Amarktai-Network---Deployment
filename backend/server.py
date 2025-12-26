@@ -2663,6 +2663,9 @@ try:
     from routes.ai_chat import router as ai_chat_router
     from routes.two_factor_auth import router as twofa_router
     from routes.genetic_algorithm import router as genetic_router
+    from routes.dashboard_endpoints import router as dashboard_router
+    from routes.api_key_management import router as api_key_mgmt_router
+    from routes.daily_report import router as daily_report_router, daily_report_service
     
     app.include_router(phase5_router)
     app.include_router(phase6_router)
@@ -2679,8 +2682,14 @@ try:
     app.include_router(ai_chat_router)
     app.include_router(twofa_router)
     app.include_router(genetic_router)
+    app.include_router(dashboard_router)
+    app.include_router(api_key_mgmt_router)
+    app.include_router(daily_report_router)
     
-    logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Bot Lifecycle, System Limits, Live Gate, Analytics, AI Chat, 2FA, Genetic Algorithm")
+    # Start daily report scheduler
+    daily_report_service.start()
+    
+    logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Bot Lifecycle, System Limits, Live Gate, Analytics, AI Chat, 2FA, Genetic Algorithm, Dashboard, API Keys, Daily Reports")
 except Exception as e:
     logger.warning(f"Could not load endpoints: {e}")
 
