@@ -2666,6 +2666,7 @@ try:
     from routes.dashboard_endpoints import router as dashboard_router
     from routes.api_key_management import router as api_key_mgmt_router
     from routes.daily_report import router as daily_report_router, daily_report_service
+    from routes.ledger_endpoints import router as ledger_router  # Phase 1: Ledger-first accounting
     
     app.include_router(phase5_router)
     app.include_router(phase6_router)
@@ -2685,6 +2686,7 @@ try:
     app.include_router(dashboard_router)
     app.include_router(api_key_mgmt_router)
     app.include_router(daily_report_router)
+    app.include_router(ledger_router)  # Phase 1: Ledger endpoints
     
     # Start daily report scheduler
     daily_report_service.start()

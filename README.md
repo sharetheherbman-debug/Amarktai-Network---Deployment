@@ -2,6 +2,17 @@
 
 **Production-grade, plug-and-play deployment** for Ubuntu 24.04 with systemd + nginx. After `git pull`, `.env` setup, and restart, everything works in real-time.
 
+## 🎯 Phase 1: Ledger-First Accounting (NEW!)
+
+**Immutable ledger** for fills and events provides single source of truth for all accounting:
+- ✅ **Fills Ledger**: Immutable trade execution records
+- ✅ **Ledger Events**: Funding, transfers, allocations
+- ✅ **Derived Metrics**: Equity, realized PnL, fees, drawdown
+- ✅ **Endpoints**: `/api/portfolio/summary`, `/api/profits`, `/api/countdown/status`
+- ✅ **Phase 1 Status**: Read-only + parallel write (opt-in)
+
+See [Ledger Documentation](#ledger-first-accounting) below for details.
+
 ## ⚡ Quick Start (Ubuntu 24.04)
 
 ### One-Command Setup
@@ -208,6 +219,124 @@ npm install
 npm run dev
 ```
 
+## 📊 Ledger-First Accounting
+
+### Phase 1: Read-Only + Parallel Write (Current)
+
+**Status**: ✅ Implemented and deployed
+
+#### Collections
+
+1. **`fills_ledger`** - Immutable fill records
+   - `fill_id`, `user_id`, `bot_id`
+   - `exchange`, `symbol`, `side`, `qty`, `price`
+   - `fee`, `fee_currency`
+   - `timestamp`, `order_id`, `client_order_id`, `exchange_trade_id`
+   - `is_paper` flag
+
+2. **`ledger_events`** - Funding and allocation events
+   - `event_id`, `user_id`, `bot_id`
+   - `event_type` (funding, transfer, allocation, circuit_breaker)
+   - `amount`, `currency`, `timestamp`
+   - `description`, `metadata`
+
+#### Endpoints
+
+**Read-Only** (Phase 1):
+```bash
+# Portfolio summary (from ledger)
+GET /api/portfolio/summary
+# Returns: equity, realized_pnl, unrealized_pnl, fees_total, drawdown
+
+# Profit time series
+GET /api/profits?period=daily&limit=30
+# Returns: Time series of profits by period
+
+# Countdown to target
+GET /api/countdown/status?target=1000000
+# Returns: Equity-based projection to R1M goal
+
+# Query fills
+GET /api/ledger/fills?bot_id=xxx&since=2025-01-01T00:00:00Z&limit=100
+
+# Audit trail
+GET /api/ledger/audit-trail?bot_id=xxx&limit=100
+```
+
+**Append-Only** (Safe for Phase 1):
+```bash
+# Record funding event
+POST /api/ledger/funding
+{
+  "amount": 10000,
+  "currency": "USDT",
+  "description": "Initial capital"
+}
+```
+
+#### Service API
+
+```python
+from services.ledger_service import get_ledger_service
+
+ledger = get_ledger_service(db)
+
+# Append fill (immutable)
+fill_id = await ledger.append_fill(
+    user_id="user_1",
+    bot_id="bot_1",
+    exchange="binance",
+    symbol="BTC/USDT",
+    side="buy",
+    qty=0.01,
+    price=50000,
+    fee=0.5,
+    fee_currency="USDT",
+    timestamp=datetime.utcnow(),
+    order_id="order_123"
+)
+
+# Compute metrics
+equity = await ledger.compute_equity(user_id)
+realized_pnl = await ledger.compute_realized_pnl(user_id)
+fees_paid = await ledger.compute_fees_paid(user_id)
+current_dd, max_dd = await ledger.compute_drawdown(user_id)
+```
+
+#### Testing
+
+```bash
+# Run ledger tests
+cd backend
+source venv/bin/activate
+python -m pytest tests/test_ledger_phase1.py -v
+
+# Tests cover:
+# - Immutable fill appending
+# - FIFO PnL calculation
+# - Fee aggregation
+# - Drawdown calculation
+# - Profit series generation
+# - API contract validation
+```
+
+#### Phase 1 Principles
+
+1. **Immutable**: Fills never updated, only appended
+2. **Parallel**: Works alongside existing `trades` collection
+3. **Opt-in**: New code uses ledger, old code unaffected
+4. **Read-only**: Endpoints are safe to deploy
+5. **Deterministic**: Math is reproducible and testable
+
+#### Next: Phase 2 (Execution Guardrails)
+
+Phase 2 will add:
+- Order pipeline with 4 gates
+- Idempotency protection
+- Fee coverage checks
+- Trade limiters
+- Circuit breaker
+
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -228,5 +357,5 @@ npm run dev
 
 ---
 
-**Version**: 3.0.0  
+**Version**: 3.1.0 - Phase 1 (Ledger-First Accounting)  
 **Last Updated**: December 2025

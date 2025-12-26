@@ -1,0 +1,319 @@
+"""
+Ledger Endpoints - Phase 1 (Read-Only + Parallel Write)
+
+Provides read-only access to immutable ledger data:
+- Portfolio summary (equity, PnL, fees, drawdown)
+- Profit series (daily/weekly/monthly)
+- Countdown status (equity-based projections)
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Optional
+from datetime import datetime, timedelta
+import logging
+
+from auth import get_current_user
+from database import get_database
+from services.ledger_service import get_ledger_service
+
+router = APIRouter(prefix="/api", tags=["ledger"])
+logger = logging.getLogger(__name__)
+
+
+@router.get("/portfolio/summary")
+async def get_portfolio_summary(
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_database)
+):
+    """
+    Get portfolio summary from ledger
+    
+    Returns:
+    - equity: Current total equity
+    - realized_pnl: Closed position profits
+    - unrealized_pnl: Open position profits (Phase 2)
+    - fees_total: Total fees paid
+    - drawdown_current: Current drawdown %
+    - drawdown_max: Maximum drawdown %
+    - win_rate: Win rate (if calculable)
+    """
+    try:
+        ledger = get_ledger_service(db)
+        user_id = current_user["_id"]
+        
+        # Compute core metrics
+        equity = await ledger.compute_equity(user_id)
+        realized_pnl = await ledger.compute_realized_pnl(user_id)
+        unrealized_pnl = await ledger.compute_unrealized_pnl(user_id)
+        fees_total = await ledger.compute_fees_paid(user_id)
+        current_dd, max_dd = await ledger.compute_drawdown(user_id)
+        
+        # Get stats
+        stats = await ledger.get_stats(user_id)
+        
+        # Calculate win rate (simplified - needs proper position tracking)
+        # TODO: Implement proper win rate calculation in Phase 2
+        win_rate = None
+        
+        return {
+            "equity": round(equity, 2),
+            "realized_pnl": round(realized_pnl, 2),
+            "unrealized_pnl": round(unrealized_pnl, 2),
+            "fees_total": round(fees_total, 2),
+            "net_pnl": round(realized_pnl + unrealized_pnl - fees_total, 2),
+            "drawdown_current": round(current_dd * 100, 2),
+            "drawdown_max": round(max_dd * 100, 2),
+            "win_rate": win_rate,
+            "total_fills": stats.get("total_fills", 0),
+            "total_volume": round(stats.get("total_volume", 0), 2),
+            "data_source": "ledger",
+            "phase": "1_read_only"
+        }
+    except Exception as e:
+        logger.error(f"Error getting portfolio summary: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get portfolio summary: {str(e)}")
+
+
+@router.get("/profits")
+async def get_profits(
+    period: str = Query("daily", regex="^(daily|weekly|monthly)$"),
+    limit: int = Query(30, ge=1, le=365),
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_database)
+):
+    """
+    Get profit time series from ledger
+    
+    Parameters:
+    - period: daily, weekly, or monthly
+    - limit: Number of periods to return
+    
+    Returns: Time series of profits by period
+    """
+    try:
+        ledger = get_ledger_service(db)
+        user_id = current_user["_id"]
+        
+        series = await ledger.profit_series(user_id, period=period, limit=limit)
+        
+        return {
+            "period": period,
+            "limit": limit,
+            "series": series,
+            "data_source": "ledger",
+            "phase": "1_read_only"
+        }
+    except Exception as e:
+        logger.error(f"Error getting profits: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get profits: {str(e)}")
+
+
+@router.get("/countdown/status")
+async def get_countdown_status(
+    target: float = Query(1000000, description="Target amount (e.g., R1M = 1000000)"),
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_database)
+):
+    """
+    Get countdown to target based on actual equity and projections
+    
+    Returns:
+    - current_equity: Current equity from ledger
+    - target: Target amount
+    - remaining: Amount remaining to target
+    - progress_pct: Progress percentage
+    - days_to_target_linear: Days at current 30d avg daily profit
+    - days_to_target_compound: Days with compound interest model
+    """
+    try:
+        ledger = get_ledger_service(db)
+        user_id = current_user["_id"]
+        
+        # Get current equity
+        current_equity = await ledger.compute_equity(user_id)
+        
+        # Get 30-day profit series to calculate average
+        series = await ledger.profit_series(user_id, period="daily", limit=30)
+        
+        # Calculate average daily profit from series
+        if series:
+            # Sum net profits
+            total_net_profit = sum(day.get("net_profit", 0) for day in series)
+            avg_daily_profit = total_net_profit / len(series)
+        else:
+            avg_daily_profit = 0
+        
+        remaining = target - current_equity
+        progress_pct = (current_equity / target * 100) if target > 0 else 0
+        
+        # Linear projection
+        if avg_daily_profit > 0:
+            days_to_target_linear = remaining / avg_daily_profit
+        else:
+            days_to_target_linear = None
+        
+        # Compound projection (assume 0.1% daily compound growth)
+        daily_compound_rate = 0.001  # 0.1% daily
+        if current_equity > 0 and daily_compound_rate > 0:
+            import math
+            try:
+                days_to_target_compound = math.log(target / current_equity) / math.log(1 + daily_compound_rate)
+            except (ValueError, ZeroDivisionError):
+                days_to_target_compound = None
+        else:
+            days_to_target_compound = None
+        
+        return {
+            "current_equity": round(current_equity, 2),
+            "target": target,
+            "remaining": round(remaining, 2),
+            "progress_pct": round(progress_pct, 2),
+            "avg_daily_profit_30d": round(avg_daily_profit, 2),
+            "days_to_target_linear": round(days_to_target_linear, 0) if days_to_target_linear else None,
+            "days_to_target_compound": round(days_to_target_compound, 0) if days_to_target_compound else None,
+            "data_source": "ledger",
+            "phase": "1_read_only"
+        }
+    except Exception as e:
+        logger.error(f"Error getting countdown status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get countdown status: {str(e)}")
+
+
+@router.get("/ledger/fills")
+async def get_fills(
+    bot_id: Optional[str] = None,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+    limit: int = Query(100, ge=1, le=1000),
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_database)
+):
+    """
+    Get fills from ledger with optional filters
+    
+    Parameters:
+    - bot_id: Filter by bot
+    - since: ISO timestamp (e.g., 2025-01-01T00:00:00Z)
+    - until: ISO timestamp
+    - limit: Max results
+    """
+    try:
+        ledger = get_ledger_service(db)
+        user_id = current_user["_id"]
+        
+        # Parse dates
+        since_dt = datetime.fromisoformat(since.replace('Z', '+00:00')) if since else None
+        until_dt = datetime.fromisoformat(until.replace('Z', '+00:00')) if until else None
+        
+        fills = await ledger.get_fills(
+            user_id=user_id,
+            bot_id=bot_id,
+            since=since_dt,
+            until=until_dt,
+            limit=limit
+        )
+        
+        return {
+            "fills": fills,
+            "count": len(fills),
+            "filters": {
+                "bot_id": bot_id,
+                "since": since,
+                "until": until,
+                "limit": limit
+            },
+            "data_source": "ledger",
+            "phase": "1_read_only"
+        }
+    except Exception as e:
+        logger.error(f"Error getting fills: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get fills: {str(e)}")
+
+
+@router.post("/ledger/funding")
+async def record_funding(
+    amount: float,
+    currency: str = "USDT",
+    description: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_database)
+):
+    """
+    Record a funding event (capital injection)
+    
+    This is a write endpoint but safe for Phase 1 as it's append-only
+    """
+    try:
+        ledger = get_ledger_service(db)
+        user_id = current_user["_id"]
+        
+        event_id = await ledger.append_event(
+            user_id=user_id,
+            event_type="funding",
+            amount=amount,
+            currency=currency,
+            timestamp=datetime.utcnow(),
+            description=description or f"Funding: {amount} {currency}"
+        )
+        
+        return {
+            "event_id": event_id,
+            "message": f"Recorded funding of {amount} {currency}",
+            "phase": "1_append_only"
+        }
+    except Exception as e:
+        logger.error(f"Error recording funding: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to record funding: {str(e)}")
+
+
+@router.get("/ledger/audit-trail")
+async def get_audit_trail(
+    bot_id: Optional[str] = None,
+    limit: int = Query(100, ge=1, le=1000),
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_database)
+):
+    """
+    Get complete audit trail (fills + events)
+    
+    Returns chronological list of all ledger entries
+    """
+    try:
+        ledger = get_ledger_service(db)
+        user_id = current_user["_id"]
+        
+        # Get fills
+        fills = await ledger.get_fills(user_id=user_id, bot_id=bot_id, limit=limit)
+        
+        # Get events
+        event_query = {"user_id": user_id}
+        if bot_id:
+            event_query["bot_id"] = bot_id
+        
+        events_cursor = ledger.ledger_events.find(event_query).sort("timestamp", -1).limit(limit)
+        events = await events_cursor.to_list(length=limit)
+        
+        # Convert ObjectId
+        for event in events:
+            event["_id"] = str(event["_id"])
+        
+        # Combine and sort
+        fills_with_type = [{"type": "fill", **f} for f in fills]
+        events_with_type = [{"type": "event", **e} for e in events]
+        
+        all_entries = fills_with_type + events_with_type
+        all_entries.sort(key=lambda x: x.get("timestamp", datetime.min), reverse=True)
+        
+        return {
+            "audit_trail": all_entries[:limit],
+            "count": len(all_entries[:limit]),
+            "filters": {
+                "bot_id": bot_id,
+                "limit": limit
+            },
+            "data_source": "ledger",
+            "phase": "1_read_only"
+        }
+    except Exception as e:
+        logger.error(f"Error getting audit trail: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get audit trail: {str(e)}")
