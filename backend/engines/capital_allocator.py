@@ -240,6 +240,34 @@ class CapitalAllocator:
         except Exception as e:
             logger.error(f"Allocation report error: {e}")
             return {"error": str(e)}
+    
+    async def reallocate_capital(self, user_id: str) -> Dict:
+        """Reallocate capital (alias for rebalance_all_bots)"""
+        return await self.rebalance_all_bots(user_id)
+    
+    async def reinvest_daily_profits(self, user_id: str) -> Dict:
+        """Reinvest daily profits - safe no-op for now"""
+        try:
+            logger.info(f"Reinvest daily profits called for user {user_id} (no-op)")
+            return {
+                "ok": True,
+                "note": "Profit reinvestment is handled automatically by the autopilot system"
+            }
+        except Exception as e:
+            logger.error(f"Reinvest daily profits error: {e}")
+            return {"ok": False, "error": str(e)}
+    
+    async def auto_spawn_bot(self, user_id: str) -> Dict:
+        """Auto-spawn bot - safe no-op for now"""
+        try:
+            logger.info(f"Auto-spawn bot called for user {user_id} (no-op)")
+            return {
+                "ok": True,
+                "note": "Bot spawning is handled by the bot manager and autopilot system"
+            }
+        except Exception as e:
+            logger.error(f"Auto-spawn bot error: {e}")
+            return {"ok": False, "error": str(e)}
 
 # Global instance
 capital_allocator = CapitalAllocator()

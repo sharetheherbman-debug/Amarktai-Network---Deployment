@@ -556,10 +556,22 @@ class PaperTradingEngine:
             return None
     
     async def cleanup(self):
-        if self.luno_exchange:
-            await self.luno_exchange.close()
-        if self.binance_exchange:
-            await self.binance_exchange.close()
+        """Alias for close_exchanges"""
+        await self.close_exchanges()
+    
+    async def close_exchanges(self):
+        """Close all CCXT async exchange sessions"""
+        try:
+            if self.luno_exchange:
+                await self.luno_exchange.close()
+                logger.info("Closed Luno exchange session")
+            if self.binance_exchange:
+                await self.binance_exchange.close()
+                logger.info("Closed Binance exchange session")
+        except Exception as e:
+            logger.error(f"Error closing exchanges: {e}")
 
 # Global instance
 paper_engine = PaperTradingEngine()
+# Alias for compatibility
+paper_trading_engine = paper_engine

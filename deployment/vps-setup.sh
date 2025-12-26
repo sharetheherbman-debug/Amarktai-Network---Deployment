@@ -1,6 +1,7 @@
 #!/bin/bash
-# Amarktai Network - VPS Setup Script
-# For Ubuntu 24.04 (Webdock VPS)
+# Amarktai Network - Fully Automated VPS Setup Script
+# For Ubuntu 24.04 (Webdock VPS or similar)
+# This script installs and configures everything needed for production deployment
 
 set -e  # Exit on error
 
@@ -21,12 +22,16 @@ fi
 
 echo -e "${GREEN}✅ Running with root privileges${NC}"
 
+# ============================================================================
 # 1. Update System
+# ============================================================================
 echo ""
 echo "📦 Updating system packages..."
 apt update && apt upgrade -y
 
+# ============================================================================
 # 2. Install Required Packages
+# ============================================================================
 echo ""
 echo "📦 Installing required packages..."
 apt install -y \
@@ -36,112 +41,194 @@ apt install -y \
     nodejs \
     npm \
     nginx \
-    mongodb \
     git \
     curl \
     wget \
-    supervisor
+    docker.io \
+    docker-compose
 
+# ============================================================================
 # 3. Install Yarn
+# ============================================================================
 echo ""
 echo "📦 Installing Yarn..."
 npm install -g yarn
 
-# 4. Start and Enable MongoDB
+# ============================================================================
+# 4. Setup MongoDB (Docker)
+# ============================================================================
 echo ""
-echo "🗄️ Starting MongoDB..."
-systemctl start mongodb
-systemctl enable mongodb
-echo -e "${GREEN}✅ MongoDB started${NC}"
+echo "🗄️ Setting up MongoDB..."
+systemctl start docker
+systemctl enable docker
 
-# 5. Create Application Directory
+# Check if MongoDB container already exists
+if docker ps -a | grep -q amarktai-mongo; then
+    echo "MongoDB container already exists, starting it..."
+    docker start amarktai-mongo || true
+else
+    echo "Creating new MongoDB container..."
+    docker run -d \
+        --name amarktai-mongo \
+        --restart always \
+        -p 127.0.0.1:27017:27017 \
+        -v amarktai-mongo-data:/data/db \
+        mongo:7
+fi
+
+echo -e "${GREEN}✅ MongoDB started on 127.0.0.1:27017${NC}"
+
+# ============================================================================
+# 5. Create Application Directory and Setup Repository
+# ============================================================================
 echo ""
-echo "📁 Creating application directory..."
-mkdir -p /var/amarktai
-cd /var/amarktai
+echo "📁 Setting up application directory..."
+mkdir -p /var/amarktai/app
+cd /var/amarktai/app
 
-# 6. Clone Repository (YOU NEED TO REPLACE WITH YOUR REPO URL)
-echo ""
-echo "📥 Cloning repository..."
-echo -e "${YELLOW}⚠️ Manual step: You need to clone your repository here${NC}"
-echo "Example: git clone YOUR_REPO_URL /var/amarktai"
-read -p "Press Enter after you've cloned the repository..."
+# Check if this is already a git repository
+if [ -d ".git" ]; then
+    echo "Repository already cloned, pulling latest changes..."
+    git pull || echo "Warning: Could not pull latest changes"
+else
+    echo -e "${YELLOW}⚠️ Repository not cloned yet${NC}"
+    echo "Please clone your repository to /var/amarktai/app"
+    echo "Example: git clone YOUR_REPO_URL /var/amarktai/app"
+    echo ""
+    read -p "Have you cloned the repository? (y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${RED}❌ Please clone the repository and run this script again${NC}"
+        exit 1
+    fi
+fi
 
-# 7. Backend Setup
+# ============================================================================
+# 6. Backend Setup
+# ============================================================================
 echo ""
 echo "🐍 Setting up Python backend..."
-cd /var/amarktai/backend
+cd /var/amarktai/app/backend
 
 # Create virtual environment
-python3.11 -m venv .venv
+if [ ! -d ".venv" ]; then
+    python3.11 -m venv .venv
+fi
+
 source .venv/bin/activate
 
 # Install dependencies
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# Copy env file
+# Copy .env file if it doesn't exist
 if [ ! -f .env ]; then
     echo ""
     echo -e "${YELLOW}⚠️ Creating .env file from example${NC}"
-    cp .env.example .env
-    echo -e "${RED}❌ CRITICAL: Edit /var/amarktai/backend/.env with your API keys!${NC}"
-    read -p "Press Enter after you've edited the .env file..."
+    if [ -f ../.env.example ]; then
+        cp ../.env.example .env
+    else
+        echo -e "${RED}❌ .env.example not found!${NC}"
+        echo "Creating minimal .env file..."
+        cat > .env << 'EOF'
+MONGO_URI=mongodb://127.0.0.1:27017
+MONGO_DB_NAME=amarktai
+JWT_SECRET=change-me-$(openssl rand -hex 32)
+ADMIN_PASSWORD=change-me-$(openssl rand -base64 24)
+OPENAI_API_KEY=
+ENABLE_REALTIME=true
+SMTP_ENABLED=false
+MAX_BOTS=10
+MAX_DAILY_LOSS_PERCENT=5
+LOG_LEVEL=INFO
+ENVIRONMENT=production
+EOF
+    fi
+    echo -e "${RED}❌ CRITICAL: Edit /var/amarktai/app/backend/.env with your API keys!${NC}"
+    echo "Required: OPENAI_API_KEY, JWT_SECRET (change defaults), ADMIN_PASSWORD"
 fi
 
 echo -e "${GREEN}✅ Backend setup complete${NC}"
 
-# 8. Frontend Setup
+# ============================================================================
+# 7. Frontend Setup
+# ============================================================================
 echo ""
 echo "⚛️ Setting up React frontend..."
-cd /var/amarktai/frontend
+cd /var/amarktai/app/frontend
 
-# Copy env file
-if [ ! -f .env ]; then
-    cp .env.example .env
-    echo -e "${YELLOW}⚠️ Update REACT_APP_BACKEND_URL in /var/amarktai/frontend/.env${NC}"
+# Install dependencies
+if [ -f yarn.lock ]; then
+    yarn install --frozen-lockfile
+elif [ -f package-lock.json ]; then
+    npm ci
+else
+    npm install
 fi
 
-# Install dependencies and build
-yarn install
-yarn build
+# Build frontend
+if [ -f yarn.lock ]; then
+    yarn build
+else
+    npm run build
+fi
 
 echo -e "${GREEN}✅ Frontend build complete${NC}"
 
-# 9. Setup Systemd Service
-echo ""
-echo "🔧 Setting up systemd service..."
-cp /var/amarktai/deployment/amarktai-api.service /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable amarktai-api
-systemctl start amarktai-api
-echo -e "${GREEN}✅ API service started${NC}"
-
-# 10. Setup Nginx
+# ============================================================================
+# 8. Setup Nginx
+# ============================================================================
 echo ""
 echo "🌐 Setting up Nginx..."
-cp /var/amarktai/deployment/nginx-amarktai.conf /etc/nginx/sites-available/amarktai
 
-# Update server_name (replace with actual domain/IP)
-echo -e "${YELLOW}⚠️ Update server_name in /etc/nginx/sites-available/amarktai${NC}"
-read -p "Press Enter after editing the nginx config..."
+# Copy nginx config
+cp /var/amarktai/app/deployment/nginx/amarktai.conf /etc/nginx/sites-available/amarktai
 
 # Enable site
 ln -sf /etc/nginx/sites-available/amarktai /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default  # Remove default site
 
 # Test nginx config
-nginx -t
-systemctl reload nginx
-echo -e "${GREEN}✅ Nginx configured${NC}"
+if nginx -t; then
+    systemctl reload nginx
+    echo -e "${GREEN}✅ Nginx configured and reloaded${NC}"
+else
+    echo -e "${RED}❌ Nginx configuration test failed!${NC}"
+    exit 1
+fi
 
-# 11. Set Permissions
+# ============================================================================
+# 9. Setup Systemd Service
+# ============================================================================
+echo ""
+echo "🔧 Setting up systemd service..."
+cp /var/amarktai/app/deployment/systemd/amarktai-api.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable amarktai-api
+systemctl restart amarktai-api
+
+# Wait for service to start
+sleep 5
+
+if systemctl is-active --quiet amarktai-api; then
+    echo -e "${GREEN}✅ API service started successfully${NC}"
+else
+    echo -e "${RED}❌ API service failed to start!${NC}"
+    echo "Check logs with: journalctl -u amarktai-api -n 50"
+    exit 1
+fi
+
+# ============================================================================
+# 10. Set Permissions
+# ============================================================================
 echo ""
 echo "🔐 Setting permissions..."
-chown -R www-data:www-data /var/amarktai
-chmod -R 755 /var/amarktai
+chown -R www-data:www-data /var/amarktai/app
+chmod -R 755 /var/amarktai/app
 
-# 12. Setup Firewall (UFW)
+# ============================================================================
+# 11. Setup Firewall (UFW)
+# ============================================================================
 echo ""
 echo "🔥 Configuring firewall..."
 ufw allow 22/tcp   # SSH
@@ -150,27 +237,71 @@ ufw allow 443/tcp  # HTTPS
 ufw --force enable
 echo -e "${GREEN}✅ Firewall configured${NC}"
 
-# 13. Final Status Check
+# ============================================================================
+# 12. Run Smoke Tests
+# ============================================================================
 echo ""
-echo "📊 Checking service status..."
-echo ""
-systemctl status amarktai-api --no-pager
-echo ""
-systemctl status mongodb --no-pager
-echo ""
-systemctl status nginx --no-pager
+echo "🧪 Running smoke tests..."
+cd /var/amarktai/app/deployment
 
+if [ -f smoke_test.sh ]; then
+    chmod +x smoke_test.sh
+    if ./smoke_test.sh; then
+        echo -e "${GREEN}✅ All smoke tests passed!${NC}"
+    else
+        echo -e "${YELLOW}⚠️ Some smoke tests failed - check the output above${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠️ smoke_test.sh not found, skipping tests${NC}"
+fi
+
+# ============================================================================
+# 13. Final Status Check
+# ============================================================================
+echo ""
+echo "📊 System Status:"
+echo ""
+echo "=== Docker (MongoDB) ==="
+docker ps | grep amarktai-mongo || echo "MongoDB container not running!"
+echo ""
+echo "=== Amarktai API Service ==="
+systemctl status amarktai-api --no-pager | head -10
+echo ""
+echo "=== Nginx ==="
+systemctl status nginx --no-pager | head -5
+echo ""
+echo "=== Backend Port Check ==="
+ss -lntp | grep :8000 || echo "Backend not listening on port 8000!"
+echo ""
+
+# ============================================================================
+# 14. Verification Commands
+# ============================================================================
 echo ""
 echo -e "${GREEN}🎉 Amarktai Network VPS Setup Complete!${NC}"
 echo ""
-echo "Next steps:"
-echo "1. Edit /var/amarktai/backend/.env with your API keys"
-echo "2. Edit /etc/nginx/sites-available/amarktai with your domain/IP"
-echo "3. Restart services:"
-echo "   sudo systemctl restart amarktai-api"
-echo "   sudo systemctl reload nginx"
-echo "4. Optional: Setup SSL with certbot"
+echo "=== Verification Commands ==="
+echo "1. Check API service:"
+echo "   systemctl status amarktai-api"
+echo ""
+echo "2. Check backend is listening:"
+echo "   ss -lntp | grep :8000"
+echo ""
+echo "3. Test health endpoint:"
+echo "   curl -i http://127.0.0.1:8000/api/health/ping"
+echo ""
+echo "4. Check OpenAPI schema:"
+echo "   curl http://127.0.0.1:8000/openapi.json | jq '.paths | keys[]' | grep -E '^/api/(health|alerts|realtime)'"
+echo ""
+echo "5. Test SSE streaming (Ctrl+C to stop):"
+echo "   curl -N http://127.0.0.1:8000/api/realtime/events"
+echo ""
+echo "=== Next Steps ==="
+echo "1. Edit /var/amarktai/app/backend/.env with your API keys"
+echo "2. Restart service: sudo systemctl restart amarktai-api"
+echo "3. Optional: Setup SSL with certbot"
 echo "   sudo apt install certbot python3-certbot-nginx"
 echo "   sudo certbot --nginx -d yourdomain.com"
 echo ""
 echo "Access your app at: http://YOUR_SERVER_IP"
+echo ""

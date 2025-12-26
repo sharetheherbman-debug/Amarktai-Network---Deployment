@@ -8,7 +8,7 @@ from datetime import datetime, timezone, time, timedelta
 from database import bots_collection, users_collection
 from bot_lifecycle import bot_lifecycle
 from performance_ranker import performance_ranker
-from capital_allocator import capital_allocator
+from engines.capital_allocator import capital_allocator
 from bot_dna_evolution import bot_dna_evolution
 from ai_super_brain import ai_super_brain
 
