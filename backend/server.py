@@ -2870,6 +2870,7 @@ try:
     from routes.alerts import router as alerts_router
     from routes.limits_management import router as limits_router  # NEW: Limits management
     from routes.advanced_trading_endpoints import router as advanced_router  # Advanced Trading System
+    from routes.payment_agent_endpoints import router as payment_router  # Payment Agent
     
     app.include_router(phase5_router)
     app.include_router(phase6_router)
@@ -2893,6 +2894,7 @@ try:
     app.include_router(order_router)  # Phase 2: Order pipeline endpoints
     app.include_router(limits_router)  # Limits management endpoints
     app.include_router(advanced_router)  # Advanced Trading System endpoints
+    app.include_router(payment_router)  # Payment Agent endpoints
     
     # Start daily report scheduler
     daily_report_service.start()
