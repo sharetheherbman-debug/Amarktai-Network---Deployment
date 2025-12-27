@@ -678,7 +678,7 @@ class OrderPipeline:
             
             # Calculate actual slippage
             expected_price = order.get("price") or filled_price
-            slippage_bps = abs((filled_price - expected_price) / expected_price * 10000) if expected_price > 0 else 0
+            slippage_bps = abs((filled_price - expected_price) / expected_price * 10000) if abs(expected_price) > 0 else 0
             
             # Calculate actual fee in basis points
             notional_value = filled_price * filled_qty

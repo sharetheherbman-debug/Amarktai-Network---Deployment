@@ -174,7 +174,7 @@ else
             fi
             
             # Check if pause/resume endpoints support both POST and PUT
-            if echo "$OPENAPI_RESPONSE" | grep -q "pause.*post\|pause.*put"; then
+            if echo "$OPENAPI_RESPONSE" | grep -E -q '(pause.*post|pause.*put)'; then
                 log_success "Bot pause endpoint is accessible"
             else
                 log_warning "Bot pause endpoint may not be properly registered"
@@ -239,7 +239,7 @@ log_section "6. Security Checks"
 
 # Check for exposed secrets in code
 log_info "Scanning for exposed secrets..."
-if grep -r "password.*=.*['\"].*['\"]" backend --include="*.py" | grep -v "password_hash" | grep -v "get_password" | grep -q "password"; then
+if grep -r 'password.*=.*["'\''][^"'\'']*["'\'']' backend --include="*.py" | grep -v "password_hash" | grep -v "get_password" | grep -q "password"; then
     log_warning "Possible hardcoded passwords found - review manually"
 else
     log_success "No obvious hardcoded passwords found"
