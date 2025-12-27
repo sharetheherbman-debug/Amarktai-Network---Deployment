@@ -2871,6 +2871,7 @@ try:
     from routes.limits_management import router as limits_router  # NEW: Limits management
     from routes.advanced_trading_endpoints import router as advanced_router  # Advanced Trading System
     from routes.payment_agent_endpoints import router as payment_router  # Payment Agent
+    from routes.user_api_keys import router as user_api_keys_router  # Per-User API Key Management
     
     app.include_router(phase5_router)
     app.include_router(phase6_router)
@@ -2895,6 +2896,7 @@ try:
     app.include_router(limits_router)  # Limits management endpoints
     app.include_router(advanced_router)  # Advanced Trading System endpoints
     app.include_router(payment_router)  # Payment Agent endpoints
+    app.include_router(user_api_keys_router)  # Per-User API Key Management
     
     # Start daily report scheduler
     daily_report_service.start()

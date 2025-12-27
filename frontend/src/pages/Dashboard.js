@@ -20,6 +20,7 @@ import WalletOverview from '../components/WalletOverview';
 import DecisionTrace from '../components/DecisionTrace';
 import WhaleFlowHeatmap from '../components/WhaleFlowHeatmap';
 import PrometheusMetrics from '../components/PrometheusMetrics';
+import APIKeySettings from '../components/APIKeySettings';
 import { API_BASE, wsUrl } from '../lib/api.js';
 
 ChartJS.register(
@@ -3184,6 +3185,16 @@ export default function Dashboard() {
     );
   };
 
+  const renderAPIKeys = () => {
+    return (
+      <section className="section active">
+        <div className="card">
+          <APIKeySettings />
+        </div>
+      </section>
+    );
+  };
+
   const renderFlokxAlerts = () => {
     
     return (
@@ -3317,6 +3328,7 @@ export default function Dashboard() {
             <a href="#" className={activeSection === 'decision-trace' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('decision-trace'); }}>🎬 Decision Trace</a>
             <a href="#" className={activeSection === 'whale-flow' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('whale-flow'); }}>🐋 Whale Flow</a>
             <a href="#" className={activeSection === 'metrics' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('metrics'); }}>📊 Metrics</a>
+            <a href="#" className={activeSection === 'api-keys' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('api-keys'); }}>🔑 API Keys</a>
             <a href="#" className={activeSection === 'profile' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('profile'); }}>👤 Profile</a>
             {showAdmin && (
               <a href="#" className={activeSection === 'admin' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('admin'); }}>🔧 Admin</a>
@@ -3385,6 +3397,7 @@ export default function Dashboard() {
         {activeSection === 'decision-trace' && renderDecisionTrace()}
         {activeSection === 'whale-flow' && renderWhaleFlow()}
         {activeSection === 'metrics' && renderMetrics()}
+        {activeSection === 'api-keys' && renderAPIKeys()}
         {activeSection === 'profile' && renderProfile()}
         {activeSection === 'admin' && showAdmin && renderAdmin()}
       </main>
