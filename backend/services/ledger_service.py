@@ -570,14 +570,49 @@ class LedgerService:
             periods_data[date_key]["fees"] += fill.get("fee", 0)
             periods_data[date_key]["volume"] += fill["qty"] * fill["price"]
         
-        # Calculate realized PnL per period (simplified - actual would need position tracking)
-        # For Phase 1, we'll use a simpler approximation
+        # Calculate realized PnL per period using FIFO position tracking
+        # Tracks positions per symbol and calculates realized gains on each sell
+        positions = {}  # symbol -> [list of (qty, cost_basis)]
+        
         series = []
         for date_key in sorted(periods_data.keys()):
             data = periods_data[date_key]
-            # TODO: Calculate actual realized PnL per period
-            data["realized_pnl"] = 0  # Placeholder - needs proper calculation
-            data["net_profit"] = data["realized_pnl"] - data["fees"]
+            realized_pnl = 0.0
+            
+            # Get fills for this period to calculate PnL
+            period_fills = [f for f in fills if f["timestamp"].strftime(date_format) == date_key]
+            
+            for fill in period_fills:
+                symbol = fill["symbol"]
+                side = fill["side"]
+                qty = fill["qty"]
+                price = fill["price"]
+                
+                if symbol not in positions:
+                    positions[symbol] = []
+                
+                if side == "buy":
+                    # Add to position
+                    positions[symbol].append((qty, price))
+                elif side == "sell":
+                    # Close position(s) and realize PnL using FIFO
+                    remaining_qty = qty
+                    while remaining_qty > 0 and positions[symbol]:
+                        pos_qty, pos_price = positions[symbol][0]
+                        
+                        if pos_qty <= remaining_qty:
+                            # Close entire position
+                            realized_pnl += (price - pos_price) * pos_qty
+                            remaining_qty -= pos_qty
+                            positions[symbol].pop(0)
+                        else:
+                            # Partial close
+                            realized_pnl += (price - pos_price) * remaining_qty
+                            positions[symbol][0] = (pos_qty - remaining_qty, pos_price)
+                            remaining_qty = 0
+            
+            data["realized_pnl"] = round(realized_pnl, 2)
+            data["net_profit"] = round(data["realized_pnl"] - data["fees"], 2)
             series.append(data)
         
         return series[-limit:]
@@ -623,6 +658,78 @@ class LedgerService:
             "total_fees": 0.0,
             "avg_qty": 0.0
         }
+    
+    async def calculate_win_rate(self, user_id: str, bot_id: Optional[str] = None) -> Optional[float]:
+        """
+        Calculate win rate using FIFO position tracking.
+        Returns the percentage of profitable closed positions (0.0 to 1.0).
+        Returns None if no closed positions exist.
+        
+        Algorithm:
+        - Track positions per symbol using FIFO
+        - When a sell occurs, match against oldest buys
+        - Track each closed trade as win/loss
+        - Win rate = wins / (wins + losses)
+        """
+        query = {"user_id": user_id}
+        if bot_id:
+            query["bot_id"] = bot_id
+        
+        # Get all fills ordered by timestamp
+        fills = await self.get_fills(user_id=user_id, bot_id=bot_id, limit=100000)
+        
+        if not fills:
+            return None
+        
+        positions = {}  # symbol -> [(qty, cost_basis), ...]
+        winning_trades = 0
+        losing_trades = 0
+        
+        for fill in reversed(fills):  # Process chronologically
+            symbol = fill["symbol"]
+            side = fill["side"]
+            qty = fill["qty"]
+            price = fill["price"]
+            
+            if symbol not in positions:
+                positions[symbol] = []
+            
+            if side == "buy":
+                # Add to position
+                positions[symbol].append((qty, price))
+            elif side == "sell":
+                # Close position(s) and track win/loss
+                remaining_qty = qty
+                while remaining_qty > 0 and positions[symbol]:
+                    pos_qty, pos_price = positions[symbol][0]
+                    
+                    if pos_qty <= remaining_qty:
+                        # Close entire position
+                        pnl = (price - pos_price) * pos_qty
+                        if pnl > 0:
+                            winning_trades += 1
+                        elif pnl < 0:
+                            losing_trades += 1
+                        # pnl == 0 is neither win nor loss (breakeven)
+                        
+                        remaining_qty -= pos_qty
+                        positions[symbol].pop(0)
+                    else:
+                        # Partial close
+                        pnl = (price - pos_price) * remaining_qty
+                        if pnl > 0:
+                            winning_trades += 1
+                        elif pnl < 0:
+                            losing_trades += 1
+                        
+                        positions[symbol][0] = (pos_qty - remaining_qty, pos_price)
+                        remaining_qty = 0
+        
+        total_trades = winning_trades + losing_trades
+        if total_trades == 0:
+            return None
+        
+        return winning_trades / total_trades
     
     async def get_trade_count(
         self,

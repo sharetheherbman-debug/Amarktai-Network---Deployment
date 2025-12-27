@@ -51,9 +51,10 @@ async def get_portfolio_summary(
         # Get stats
         stats = await ledger.get_stats(user_id)
         
-        # Calculate win rate (simplified - needs proper position tracking)
-        # TODO: Implement proper win rate calculation in Phase 2
-        win_rate = None
+        # Calculate win rate from realized trades using FIFO position tracking
+        win_rate = await ledger.calculate_win_rate(user_id)
+        if win_rate is not None:
+            win_rate = round(win_rate * 100, 2)  # Convert to percentage
         
         return {
             "equity": round(equity, 2),
