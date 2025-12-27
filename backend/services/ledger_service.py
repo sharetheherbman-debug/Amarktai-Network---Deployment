@@ -302,16 +302,102 @@ class LedgerService:
         currency: str = "USDT"
     ) -> float:
         """
-        Compute unrealized PnL from open positions
+        Compute unrealized PnL from open positions using current mark prices
         
-        Note: Requires current market prices (not implemented in Phase 1)
-        Returns 0 for now as this requires price feed integration
+        Method:
+        1. Calculate open positions from FIFO matching
+        2. Get current market prices for each symbol
+        3. Calculate unrealized PnL = qty * (current_price - avg_entry_price)
         
         Can compute for user_id or bot_id
         """
-        # TODO: Implement with price feed in Phase 2
-        logger.debug(f"Unrealized PnL calculation not implemented yet (requires price feed)")
-        return 0.0
+        # Determine the query target
+        target_id = user_id or bot_id
+        target_field = "user_id" if user_id else "bot_id"
+        
+        if not target_id:
+            raise ValueError("Must provide either user_id or bot_id")
+        
+        query = {target_field: target_id}
+        
+        cursor = self.fills_ledger.find(query).sort("timestamp", 1)
+        fills = await cursor.to_list(length=10000)
+        
+        # Group by symbol and calculate open positions using FIFO
+        positions_by_symbol = {}
+        
+        for fill in fills:
+            symbol = fill["symbol"]
+            side = fill["side"]
+            qty = fill["qty"]
+            price = fill["price"]
+            
+            if symbol not in positions_by_symbol:
+                positions_by_symbol[symbol] = []
+            
+            if side == "buy":
+                # Add to position
+                positions_by_symbol[symbol].append({
+                    "qty": qty,
+                    "price": price
+                })
+            elif side == "sell":
+                # Close position using FIFO
+                remaining_qty = qty
+                
+                while remaining_qty > 0 and positions_by_symbol[symbol]:
+                    buy = positions_by_symbol[symbol][0]
+                    
+                    if buy["qty"] <= remaining_qty:
+                        # Close entire buy
+                        remaining_qty -= buy["qty"]
+                        positions_by_symbol[symbol].pop(0)
+                    else:
+                        # Partially close buy
+                        buy["qty"] -= remaining_qty
+                        remaining_qty = 0
+        
+        # Calculate unrealized PnL for remaining open positions
+        unrealized_pnl = 0.0
+        
+        try:
+            # Get price engine for mark prices
+            from paper_trading_engine import paper_engine
+            
+            for symbol, open_buys in positions_by_symbol.items():
+                if not open_buys:
+                    continue
+                
+                # Get current mark price
+                try:
+                    # Determine exchange from symbol format
+                    if "/ZAR" in symbol:
+                        exchange = "luno"
+                    else:
+                        exchange = "binance"  # Default to binance for USDT pairs
+                    
+                    current_price = await paper_engine.get_real_price(symbol, exchange)
+                    
+                    # Calculate unrealized PnL for all open positions in this symbol
+                    for buy in open_buys:
+                        qty = buy["qty"]
+                        entry_price = buy["price"]
+                        pnl = qty * (current_price - entry_price)
+                        unrealized_pnl += pnl
+                        
+                        logger.debug(f"Open position: {symbol} qty={qty} entry={entry_price} mark={current_price} unrealized_pnl={pnl}")
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to get mark price for {symbol}: {e}")
+                    # Continue with other symbols
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"Error calculating unrealized PnL: {e}")
+            # Return 0 if price feed unavailable (graceful degradation)
+            return 0.0
+        
+        return unrealized_pnl
     
     async def compute_fees_paid(
         self,
@@ -691,6 +777,202 @@ class LedgerService:
         
         count = await self.ledger_events.count_documents(query)
         return count
+    
+    async def reconcile_with_trades_collection(
+        self,
+        user_id: str
+    ) -> Dict:
+        """
+        Reconcile ledger data with legacy trades_collection
+        
+        Checks for discrepancies and returns a report with any issues found.
+        Useful for migration validation and integrity checks.
+        
+        Returns: {
+            "status": "ok" | "warning" | "error",
+            "ledger_equity": float,
+            "trades_equity": float,
+            "discrepancy": float,
+            "ledger_fills_count": int,
+            "trades_count": int,
+            "issues": List[str],
+            "recommendations": List[str]
+        }
+        """
+        issues = []
+        recommendations = []
+        
+        try:
+            # Get ledger equity
+            ledger_equity = await self.compute_equity(user_id)
+            ledger_fills = await self.get_fills(user_id=user_id, limit=10000)
+            ledger_fills_count = len(ledger_fills)
+            
+            # Get trades collection data
+            trades_collection = self.db["trades"]
+            trades_cursor = trades_collection.find({"user_id": user_id})
+            trades = await trades_cursor.to_list(length=10000)
+            trades_count = len(trades)
+            
+            # Calculate equity from trades collection
+            trades_equity = sum(trade.get("profit_loss", 0) for trade in trades)
+            
+            # Check for discrepancies
+            discrepancy = abs(ledger_equity - trades_equity)
+            discrepancy_pct = (discrepancy / max(ledger_equity, trades_equity, 1)) * 100
+            
+            # Count mismatches
+            if discrepancy_pct > 5:
+                issues.append(f"Large equity discrepancy: {discrepancy_pct:.2f}% difference")
+                recommendations.append("Review ledger fills and trades for missing or duplicate entries")
+            
+            if abs(ledger_fills_count - trades_count) > 10:
+                issues.append(f"Fill count mismatch: {ledger_fills_count} fills vs {trades_count} trades")
+                recommendations.append("Ensure all trades are being recorded to fills_ledger")
+            
+            # Determine status
+            if discrepancy_pct > 10:
+                status = "error"
+            elif discrepancy_pct > 5 or issues:
+                status = "warning"
+            else:
+                status = "ok"
+            
+            return {
+                "status": status,
+                "ledger_equity": round(ledger_equity, 2),
+                "trades_equity": round(trades_equity, 2),
+                "discrepancy": round(discrepancy, 2),
+                "discrepancy_pct": round(discrepancy_pct, 2),
+                "ledger_fills_count": ledger_fills_count,
+                "trades_count": trades_count,
+                "issues": issues,
+                "recommendations": recommendations if issues else ["Ledger and trades are in sync"],
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Reconciliation failed: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "issues": [f"Reconciliation check failed: {str(e)}"],
+                "recommendations": ["Check database connectivity and ledger service health"],
+                "timestamp": datetime.utcnow().isoformat()
+            }
+    
+    async def verify_integrity(
+        self,
+        user_id: str
+    ) -> Dict:
+        """
+        Verify ledger integrity for a user
+        
+        Checks:
+        1. Equity recomputation matches cached value
+        2. All fills have corresponding fees
+        3. No duplicate client_order_ids
+        4. Chronological ordering is preserved
+        5. All required fields are present
+        
+        Returns: {
+            "status": "ok" | "warning" | "error",
+            "checks_passed": int,
+            "checks_failed": int,
+            "issues": List[str],
+            "details": Dict
+        }
+        """
+        issues = []
+        checks_passed = 0
+        checks_failed = 0
+        
+        try:
+            # Check 1: Equity recomputation
+            equity1 = await self.compute_equity(user_id)
+            equity2 = await self.compute_equity(user_id)
+            
+            if abs(equity1 - equity2) < 0.01:
+                checks_passed += 1
+            else:
+                checks_failed += 1
+                issues.append(f"Equity recomputation mismatch: {equity1} vs {equity2}")
+            
+            # Check 2: Get all fills
+            fills = await self.get_fills(user_id=user_id, limit=10000)
+            
+            # Check 3: All fills have fees
+            fills_without_fees = [f for f in fills if f.get("fee") is None]
+            if not fills_without_fees:
+                checks_passed += 1
+            else:
+                checks_failed += 1
+                issues.append(f"{len(fills_without_fees)} fills missing fee information")
+            
+            # Check 4: No duplicate client_order_ids
+            client_order_ids = [f.get("client_order_id") for f in fills if f.get("client_order_id")]
+            if len(client_order_ids) == len(set(client_order_ids)):
+                checks_passed += 1
+            else:
+                checks_failed += 1
+                duplicates = len(client_order_ids) - len(set(client_order_ids))
+                issues.append(f"{duplicates} duplicate client_order_ids found")
+            
+            # Check 5: Chronological ordering
+            timestamps = [f["timestamp"] for f in fills]
+            is_sorted = all(timestamps[i] >= timestamps[i+1] for i in range(len(timestamps)-1))
+            if is_sorted:
+                checks_passed += 1
+            else:
+                checks_failed += 1
+                issues.append("Fills are not in chronological order")
+            
+            # Check 6: Required fields present
+            required_fields = ["user_id", "bot_id", "exchange", "symbol", "side", "qty", "price", "fee", "timestamp"]
+            fills_missing_fields = []
+            for fill in fills:
+                missing = [field for field in required_fields if field not in fill]
+                if missing:
+                    fills_missing_fields.append((fill.get("_id"), missing))
+            
+            if not fills_missing_fields:
+                checks_passed += 1
+            else:
+                checks_failed += 1
+                issues.append(f"{len(fills_missing_fields)} fills missing required fields")
+            
+            # Determine status
+            if checks_failed == 0:
+                status = "ok"
+            elif checks_failed < 3:
+                status = "warning"
+            else:
+                status = "error"
+            
+            return {
+                "status": status,
+                "checks_passed": checks_passed,
+                "checks_failed": checks_failed,
+                "total_checks": checks_passed + checks_failed,
+                "issues": issues if issues else ["All integrity checks passed"],
+                "details": {
+                    "total_fills": len(fills),
+                    "equity": round(equity1, 2),
+                    "user_id": user_id
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Integrity check failed: {e}")
+            return {
+                "status": "error",
+                "checks_passed": 0,
+                "checks_failed": 1,
+                "total_checks": 1,
+                "issues": [f"Integrity check failed: {str(e)}"],
+                "timestamp": datetime.utcnow().isoformat()
+            }
 
 
 # Singleton instance

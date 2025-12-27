@@ -317,3 +317,57 @@ async def get_audit_trail(
     except Exception as e:
         logger.error(f"Error getting audit trail: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get audit trail: {str(e)}")
+
+
+@router.get("/ledger/reconcile")
+async def reconcile_ledger(
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_database)
+):
+    """
+    Reconcile ledger with legacy trades collection
+    
+    Compares ledger-based equity with trades collection totals
+    and identifies any discrepancies.
+    
+    Returns detailed reconciliation report with status and recommendations.
+    """
+    try:
+        ledger = get_ledger_service(db)
+        user_id = current_user["_id"]
+        
+        report = await ledger.reconcile_with_trades_collection(user_id)
+        
+        return report
+    except Exception as e:
+        logger.error(f"Error reconciling ledger: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to reconcile ledger: {str(e)}")
+
+
+@router.get("/ledger/verify-integrity")
+async def verify_ledger_integrity(
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_database)
+):
+    """
+    Verify ledger integrity for current user
+    
+    Performs multiple integrity checks:
+    - Equity recomputation consistency
+    - Fee field completeness
+    - Duplicate detection
+    - Chronological ordering
+    - Required fields presence
+    
+    Returns detailed verification report with passed/failed checks.
+    """
+    try:
+        ledger = get_ledger_service(db)
+        user_id = current_user["_id"]
+        
+        report = await ledger.verify_integrity(user_id)
+        
+        return report
+    except Exception as e:
+        logger.error(f"Error verifying ledger integrity: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to verify ledger integrity: {str(e)}")

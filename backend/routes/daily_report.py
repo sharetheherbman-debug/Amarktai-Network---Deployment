@@ -566,3 +566,84 @@ async def get_report_config():
             "smtp_configured": bool(daily_report_service.smtp_user)
         }
     }
+
+
+@router.post("/admin/reinvest/trigger")
+async def trigger_manual_reinvestment(
+    data: dict = None,
+    user_id: str = Depends(get_current_user)
+):
+    """Manually trigger daily reinvestment cycle (admin only)
+    
+    Args:
+        data: Optional dict with "user_id" key to run for specific user
+        user_id: Current user ID from auth (must be admin)
+        
+    Returns:
+        Reinvestment cycle results
+    """
+    try:
+        # Verify admin
+        if not await is_admin(user_id):
+            raise HTTPException(status_code=403, detail="Admin access required")
+        
+        # Get reinvestment service
+        from services.daily_reinvestment import get_reinvestment_service
+        from database import get_database
+        
+        db = await get_database()
+        reinvest_service = get_reinvestment_service(db)
+        
+        # Get target user if specified
+        target_user_id = data.get("user_id") if data else None
+        
+        # Trigger cycle
+        result = await reinvest_service.trigger_manual_cycle(target_user_id)
+        
+        return {
+            "success": True,
+            "message": "Reinvestment cycle triggered",
+            "result": result
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Manual reinvestment trigger error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/reinvest/status")
+async def get_reinvestment_status(
+    user_id: str = Depends(get_current_user)
+):
+    """Get daily reinvestment scheduler status (admin only)"""
+    try:
+        # Verify admin
+        if not await is_admin(user_id):
+            raise HTTPException(status_code=403, detail="Admin access required")
+        
+        # Get reinvestment service
+        from services.daily_reinvestment import get_reinvestment_service
+        from database import get_database
+        
+        db = await get_database()
+        reinvest_service = get_reinvestment_service(db)
+        
+        return {
+            "success": True,
+            "is_running": reinvest_service.is_running,
+            "daily_time": reinvest_service.daily_time,
+            "last_run": reinvest_service.last_run.isoformat() if reinvest_service.last_run else None,
+            "config": {
+                "reinvest_threshold": reinvest_service.reinvest_threshold,
+                "reinvest_top_n": reinvest_service.reinvest_top_n,
+                "reinvest_percentage": reinvest_service.reinvest_percentage
+            }
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get reinvestment status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -128,6 +128,12 @@ async def lifespan(app: FastAPI):
         flokx.set_credentials(flokx_key)
         logger.info("🎯 FLOKx integration configured")
     
+    # Start Daily Reinvestment Scheduler
+    from services.daily_reinvestment import get_reinvestment_service
+    reinvest_service = get_reinvestment_service(db)
+    reinvest_service.start()
+    logger.info("💰 Daily Reinvestment Scheduler started")
+    
     logger.info("🚀 All autonomous systems operational")
     
     yield
@@ -142,6 +148,7 @@ async def lifespan(app: FastAPI):
     ai_scheduler.stop()
     autopilot_production.stop()
     risk_management.stop()
+    reinvest_service.stop()  # Stop reinvestment scheduler
     
     # Close CCXT async sessions
     try:
