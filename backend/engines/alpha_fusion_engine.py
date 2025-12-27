@@ -25,6 +25,10 @@ from engines.macro_news_monitor import macro_monitor, MacroSignal
 
 logger = logging.getLogger(__name__)
 
+# Position sizing constants
+MIN_POSITION_MULTIPLIER = 0.5  # Minimum position size (50% of base)
+MAX_POSITION_MULTIPLIER = 1.5  # Maximum position size (150% of base)
+
 
 class SignalStrength(Enum):
     """Signal strength classification"""
@@ -302,7 +306,7 @@ class AlphaFusionEngine:
         # Calculate position sizing and risk parameters
         # Adjust based on signal strength and confidence
         position_multiplier = 1.0 + (weighted_score * avg_confidence * 0.5)
-        position_multiplier = max(0.5, min(1.5, position_multiplier))
+        position_multiplier = max(MIN_POSITION_MULTIPLIER, min(MAX_POSITION_MULTIPLIER, position_multiplier))
         
         # Get regime-based parameters if available
         if regime_state:

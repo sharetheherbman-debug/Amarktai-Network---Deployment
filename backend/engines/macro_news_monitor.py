@@ -5,7 +5,7 @@ Tracks macroeconomic events (CPI, Fed rates, etc.) and adjusts portfolio risk
 
 import aiohttp
 import asyncio
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass
 from enum import Enum
@@ -138,7 +138,7 @@ class MacroNewsMonitor:
         actual: Optional[float],
         expected: Optional[float],
         previous: Optional[float]
-    ) -> tuple[RiskImpact, float]:
+    ) -> Tuple[RiskImpact, float]:
         """
         Analyze impact of macro event on crypto markets
         

@@ -6,7 +6,7 @@ Combines textual insights with quantitative signals
 
 import aiohttp
 import asyncio
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timezone, timedelta
 from dataclasses import dataclass
 from enum import Enum

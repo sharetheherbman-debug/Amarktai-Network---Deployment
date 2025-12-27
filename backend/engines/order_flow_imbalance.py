@@ -113,6 +113,15 @@ class OrderFlowImbalanceCalculator:
         e_n = I{P^b_n >= P^b_{n-1}}q^b_n - I{P^b_n <= P^b_{n-1}}q^b_{n-1}
               - I{P^a_n <= P^a_{n-1}}q^a_n + I{P^a_n >= P^a_{n-1}}q^a_{n-1}
         
+        Where:
+        - P^b = Bid price, P^a = Ask price
+        - q^b = Bid quantity, q^a = Ask quantity
+        - I{condition} = Indicator function (1 if true, 0 if false)
+        - n = current snapshot, n-1 = previous snapshot
+        
+        Positive OFI indicates buying pressure (bid side strengthening)
+        Negative OFI indicates selling pressure (ask side strengthening)
+        
         Args:
             symbol: Trading pair
             
@@ -138,9 +147,13 @@ class OrderFlowImbalanceCalculator:
         q_a_n_1 = previous.ask_qty
         
         # Calculate OFI using the formula
+        # Term 1: Bid improvement component
         term1 = self._indicator(P_b_n >= P_b_n_1) * q_b_n
+        # Term 2: Bid deterioration component
         term2 = self._indicator(P_b_n <= P_b_n_1) * q_b_n_1
+        # Term 3: Ask deterioration component
         term3 = self._indicator(P_a_n <= P_a_n_1) * q_a_n
+        # Term 4: Ask improvement component
         term4 = self._indicator(P_a_n >= P_a_n_1) * q_a_n_1
         
         e_n = term1 - term2 - term3 + term4
