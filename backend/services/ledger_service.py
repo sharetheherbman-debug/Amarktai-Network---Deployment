@@ -171,7 +171,8 @@ class LedgerService:
     
     async def compute_equity(
         self,
-        user_id: str,
+        user_id: Optional[str] = None,
+        bot_id: Optional[str] = None,
         currency: str = "USDT",
         include_unrealized: bool = True
     ) -> float:
@@ -179,10 +180,19 @@ class LedgerService:
         Compute total equity from fills and events
         
         Equity = Starting Capital + Realized PnL + Unrealized PnL - Fees
+        
+        Can compute for user_id or bot_id
         """
+        # Determine the query target
+        target_id = user_id or bot_id
+        target_field = "user_id" if user_id else "bot_id"
+        
+        if not target_id:
+            raise ValueError("Must provide either user_id or bot_id")
+        
         # Get funding events
         funding_query = {
-            "user_id": user_id,
+            target_field: target_id,
             "event_type": "funding",
             "currency": currency
         }
@@ -192,25 +202,25 @@ class LedgerService:
         starting_capital = sum(event.get("amount", 0) for event in funding_events)
         
         # Get realized PnL from closed fills
-        realized_pnl = await self.compute_realized_pnl(user_id, currency=currency)
+        realized_pnl = await self.compute_realized_pnl(user_id=user_id, bot_id=bot_id, currency=currency)
         
         # Get unrealized PnL from open positions
         unrealized_pnl = 0
         if include_unrealized:
-            unrealized_pnl = await self.compute_unrealized_pnl(user_id, currency=currency)
+            unrealized_pnl = await self.compute_unrealized_pnl(user_id=user_id, bot_id=bot_id, currency=currency)
         
         # Get total fees paid
-        fees_paid = await self.compute_fees_paid(user_id, currency=currency)
+        fees_paid = await self.compute_fees_paid(user_id=user_id, bot_id=bot_id, currency=currency)
         
         equity = starting_capital + realized_pnl + unrealized_pnl - fees_paid
         
-        logger.debug(f"Equity calculation for {user_id}: starting={starting_capital}, realized={realized_pnl}, unrealized={unrealized_pnl}, fees={fees_paid}, total={equity}")
+        logger.debug(f"Equity calculation for {target_field}={target_id}: starting={starting_capital}, realized={realized_pnl}, unrealized={unrealized_pnl}, fees={fees_paid}, total={equity}")
         
         return equity
     
     async def compute_realized_pnl(
         self,
-        user_id: str,
+        user_id: Optional[str] = None,
         bot_id: Optional[str] = None,
         since: Optional[datetime] = None,
         until: Optional[datetime] = None,
@@ -220,10 +230,17 @@ class LedgerService:
         Compute realized PnL from closed positions
         
         Method: Match buys and sells using FIFO
+        
+        Can compute for user_id or bot_id
         """
-        query = {"user_id": user_id}
-        if bot_id:
-            query["bot_id"] = bot_id
+        # Determine the query target
+        target_id = user_id or bot_id
+        target_field = "user_id" if user_id else "bot_id"
+        
+        if not target_id:
+            raise ValueError("Must provide either user_id or bot_id")
+        
+        query = {target_field: target_id}
         if since or until:
             query["timestamp"] = {}
             if since:
@@ -280,7 +297,7 @@ class LedgerService:
     
     async def compute_unrealized_pnl(
         self,
-        user_id: str,
+        user_id: Optional[str] = None,
         bot_id: Optional[str] = None,
         currency: str = "USDT"
     ) -> float:
@@ -289,6 +306,8 @@ class LedgerService:
         
         Note: Requires current market prices (not implemented in Phase 1)
         Returns 0 for now as this requires price feed integration
+        
+        Can compute for user_id or bot_id
         """
         # TODO: Implement with price feed in Phase 2
         logger.debug(f"Unrealized PnL calculation not implemented yet (requires price feed)")
@@ -296,16 +315,25 @@ class LedgerService:
     
     async def compute_fees_paid(
         self,
-        user_id: str,
+        user_id: Optional[str] = None,
         bot_id: Optional[str] = None,
         since: Optional[datetime] = None,
         until: Optional[datetime] = None,
         currency: str = "USDT"
     ) -> float:
-        """Compute total fees paid from fills"""
-        query = {"user_id": user_id}
-        if bot_id:
-            query["bot_id"] = bot_id
+        """
+        Compute total fees paid from fills
+        
+        Can compute for user_id or bot_id
+        """
+        # Determine the query target
+        target_id = user_id or bot_id
+        target_field = "user_id" if user_id else "bot_id"
+        
+        if not target_id:
+            raise ValueError("Must provide either user_id or bot_id")
+        
+        query = {target_field: target_id}
         if since or until:
             query["timestamp"] = {}
             if since:
@@ -330,16 +358,26 @@ class LedgerService:
     
     async def compute_drawdown(
         self,
-        user_id: str,
+        user_id: Optional[str] = None,
+        bot_id: Optional[str] = None,
         currency: str = "USDT"
     ) -> Tuple[float, float]:
         """
         Compute current drawdown and max drawdown
         
         Returns: (current_drawdown_pct, max_drawdown_pct)
+        
+        Can compute for user_id or bot_id
         """
+        # Determine the query target
+        target_id = user_id or bot_id
+        target_field = "user_id" if user_id else "bot_id"
+        
+        if not target_id:
+            raise ValueError("Must provide either user_id or bot_id")
+        
         # Get equity time series
-        fills = await self.get_fills(user_id=user_id, limit=10000)
+        fills = await self.get_fills(**{target_field: target_id}, limit=10000)
         
         if not fills:
             return 0.0, 0.0
@@ -350,7 +388,7 @@ class LedgerService:
         
         # Get starting capital
         funding_query = {
-            "user_id": user_id,
+            target_field: target_id,
             "event_type": "funding",
             "currency": currency
         }
@@ -499,6 +537,160 @@ class LedgerService:
             "total_fees": 0.0,
             "avg_qty": 0.0
         }
+    
+    async def get_trade_count(
+        self,
+        user_id: Optional[str] = None,
+        bot_id: Optional[str] = None,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None
+    ) -> int:
+        """
+        Count trades for a bot/user in a time period
+        
+        Used by order pipeline for trade limiting
+        """
+        query = {}
+        
+        if user_id:
+            query["user_id"] = user_id
+        if bot_id:
+            query["bot_id"] = bot_id
+        if since or until:
+            query["timestamp"] = {}
+            if since:
+                query["timestamp"]["$gte"] = since
+            if until:
+                query["timestamp"]["$lte"] = until
+        
+        count = await self.fills_ledger.count_documents(query)
+        return count
+    
+    async def compute_daily_pnl(
+        self,
+        user_id: Optional[str] = None,
+        bot_id: Optional[str] = None,
+        currency: str = "USDT"
+    ) -> float:
+        """
+        Calculate PnL for today
+        
+        Used by circuit breaker to detect daily loss triggers
+        """
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Calculate realized PnL for today
+        realized_pnl = await self.compute_realized_pnl(
+            user_id=user_id,
+            bot_id=bot_id,
+            since=today_start,
+            currency=currency
+        )
+        
+        # Subtract today's fees
+        fees = await self.compute_fees_paid(
+            user_id=user_id,
+            bot_id=bot_id,
+            since=today_start,
+            currency=currency
+        )
+        
+        return realized_pnl - fees
+    
+    async def get_consecutive_losses(
+        self,
+        user_id: Optional[str] = None,
+        bot_id: Optional[str] = None,
+        limit: int = 100
+    ) -> int:
+        """
+        Track consecutive losing trades
+        
+        Used by circuit breaker to detect loss streaks
+        """
+        query = {}
+        if user_id:
+            query["user_id"] = user_id
+        if bot_id:
+            query["bot_id"] = bot_id
+        
+        # Get recent fills sorted by timestamp descending
+        cursor = self.fills_ledger.find(query).sort("timestamp", -1).limit(limit)
+        fills = await cursor.to_list(length=limit)
+        
+        if not fills:
+            return 0
+        
+        # Group fills by symbol to track positions
+        # Simplified: Check if recent trades resulted in losses
+        # This is a simplified heuristic - proper implementation would need full position tracking
+        consecutive = 0
+        positions = {}
+        
+        for fill in reversed(fills):  # Process chronologically
+            symbol = fill["symbol"]
+            side = fill["side"]
+            qty = fill["qty"]
+            price = fill["price"]
+            
+            if symbol not in positions:
+                positions[symbol] = []
+            
+            if side == "buy":
+                positions[symbol].append({"qty": qty, "price": price})
+            elif side == "sell" and positions[symbol]:
+                # Close position
+                remaining_qty = qty
+                trade_pnl = 0
+                
+                while remaining_qty > 0 and positions[symbol]:
+                    buy = positions[symbol][0]
+                    
+                    if buy["qty"] <= remaining_qty:
+                        closed_qty = buy["qty"]
+                        trade_pnl += closed_qty * (price - buy["price"])
+                        remaining_qty -= closed_qty
+                        positions[symbol].pop(0)
+                    else:
+                        closed_qty = remaining_qty
+                        trade_pnl += closed_qty * (price - buy["price"])
+                        buy["qty"] -= closed_qty
+                        remaining_qty = 0
+                
+                # Check if this was a loss
+                if trade_pnl < 0:
+                    consecutive += 1
+                else:
+                    # Reset counter on a win
+                    consecutive = 0
+        
+        return consecutive
+    
+    async def get_error_rate(
+        self,
+        user_id: Optional[str] = None,
+        bot_id: Optional[str] = None,
+        hours: int = 1
+    ) -> int:
+        """
+        Track errors per hour for circuit breaker
+        
+        Looks for error events in ledger_events
+        """
+        since = datetime.utcnow() - timedelta(hours=hours)
+        
+        query = {
+            "event_type": "error",
+            "timestamp": {"$gte": since}
+        }
+        
+        if user_id:
+            query["user_id"] = user_id
+        if bot_id:
+            query["bot_id"] = bot_id
+        
+        count = await self.ledger_events.count_documents(query)
+        return count
 
 
 # Singleton instance

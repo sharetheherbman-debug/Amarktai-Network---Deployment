@@ -209,7 +209,6 @@ async def get_circuit_breaker_status(
     - tripped: Boolean indicating if breaker is tripped
     - reason: Why it tripped
     - tripped_at: When it tripped
-    - metrics_at_trip: Metric values when tripped
     - can_reset: Whether manual reset is allowed
     """
     try:
@@ -220,15 +219,37 @@ async def get_circuit_breaker_status(
         if not user_id or not current_user.get("is_admin"):
             user_id = current_user_id
         
-        if bot_id:
-            status = await pipeline.circuit_breaker.get_status(bot_id=bot_id)
-        else:
-            status = await pipeline.circuit_breaker.get_status(user_id=user_id)
+        # Determine entity to check
+        entity_type = "bot" if bot_id else "user"
+        entity_id = bot_id or user_id
         
-        return {
-            **status,
-            "data_source": "circuit_breaker"
-        }
+        # Query circuit breaker state
+        breaker = await pipeline.circuit_breaker_state.find_one({
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "tripped": True,
+            "reset_at": None
+        })
+        
+        if breaker:
+            return {
+                "tripped": True,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "trigger_reason": breaker.get("trigger_reason"),
+                "trigger_type": breaker.get("trigger_type"),
+                "tripped_at": breaker.get("tripped_at").isoformat() if breaker.get("tripped_at") else None,
+                "metrics_at_trip": breaker.get("metrics_at_trip", {}),
+                "can_reset": True,
+                "data_source": "circuit_breaker"
+            }
+        else:
+            return {
+                "tripped": False,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "data_source": "circuit_breaker"
+            }
         
     except Exception as e:
         logger.error(f"Get circuit breaker status error: {e}", exc_info=True)
@@ -263,20 +284,17 @@ async def reset_circuit_breaker(
             raise HTTPException(status_code=403, detail="Admin access required for user-level resets")
         
         # Perform reset
-        if request.bot_id:
-            success = await pipeline.circuit_breaker.reset(
-                bot_id=request.bot_id,
-                reset_by=current_user_id,
-                reason=request.reason
-            )
-        else:
-            success = await pipeline.circuit_breaker.reset(
-                user_id=request.user_id,
-                reset_by=current_user_id,
-                reason=request.reason
-            )
+        entity_type = "bot" if request.bot_id else "user"
+        entity_id = request.bot_id or request.user_id
         
-        if success:
+        result = await pipeline.reset_circuit_breaker(
+            entity_id=entity_id,
+            entity_type=entity_type,
+            reset_by_user_id=current_user_id,
+            reason=request.reason
+        )
+        
+        if result["success"]:
             return {
                 "success": True,
                 "message": "Circuit breaker reset successfully",
@@ -285,7 +303,7 @@ async def reset_circuit_breaker(
                 "timestamp": datetime.utcnow().isoformat()
             }
         else:
-            raise HTTPException(status_code=400, detail="Circuit breaker not tripped or reset failed")
+            raise HTTPException(status_code=400, detail=result.get("message", "Circuit breaker not tripped or reset failed"))
         
     except HTTPException:
         raise
@@ -312,11 +330,19 @@ async def get_circuit_breaker_history(
         pipeline = get_order_pipeline(db)
         user_id = str(current_user["_id"])
         
-        history = await pipeline.circuit_breaker.get_history(
-            user_id=user_id,
-            bot_id=bot_id,
-            limit=limit
-        )
+        # Build query
+        query = {}
+        if bot_id:
+            query["entity_type"] = "bot"
+            query["entity_id"] = bot_id
+            # Also verify the bot belongs to the user
+            bot = await db["bots"].find_one({"id": bot_id, "user_id": user_id})
+            if not bot:
+                raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Get circuit breaker history
+        cursor = pipeline.circuit_breaker_state.find(query).sort("tripped_at", -1).limit(limit)
+        history = await cursor.to_list(length=limit)
         
         return {
             "history": [
@@ -324,8 +350,8 @@ async def get_circuit_breaker_history(
                     "entity_type": event["entity_type"],
                     "entity_id": event["entity_id"],
                     "trigger_reason": event["trigger_reason"],
-                    "trigger_type": event["trigger_type"],
-                    "tripped_at": event["tripped_at"].isoformat(),
+                    "trigger_type": event.get("trigger_type"),
+                    "tripped_at": event["tripped_at"].isoformat() if event.get("tripped_at") else None,
                     "reset_at": event.get("reset_at").isoformat() if event.get("reset_at") else None,
                     "reset_by_user_id": event.get("reset_by_user_id"),
                     "reset_reason": event.get("reset_reason"),
@@ -337,6 +363,8 @@ async def get_circuit_breaker_history(
             "data_source": "circuit_breaker"
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Get circuit breaker history error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to get circuit breaker history: {str(e)}")
@@ -362,11 +390,37 @@ async def get_limits_status(
     try:
         pipeline = get_order_pipeline(db)
         user_id = str(current_user["_id"])
+        ledger = pipeline.ledger
         
-        status = await pipeline.trade_limiter.get_status(user_id=user_id, bot_id=bot_id)
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Get user daily count
+        user_count = await ledger.get_trade_count(user_id=user_id, since=today_start)
+        user_limit = pipeline.max_trades_per_user_daily
+        
+        # Get bot daily count if specified
+        bot_count = 0
+        bot_limit = pipeline.max_trades_per_bot_daily
+        if bot_id:
+            bot_count = await ledger.get_trade_count(bot_id=bot_id, since=today_start)
         
         return {
-            **status,
+            "user_daily": {
+                "used": user_count,
+                "limit": user_limit,
+                "remaining": max(0, user_limit - user_count),
+                "percentage": round((user_count / user_limit * 100) if user_limit > 0 else 0, 1)
+            },
+            "bot_daily": {
+                "used": bot_count,
+                "limit": bot_limit,
+                "remaining": max(0, bot_limit - bot_count),
+                "percentage": round((bot_count / bot_limit * 100) if bot_limit > 0 else 0, 1)
+            } if bot_id else None,
+            "burst_limit": {
+                "limit": pipeline.burst_limit_orders,
+                "window_seconds": pipeline.burst_limit_window_seconds
+            },
             "data_source": "trade_limiter"
         }
         
