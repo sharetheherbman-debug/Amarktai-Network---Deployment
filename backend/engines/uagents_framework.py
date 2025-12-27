@@ -56,6 +56,7 @@ class RegimeAgent:
         """Initialize regime detection agent"""
         if not UAGENTS_AVAILABLE:
             logger.error("uAgents not available")
+            self.agent = None
             return
         
         self.agent = Agent(
@@ -130,6 +131,7 @@ class OFIAgent:
         """Initialize OFI agent"""
         if not UAGENTS_AVAILABLE:
             logger.error("uAgents not available")
+            self.agent = None
             return
         
         self.agent = Agent(
@@ -179,6 +181,7 @@ class WhaleAgent:
         """Initialize whale monitoring agent"""
         if not UAGENTS_AVAILABLE:
             logger.error("uAgents not available")
+            self.agent = None
             return
         
         self.agent = Agent(
@@ -229,6 +232,7 @@ class AlphaFusionAgent:
         """Initialize alpha fusion agent"""
         if not UAGENTS_AVAILABLE:
             logger.error("uAgents not available")
+            self.agent = None
             return
         
         self.agent = Agent(
@@ -290,6 +294,7 @@ class SelfHealingAgent:
         """Initialize self-healing agent"""
         if not UAGENTS_AVAILABLE:
             logger.error("uAgents not available")
+            self.agent = None
             return
         
         self.agent = Agent(
@@ -345,6 +350,11 @@ class AgentBureau:
         if not UAGENTS_AVAILABLE:
             logger.error("uAgents not available")
             self.bureau = None
+            self.regime_agent = None
+            self.ofi_agent = None
+            self.whale_agent = None
+            self.alpha_fusion_agent = None
+            self.self_healing_agent = None
             return
         
         self.bureau = Bureau()
@@ -356,16 +366,16 @@ class AgentBureau:
         self.alpha_fusion_agent = AlphaFusionAgent()
         self.self_healing_agent = SelfHealingAgent()
         
-        # Add agents to bureau
-        if self.regime_agent:
+        # Add agents to bureau if they were successfully created
+        if self.regime_agent and hasattr(self.regime_agent, 'agent') and self.regime_agent.agent:
             self.bureau.add(self.regime_agent.agent)
-        if self.ofi_agent:
+        if self.ofi_agent and hasattr(self.ofi_agent, 'agent') and self.ofi_agent.agent:
             self.bureau.add(self.ofi_agent.agent)
-        if self.whale_agent:
+        if self.whale_agent and hasattr(self.whale_agent, 'agent') and self.whale_agent.agent:
             self.bureau.add(self.whale_agent.agent)
-        if self.alpha_fusion_agent:
+        if self.alpha_fusion_agent and hasattr(self.alpha_fusion_agent, 'agent') and self.alpha_fusion_agent.agent:
             self.bureau.add(self.alpha_fusion_agent.agent)
-        if self.self_healing_agent:
+        if self.self_healing_agent and hasattr(self.self_healing_agent, 'agent') and self.self_healing_agent.agent:
             self.bureau.add(self.self_healing_agent.agent)
         
         logger.info("Agent Bureau initialized with 5 agents")

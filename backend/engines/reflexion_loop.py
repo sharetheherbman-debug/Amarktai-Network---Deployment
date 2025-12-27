@@ -10,6 +10,8 @@ from datetime import datetime, timezone, timedelta
 import logging
 import json
 
+logger = logging.getLogger(__name__)
+
 try:
     from langchain_chroma import Chroma
     from langchain_openai import OpenAIEmbeddings
@@ -18,8 +20,6 @@ try:
 except ImportError:
     LANGCHAIN_AVAILABLE = False
     logger.warning("LangChain not available - Episodic Memory disabled")
-
-logger = logging.getLogger(__name__)
 
 
 class ReflexionLoop:
@@ -56,7 +56,7 @@ class ReflexionLoop:
         self.task = None
         
         logger.info(
-            f"Reflexion Loop initialized: check interval {check_interval}s, "
+            f"Reflexion Loop initialized: check interval {self.check_interval}s, "
             f"memory {'enabled' if self.memory_enabled else 'disabled'}"
         )
     
