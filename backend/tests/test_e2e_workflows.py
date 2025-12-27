@@ -175,7 +175,7 @@ class TestBotLifecycleWorkflow:
 class TestTradeExecutionWorkflow:
     """Test trade execution → ledger update → profit calculation workflow."""
     
-    @pytest:mark.asyncio
+    @pytest.mark.asyncio
     async def test_trade_execution_to_profit_calculation(self):
         """
         Test: Bot signals trade → Execute on exchange → Record in DB → Update ledger → Calculate profit

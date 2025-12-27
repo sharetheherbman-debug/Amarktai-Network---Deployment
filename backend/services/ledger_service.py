@@ -574,13 +574,21 @@ class LedgerService:
         # Tracks positions per symbol and calculates realized gains on each sell
         positions = {}  # symbol -> [list of (qty, cost_basis)]
         
+        # Pre-group fills by date_key for efficient processing (avoids O(n²))
+        fills_by_date = {}
+        for fill in fills:
+            date_key = fill["timestamp"].strftime(date_format)
+            if date_key not in fills_by_date:
+                fills_by_date[date_key] = []
+            fills_by_date[date_key].append(fill)
+        
         series = []
         for date_key in sorted(periods_data.keys()):
             data = periods_data[date_key]
             realized_pnl = 0.0
             
-            # Get fills for this period to calculate PnL
-            period_fills = [f for f in fills if f["timestamp"].strftime(date_format) == date_key]
+            # Get fills for this period (already grouped)
+            period_fills = fills_by_date.get(date_key, [])
             
             for fill in period_fills:
                 symbol = fill["symbol"]
@@ -670,13 +678,17 @@ class LedgerService:
         - When a sell occurs, match against oldest buys
         - Track each closed trade as win/loss
         - Win rate = wins / (wins + losses)
+        
+        Note: For high-volume scenarios (>10k fills), consider implementing
+        pagination or streaming to avoid memory issues.
         """
         query = {"user_id": user_id}
         if bot_id:
             query["bot_id"] = bot_id
         
         # Get all fills ordered by timestamp
-        fills = await self.get_fills(user_id=user_id, bot_id=bot_id, limit=100000)
+        # For very high-volume trading, this should be paginated
+        fills = await self.get_fills(user_id=user_id, bot_id=bot_id, limit=10000)
         
         if not fills:
             return None
