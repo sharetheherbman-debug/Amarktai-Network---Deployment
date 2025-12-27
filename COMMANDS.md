@@ -1,7 +1,7 @@
 # AI Command Router - Complete Command Reference
 
 **Version:** 2.0 - Production Grade  
-**Last Updated:** December 27, 2025
+**Last Updated:** December 2025
 
 This document provides a comprehensive reference for all AI commands supported by the Amarktai Network AI Command Router.
 

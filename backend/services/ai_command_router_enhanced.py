@@ -444,7 +444,8 @@ class ToolRegistry:
     async def _get_alerts(self, user_id: str) -> Dict[str, Any]:
         """Tool: Get alerts"""
         try:
-            from database import alerts_collection
+            # Access alerts_collection through db parameter
+            alerts_collection = self.db["alerts"]
             
             alerts = await alerts_collection.find(
                 {"user_id": user_id, "resolved": False},
@@ -587,11 +588,11 @@ class EnhancedAICommandRouter:
         # Try fuzzy name matching
         bot_names = {bot.get("name"): bot for bot in bots}
         
-        # Use rapidfuzz to find best match
+        # Use rapidfuzz to find best match - WRatio for better handling of different length strings
         match = process.extractOne(
             bot_identifier,
             bot_names.keys(),
-            scorer=fuzz.ratio,
+            scorer=fuzz.WRatio,  # WRatio better for strings of different lengths
             score_cutoff=threshold
         )
         
@@ -754,12 +755,12 @@ class EnhancedAICommandRouter:
                     "BOT_NOT_FOUND"
                 )
             
-            # Use tool registry
+            # Use tool registry for bot lifecycle commands
             tool_map = {
                 "pause_bot": "pause_bot",
                 "resume_bot": "resume_bot",
                 "stop_bot": "stop_bot",
-                "start_bot": "resume_bot"  # Start is same as resume
+                "start_bot": "resume_bot"  # Note: Start uses resume tool (activates inactive bot)
             }
             
             return await self.tool_registry.call_tool(
