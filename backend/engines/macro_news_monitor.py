@@ -1,0 +1,359 @@
+"""
+Macro News Monitor
+Tracks macroeconomic events (CPI, Fed rates, etc.) and adjusts portfolio risk
+"""
+
+import aiohttp
+import asyncio
+from typing import Dict, List, Optional, Tuple
+from datetime import datetime, timezone, timedelta
+from dataclasses import dataclass
+from enum import Enum
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class MacroEventType(Enum):
+    """Types of macro events"""
+    FED_RATE_DECISION = "fed_rate_decision"
+    CPI_RELEASE = "cpi_release"
+    UNEMPLOYMENT = "unemployment"
+    GDP_REPORT = "gdp_report"
+    TREASURY_YIELD = "treasury_yield"
+    INFLATION_DATA = "inflation_data"
+    GEOPOLITICAL = "geopolitical"
+
+
+class RiskImpact(Enum):
+    """Risk impact classification"""
+    RISK_ON = "risk_on"  # Favorable for crypto
+    RISK_OFF = "risk_off"  # Unfavorable for crypto
+    NEUTRAL = "neutral"
+
+
+@dataclass
+class MacroEvent:
+    """Macroeconomic event"""
+    timestamp: datetime
+    event_type: MacroEventType
+    title: str
+    description: str
+    expected_value: Optional[float]
+    actual_value: Optional[float]
+    previous_value: Optional[float]
+    impact: RiskImpact
+    risk_adjustment: float  # Suggested portfolio risk adjustment (-1 to 1)
+
+
+@dataclass
+class MacroSignal:
+    """Trading signal from macro events"""
+    timestamp: datetime
+    signal: str  # 'increase_risk', 'decrease_risk', 'maintain'
+    risk_multiplier: float  # 0.5 to 1.5
+    reason: str
+    recent_events: List[MacroEvent]
+
+
+class MacroNewsMonitor:
+    """
+    Monitors macroeconomic events and adjusts portfolio risk dynamically
+    Tracks: CPI, Fed rates, unemployment, GDP, etc.
+    """
+    
+    def __init__(self, lookback_days: int = 30):
+        """
+        Initialize macro news monitor
+        
+        Args:
+            lookback_days: Days of history to maintain
+        """
+        self.lookback_days = lookback_days
+        self.events: List[MacroEvent] = []
+        self.current_risk_multiplier = 1.0
+        
+        # Economic calendar (simplified - in production, integrate with API)
+        self.scheduled_events = []
+    
+    async def add_event(
+        self,
+        event_type: MacroEventType,
+        title: str,
+        description: str,
+        actual_value: Optional[float] = None,
+        expected_value: Optional[float] = None,
+        previous_value: Optional[float] = None
+    ) -> MacroEvent:
+        """
+        Add macro event to monitoring
+        
+        Args:
+            event_type: Type of event
+            title: Event title
+            description: Event description
+            actual_value: Actual reported value
+            expected_value: Expected value
+            previous_value: Previous value
+            
+        Returns:
+            MacroEvent
+        """
+        # Determine impact based on event type and values
+        impact, risk_adjustment = self._analyze_event_impact(
+            event_type, actual_value, expected_value, previous_value
+        )
+        
+        event = MacroEvent(
+            timestamp=datetime.now(timezone.utc),
+            event_type=event_type,
+            title=title,
+            description=description,
+            expected_value=expected_value,
+            actual_value=actual_value,
+            previous_value=previous_value,
+            impact=impact,
+            risk_adjustment=risk_adjustment
+        )
+        
+        self.events.append(event)
+        
+        # Clean old events
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self.lookback_days)
+        self.events = [e for e in self.events if e.timestamp > cutoff]
+        
+        # Update current risk multiplier
+        self._update_risk_multiplier()
+        
+        logger.info(
+            f"Macro event: {title} - {impact.value} "
+            f"(risk adjustment: {risk_adjustment:+.2f})"
+        )
+        
+        return event
+    
+    def _analyze_event_impact(
+        self,
+        event_type: MacroEventType,
+        actual: Optional[float],
+        expected: Optional[float],
+        previous: Optional[float]
+    ) -> Tuple[RiskImpact, float]:
+        """
+        Analyze impact of macro event on crypto markets
+        
+        Args:
+            event_type: Type of event
+            actual: Actual value
+            expected: Expected value
+            previous: Previous value
+            
+        Returns:
+            (RiskImpact, risk_adjustment)
+        """
+        risk_adjustment = 0.0
+        
+        if event_type == MacroEventType.FED_RATE_DECISION:
+            # Lower rates = risk on, higher rates = risk off
+            if actual is not None and previous is not None:
+                if actual < previous:
+                    return RiskImpact.RISK_ON, 0.2  # Rate cut = bullish
+                elif actual > previous:
+                    return RiskImpact.RISK_OFF, -0.3  # Rate hike = bearish
+            return RiskImpact.NEUTRAL, 0.0
+        
+        elif event_type == MacroEventType.CPI_RELEASE:
+            # Lower than expected inflation = risk on
+            if actual is not None and expected is not None:
+                surprise = actual - expected
+                if surprise < -0.2:  # Lower than expected
+                    return RiskImpact.RISK_ON, 0.15
+                elif surprise > 0.2:  # Higher than expected
+                    return RiskImpact.RISK_OFF, -0.2
+            return RiskImpact.NEUTRAL, 0.0
+        
+        elif event_type == MacroEventType.UNEMPLOYMENT:
+            # Lower unemployment = risk on (generally)
+            if actual is not None and expected is not None:
+                if actual < expected:
+                    return RiskImpact.RISK_ON, 0.1
+                elif actual > expected:
+                    return RiskImpact.RISK_OFF, -0.15
+            return RiskImpact.NEUTRAL, 0.0
+        
+        elif event_type == MacroEventType.TREASURY_YIELD:
+            # Rising yields = risk off for crypto
+            if actual is not None and previous is not None:
+                change = actual - previous
+                if change > 0.2:  # Significant rise
+                    return RiskImpact.RISK_OFF, -0.25
+                elif change < -0.2:  # Significant fall
+                    return RiskImpact.RISK_ON, 0.2
+            return RiskImpact.NEUTRAL, 0.0
+        
+        elif event_type == MacroEventType.GEOPOLITICAL:
+            # Geopolitical events usually risk-off
+            return RiskImpact.RISK_OFF, -0.3
+        
+        return RiskImpact.NEUTRAL, 0.0
+    
+    def _update_risk_multiplier(self) -> None:
+        """Update current risk multiplier based on recent events"""
+        # Get events from last 7 days
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        recent_events = [e for e in self.events if e.timestamp > cutoff]
+        
+        if not recent_events:
+            self.current_risk_multiplier = 1.0
+            return
+        
+        # Calculate weighted average of risk adjustments
+        # More recent events have higher weight
+        total_adjustment = 0.0
+        total_weight = 0.0
+        
+        for event in recent_events:
+            days_ago = (datetime.now(timezone.utc) - event.timestamp).days
+            weight = 1.0 / (days_ago + 1)  # Recent events weighted more
+            total_adjustment += event.risk_adjustment * weight
+            total_weight += weight
+        
+        avg_adjustment = total_adjustment / total_weight if total_weight > 0 else 0.0
+        
+        # Convert to multiplier (0.5 to 1.5)
+        self.current_risk_multiplier = max(0.5, min(1.5, 1.0 + avg_adjustment))
+    
+    async def get_macro_signal(self) -> MacroSignal:
+        """
+        Get current macro signal for portfolio adjustment
+        
+        Returns:
+            MacroSignal with recommendation
+        """
+        # Get recent events
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        recent_events = [e for e in self.events if e.timestamp > cutoff]
+        
+        # Determine signal
+        if self.current_risk_multiplier > 1.1:
+            signal = 'increase_risk'
+            reason = 'Favorable macro environment detected'
+        elif self.current_risk_multiplier < 0.9:
+            signal = 'decrease_risk'
+            reason = 'Unfavorable macro conditions detected'
+        else:
+            signal = 'maintain'
+            reason = 'Neutral macro environment'
+        
+        # Add specifics
+        risk_on_count = sum(1 for e in recent_events if e.impact == RiskImpact.RISK_ON)
+        risk_off_count = sum(1 for e in recent_events if e.impact == RiskImpact.RISK_OFF)
+        
+        if risk_on_count > risk_off_count:
+            reason += f' ({risk_on_count} positive events)'
+        elif risk_off_count > risk_on_count:
+            reason += f' ({risk_off_count} negative events)'
+        
+        macro_signal = MacroSignal(
+            timestamp=datetime.now(timezone.utc),
+            signal=signal,
+            risk_multiplier=self.current_risk_multiplier,
+            reason=reason,
+            recent_events=recent_events[-5:]  # Last 5 events
+        )
+        
+        logger.info(
+            f"Macro signal: {signal} "
+            f"(risk multiplier: {self.current_risk_multiplier:.2f}) - {reason}"
+        )
+        
+        return macro_signal
+    
+    async def get_summary(self) -> Dict:
+        """
+        Get summary of macro events and current signal
+        
+        Returns:
+            Summary dictionary
+        """
+        signal = await self.get_macro_signal()
+        
+        # Event counts by type
+        event_counts = {}
+        for event_type in MacroEventType:
+            count = sum(1 for e in self.events if e.event_type == event_type)
+            if count > 0:
+                event_counts[event_type.value] = count
+        
+        # Impact distribution
+        risk_on = sum(1 for e in self.events if e.impact == RiskImpact.RISK_ON)
+        risk_off = sum(1 for e in self.events if e.impact == RiskImpact.RISK_OFF)
+        neutral = sum(1 for e in self.events if e.impact == RiskImpact.NEUTRAL)
+        
+        summary = {
+            'current_signal': signal.signal,
+            'risk_multiplier': signal.risk_multiplier,
+            'reason': signal.reason,
+            'total_events': len(self.events),
+            'event_counts': event_counts,
+            'impact_distribution': {
+                'risk_on': risk_on,
+                'risk_off': risk_off,
+                'neutral': neutral
+            },
+            'recent_events': [
+                {
+                    'timestamp': e.timestamp.isoformat(),
+                    'type': e.event_type.value,
+                    'title': e.title,
+                    'impact': e.impact.value,
+                    'risk_adjustment': e.risk_adjustment
+                }
+                for e in signal.recent_events
+            ]
+        }
+        
+        return summary
+    
+    async def simulate_events(self, n_events: int = 10) -> None:
+        """
+        Simulate macro events for testing
+        
+        Args:
+            n_events: Number of events to simulate
+        """
+        import random
+        
+        event_templates = [
+            (MacroEventType.FED_RATE_DECISION, "Fed Keeps Rates Steady", 5.25, 5.25, 5.00),
+            (MacroEventType.CPI_RELEASE, "CPI Below Expectations", 3.1, 3.3, 3.4),
+            (MacroEventType.UNEMPLOYMENT, "Unemployment Falls", 3.8, 4.0, 4.1),
+            (MacroEventType.TREASURY_YIELD, "10Y Treasury Yield Rises", 4.5, 4.3, 4.2),
+            (MacroEventType.GDP_REPORT, "GDP Growth Exceeds Forecasts", 2.8, 2.5, 2.3),
+            (MacroEventType.GEOPOLITICAL, "Geopolitical Tensions Rise", None, None, None)
+        ]
+        
+        for i in range(n_events):
+            template = random.choice(event_templates)
+            event_type, title, actual, expected, previous = template
+            
+            # Add some randomness
+            if actual is not None:
+                actual += random.uniform(-0.3, 0.3)
+            if expected is not None:
+                expected += random.uniform(-0.2, 0.2)
+            
+            await self.add_event(
+                event_type=event_type,
+                title=f"{title} (Simulated {i+1})",
+                description=f"Simulated macro event for testing",
+                actual_value=actual,
+                expected_value=expected,
+                previous_value=previous
+            )
+            
+            await asyncio.sleep(0.01)
+
+
+# Global instance
+macro_monitor = MacroNewsMonitor()

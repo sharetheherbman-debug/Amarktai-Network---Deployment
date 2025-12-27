@@ -229,6 +229,74 @@ async def websocket_endpoint(websocket: WebSocket, token: str = None):
         except:
             pass
 
+@app.websocket("/ws/decisions")
+async def decision_trace_websocket(websocket: WebSocket):
+    """WebSocket endpoint for streaming trading decisions in real-time"""
+    await websocket.accept()
+    logger.info("Decision trace WebSocket connected")
+    
+    try:
+        # This endpoint streams decision data from the alpha fusion engine
+        # For now, send mock data every 5 seconds for demonstration
+        import asyncio
+        import json
+        from datetime import datetime
+        
+        # Send initial connection confirmation
+        await websocket.send_text(json.dumps({"status": "connected"}))
+        
+        while True:
+            try:
+                # In production, this would come from the actual trading engine
+                # For now, send sample decision data
+                decision = {
+                    "timestamp": datetime.now().isoformat(),
+                    "symbol": "BTC/USDT",
+                    "decision": "buy",
+                    "confidence": 0.75,
+                    "market_data": {
+                        "price": 50000,
+                        "volume": 1000000,
+                        "change_24h": 2.5,
+                        "volatility": 1.2
+                    },
+                    "regime_state": {
+                        "regime": "bullish_calm",
+                        "confidence": 0.85
+                    },
+                    "component_scores": {
+                        "regime": 0.75,
+                        "ofi": 0.65,
+                        "whale": 0.45,
+                        "sentiment": 0.80,
+                        "macro": 0.55
+                    },
+                    "reasoning": [
+                        "Market regime indicates bullish calm conditions (85% confidence)",
+                        "Order flow imbalance shows strong buying pressure (65%)",
+                        "Sentiment analysis positive from recent news (80%)",
+                        "Macro conditions neutral to slightly positive (55%)"
+                    ],
+                    "position_size_multiplier": 1.25,
+                    "stop_loss": 48500,
+                    "take_profit": 52500
+                }
+                
+                await websocket.send_text(json.dumps(decision))
+                await asyncio.sleep(5)
+            except Exception as e:
+                logger.error(f"Error sending decision data: {e}")
+                break
+            
+    except WebSocketDisconnect:
+        logger.info("Decision trace WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"Decision trace WebSocket error: {e}")
+        try:
+            await websocket.close(code=1011, reason=str(e))
+        except:
+            pass
+
 # ============================================================================
 # AUTHENTICATION
 # ============================================================================
@@ -2756,6 +2824,24 @@ async def admin_emergency_stop(user_id: str = Depends(get_current_user)):
         logger.error(f"Emergency stop failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ============================================================================
+# PROMETHEUS METRICS ENDPOINT
+# ============================================================================
+
+@api_router.get("/metrics")
+async def get_prometheus_metrics():
+    """Expose Prometheus metrics for Grafana"""
+    try:
+        from engines.prometheus_metrics import prometheus_metrics
+        from fastapi.responses import Response
+        
+        content, content_type = prometheus_metrics.export_metrics()
+        return Response(content=content, media_type=content_type)
+        
+    except Exception as e:
+        logger.error(f"Metrics export failed: {e}")
+        raise HTTPException(status_code=500, detail="Metrics export failed")
+
 # Mount API router
 app.include_router(api_router, prefix="/api")
 
@@ -2783,6 +2869,9 @@ try:
     from routes.order_endpoints import router as order_router  # Phase 2: Order pipeline with guardrails
     from routes.alerts import router as alerts_router
     from routes.limits_management import router as limits_router  # NEW: Limits management
+    from routes.advanced_trading_endpoints import router as advanced_router  # Advanced Trading System
+    from routes.payment_agent_endpoints import router as payment_router  # Payment Agent
+    from routes.user_api_keys import router as user_api_keys_router  # Per-User API Key Management
     
     app.include_router(phase5_router)
     app.include_router(phase6_router)
@@ -2805,6 +2894,9 @@ try:
     app.include_router(ledger_router)  # Phase 1: Ledger endpoints
     app.include_router(order_router)  # Phase 2: Order pipeline endpoints
     app.include_router(limits_router)  # Limits management endpoints
+    app.include_router(advanced_router)  # Advanced Trading System endpoints
+    app.include_router(payment_router)  # Payment Agent endpoints
+    app.include_router(user_api_keys_router)  # Per-User API Key Management
     
     # Start daily report scheduler
     daily_report_service.start()

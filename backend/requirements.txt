@@ -135,3 +135,15 @@ websockets==15.0.1
 yarl==1.22.0
 zipp==3.23.0
 rapidfuzz==3.10.1
+scikit-learn==1.5.2
+hmmlearn==0.3.3
+statsmodels==0.14.4
+scipy==1.14.1
+transformers==4.46.3
+uagents==0.12.0
+prometheus-client==0.21.1
+chromadb==0.5.23
+langchain==0.3.13
+langchain-chroma==0.1.4
+langchain-openai==0.2.14
+cosmpy==0.9.2
