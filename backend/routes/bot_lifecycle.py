@@ -154,8 +154,11 @@ async def stop_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Depe
 
 
 @router.post("/{bot_id}/pause")
+@router.put("/{bot_id}/pause")
 async def pause_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Depends(get_current_user)):
     """Pause a bot's trading activity
+    
+    Accepts both POST and PUT methods for compatibility with frontend
     
     Args:
         bot_id: Bot ID to pause
@@ -219,8 +222,11 @@ async def pause_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Dep
 
 
 @router.post("/{bot_id}/resume")
+@router.put("/{bot_id}/resume")
 async def resume_bot(bot_id: str, user_id: str = Depends(get_current_user)):
     """Resume a paused bot's trading activity
+    
+    Accepts both POST and PUT methods for compatibility with frontend
     
     Args:
         bot_id: Bot ID to resume

@@ -48,12 +48,34 @@ apt install -y \
     docker-compose
 
 # Install Node.js 20.x from NodeSource (recommended for Ubuntu 24.04)
-# Skip if already installed to avoid conflicts
-if ! command -v node &> /dev/null; then
+# Remove Ubuntu npm package if installed to avoid conflicts with NodeSource
+echo "📦 Checking for Node.js installation..."
+
+# Check if Ubuntu npm package is installed (causes conflicts)
+if dpkg -l | grep -q "^ii.*npm.*ubuntu"; then
+    echo -e "${YELLOW}⚠️  Removing Ubuntu npm package to avoid conflicts...${NC}"
+    apt remove -y npm
+    apt autoremove -y
+fi
+
+# Clean up broken state if exists
+if dpkg -l | grep -E "^iF|^iU" | grep -q "nodejs\|npm"; then
+    echo -e "${YELLOW}⚠️  Fixing broken package state...${NC}"
+    dpkg --configure -a
+    apt --fix-broken install -y
+fi
+
+# Install Node.js from NodeSource if not present or if Ubuntu version detected
+if ! command -v node &> /dev/null || dpkg -l | grep -q "nodejs.*ubuntu"; then
     echo "📦 Installing Node.js 20.x from NodeSource..."
+    # Remove any existing nodejs packages
+    apt remove -y nodejs npm 2>/dev/null || true
+    apt autoremove -y
+    
+    # Install from NodeSource
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
     apt install -y nodejs
-    echo -e "${GREEN}✅ Node.js installed${NC}"
+    echo -e "${GREEN}✅ Node.js installed from NodeSource${NC}"
 else
     NODE_VERSION=$(node --version)
     echo -e "${GREEN}✅ Node.js already installed: ${NODE_VERSION}${NC}"
