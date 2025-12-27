@@ -2676,6 +2676,7 @@ try:
     from routes.api_key_management import router as api_key_mgmt_router
     from routes.daily_report import router as daily_report_router, daily_report_service
     from routes.ledger_endpoints import router as ledger_router  # Phase 1: Ledger-first accounting
+    from routes.order_endpoints import router as order_router  # Phase 2: Order pipeline with guardrails
     from routes.alerts import router as alerts_router
     
     app.include_router(phase5_router)
@@ -2697,11 +2698,12 @@ try:
     app.include_router(api_key_mgmt_router)
     app.include_router(daily_report_router)
     app.include_router(ledger_router)  # Phase 1: Ledger endpoints
+    app.include_router(order_router)  # Phase 2: Order pipeline endpoints
     
     # Start daily report scheduler
     daily_report_service.start()
     
-    logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Bot Lifecycle, System Limits, Live Gate, Analytics, AI Chat, 2FA, Genetic Algorithm, Dashboard, API Keys, Daily Reports")
+    logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Bot Lifecycle, System Limits, Live Gate, Analytics, AI Chat, 2FA, Genetic Algorithm, Dashboard, API Keys, Daily Reports, Ledger, Orders")
     app.include_router(alerts_router)
     
     logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Alerts")

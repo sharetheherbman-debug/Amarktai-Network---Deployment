@@ -623,6 +623,20 @@ class OrderPipeline:
         except Exception as e:
             logger.error(f"Error resetting circuit breaker: {e}")
             return {"success": False, "message": f"Error: {str(e)}"}
+    
+    async def get_order_status(
+        self, order_id: str, user_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get the status of a submitted order"""
+        try:
+            order = await self.pending_orders.find_one({
+                "order_id": order_id,
+                "user_id": user_id
+            })
+            return order
+        except Exception as e:
+            logger.error(f"Error getting order status: {e}")
+            return None
 
 
 # Singleton instance
