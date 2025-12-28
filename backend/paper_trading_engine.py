@@ -560,16 +560,30 @@ class PaperTradingEngine:
         await self.close_exchanges()
     
     async def close_exchanges(self):
-        """Close all CCXT async exchange sessions"""
+        """Close all CCXT async exchange sessions - prevents 'Unclosed client session' warnings"""
+        # Close Luno
         try:
             if self.luno_exchange:
                 await self.luno_exchange.close()
                 logger.info("Closed Luno exchange session")
+        except Exception as e:
+            logger.error(f"Error closing Luno exchange: {e}")
+        
+        # Close Binance
+        try:
             if self.binance_exchange:
                 await self.binance_exchange.close()
                 logger.info("Closed Binance exchange session")
         except Exception as e:
-            logger.error(f"Error closing exchanges: {e}")
+            logger.error(f"Error closing Binance exchange: {e}")
+        
+        # Close KuCoin (ADDED - was missing)
+        try:
+            if self.kucoin_exchange:
+                await self.kucoin_exchange.close()
+                logger.info("Closed KuCoin exchange session")
+        except Exception as e:
+            logger.error(f"Error closing KuCoin exchange: {e}")
 
 # Global instance
 paper_engine = PaperTradingEngine()
