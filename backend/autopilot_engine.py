@@ -29,6 +29,42 @@ class AutopilotEngine:
         self.db = client[db_name]
         
     async def start(self):
+        """Start the autopilot engine"""
+        if self.running:
+            logger.warning("Autopilot Engine already running")
+            return
+            
+        await self.init_db()
+        self.running = True
+        
+        # Schedule daily reinvestment at 23:59 UTC
+        self.scheduler.add_job(
+            self.daily_reinvestment_cycle,
+            trigger='cron',
+            hour=23,
+            minute=59,
+            timezone='UTC',
+            id='daily_reinvestment'
+        )
+        
+        # Check paper bot promotions every hour
+        self.scheduler.add_job(
+            self.check_paper_bot_promotions,
+            trigger='interval',
+            hours=1,
+            id='paper_bot_check'
+        )
+        
+        # Autopilot strategy optimization every 6 hours
+        self.scheduler.add_job(
+            self.optimize_strategies,
+            trigger='interval',
+            hours=6,
+            id='strategy_optimization'
+        )
+        
+        self.scheduler.start()
+        logger.info("🤖 Autopilot Engine started")
         """Start the autopilot engine - idempotent"""
         # Prevent multiple starts
         if self.running:
@@ -350,6 +386,14 @@ class AutopilotEngine:
             logger.error(f"Strategy optimization error: {e}")
             
     def stop(self):
+        """Stop the autopilot engine - never raises"""
+        try:
+            self.running = False
+            if self.scheduler and self.scheduler.running:
+                self.scheduler.shutdown(wait=False)
+            logger.info("Autopilot Engine stopped")
+        except Exception as e:
+            logger.warning(f"Autopilot shutdown warning (non-fatal): {e}")
         """Stop the autopilot engine - never raises, explicitly handles SchedulerNotRunningError"""
         try:
             self.running = False

@@ -1,8 +1,402 @@
 # Amarktai Network - Production Trading Platform
 
-**Production-grade, plug-and-play deployment** for Ubuntu 24.04 with systemd + nginx. After `git pull`, `.env` setup, and restart, everything works in real-time.
+**Production-grade, plug-and-play deployment** for Ubuntu 24.04 with systemd + nginx. Clean installation with Python 3.12, Node 20, and **modular dependencies**.
 
-## 🎯 Phase 1: Ledger-First Accounting (NEW!)
+## 🎯 New: Modular Requirements System
+
+Dependencies are now split into optional modules for faster, conflict-free installations:
+
+- **`backend/requirements/base.txt`** - Core API (FastAPI, MongoDB, Auth) - **Required**
+- **`backend/requirements/trading.txt`** - CCXT exchange integration - *Optional*
+- **`backend/requirements/ai.txt`** - ML, transformers, LangChain - *Optional*
+- **`backend/requirements/agents.txt`** - Fetch.ai uAgents - *Optional, conflicts with AI*
+- **`backend/requirements/dev.txt`** - Testing, linting - *Development only*
+
+**Installation time:** 30 seconds (base) vs 5 minutes (all features)
+
+See **[reports/dependency-audit.md](reports/dependency-audit.md)** for complete details.
+
+## 🚀 Quick Start (Modular Installation)
+
+### Prerequisites
+- Ubuntu 24.04 LTS
+- Root or sudo access
+- 2GB RAM minimum (4GB recommended)
+- MongoDB 7+ (Docker or native)
+
+### Step 1: Clone Repository
+
+```bash
+# Clone to /var/amarktai/app
+sudo mkdir -p /var/amarktai
+cd /var/amarktai
+sudo git clone https://github.com/amarktainetwork-blip/Amarktai-Network---Deployment.git app
+cd app
+```
+
+### Step 2: Choose Your Installation
+
+#### Option A: Minimal (API Only - 30 seconds)
+```bash
+cd backend
+python3.12 -m venv /var/amarktai/venv
+source /var/amarktai/venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements/base.txt
+```
+
+**Use case:** Testing, development, API-only deployments
+**Packages:** ~40 packages, ~50MB
+**Features:** Health endpoints, OpenAPI, authentication, scheduling
+
+#### Option B: With Trading (1 minute)
+```bash
+pip install -r requirements/base.txt -r requirements/trading.txt
+```
+
+**Use case:** Trading functionality without AI
+**Additional:** CCXT, exchange integration
+
+#### Option C: With AI (3 minutes)
+```bash
+pip install -r requirements/base.txt -r requirements/ai.txt
+```
+
+**Use case:** AI features without trading
+**Additional:** NumPy, SciPy, transformers, LangChain, OpenAI
+
+#### Option D: Full Stack (3.5 minutes)
+```bash
+pip install -r requirements/base.txt \
+            -r requirements/trading.txt \
+            -r requirements/ai.txt
+```
+
+**Use case:** Complete production deployment
+**Everything:** Trading + AI + ML features
+
+#### Option E: Development (4 minutes)
+```bash
+pip install -r requirements/base.txt \
+            -r requirements/trading.txt \
+            -r requirements/ai.txt \
+            -r requirements/dev.txt
+```
+
+**Use case:** Local development
+**Additional:** pytest, black, flake8, mypy
+
+### Step 3: Configure Environment
+
+```bash
+# Copy and edit .env file
+cp backend/.env.example backend/.env
+nano backend/.env
+```
+
+**Required variables:**
+```bash
+# Security (MUST change!)
+JWT_SECRET=<run: openssl rand -hex 32>
+ADMIN_PASSWORD=<run: openssl rand -base64 24>
+
+# Database
+MONGO_URL=mongodb://127.0.0.1:27017
+DB_NAME=amarktai_trading
+
+# AI (if using ai.txt)
+OPENAI_API_KEY=sk-your-key-here
+```
+
+**Feature flags (control what runs):**
+```bash
+# Start with safe defaults
+ENABLE_TRADING=false      # Requires trading.txt
+ENABLE_AI=false           # Requires ai.txt  
+ENABLE_AUTOPILOT=false    # Autonomous trading
+ENABLE_CCXT=true          # Price data (safe, requires trading.txt)
+ENABLE_AGENTS=false       # Requires agents.txt
+```
+
+### Step 4: Install Systemd Service (Optional)
+
+**Option A: Docker (Recommended)**
+```bash
+sudo apt-get install docker.io
+sudo docker run -d \
+  --name amarktai-mongo \
+  -p 127.0.0.1:27017:27017 \
+  -v /var/amarktai/mongodb:/data/db \
+  --restart always \
+  mongo:7
+```
+
+**Option B: Native Installation**
+```bash
+# See reports/deployment-notes.md for full MongoDB setup
+curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
+  sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+# ... (see full guide in deployment-notes.md)
+```
+
+### Step 5: Install Systemd Service
+
+```bash
+# Install and start systemd service
+sudo bash tools/systemd_install.sh
+```
+
+This script:
+- ✅ Creates systemd service file
+- ✅ Enables auto-start on boot
+- ✅ Starts service immediately
+- ✅ Configures security hardening
+
+### Step 6: Verify Deployment
+
+```bash
+# Run comprehensive health check
+bash tools/health_check.sh
+```
+
+Checks:
+- ✅ System dependencies (Python 3.12, Node 20)
+- ✅ Directory structure
+- ✅ Systemd service status
+- ✅ API endpoints (/api/health/ping)
+- ✅ OpenAPI routes
+- ✅ No errors in logs
+
+### Step 7: Frontend Setup (Optional)
+
+```bash
+# Build frontend for production
+sudo bash tools/frontend_setup.sh
+```
+
+This installs Node.js 20 and builds the React frontend.
+
+### Step 8: Configure Nginx (Optional)
+
+```nginx
+# /etc/nginx/sites-available/amarktai
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        root /var/amarktai/app/frontend/build;
+        try_files $uri /index.html;
+    }
+
+    location /api {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+```bash
+sudo ln -s /etc/nginx/sites-available/amarktai /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+## 📚 Documentation
+
+- **[Backend Dependencies Audit](reports/backend-deps-audit.md)** - Python 3.12 fixes
+- **[Frontend Dependencies Audit](reports/frontend-deps-audit.md)** - Node 20 + React 19
+- **[Deployment Notes](reports/deployment-notes.md)** - Complete deployment guide
+- **[Systemd Notes](reports/systemd-notes.md)** - Service management
+
+## 🔧 Service Management
+
+```bash
+# View status
+sudo systemctl status amarktai-api
+
+# View logs (live)
+sudo journalctl -u amarktai-api -f
+
+# Restart
+sudo systemctl restart amarktai-api
+
+# Stop
+sudo systemctl stop amarktai-api
+
+# Start
+sudo systemctl start amarktai-api
+```
+
+## 🛡️ Feature Flags
+
+Feature flags allow safe gradual enablement:
+
+### Phase 1: Health Check (Day 1)
+```bash
+ENABLE_TRADING=false
+ENABLE_AUTOPILOT=false
+ENABLE_CCXT=true  # Price data only
+```
+
+- Verify service starts
+- Test health endpoints
+- Dashboard loads
+- Price data works
+
+### Phase 2: Paper Trading (Day 2-7)
+```bash
+ENABLE_TRADING=true
+ENABLE_AUTOPILOT=false
+ENABLE_CCXT=true
+```
+
+- Test paper trades
+- Monitor logs
+- Verify bot creation
+- No real money at risk
+
+### Phase 3: Autonomous Management (Day 7+)
+```bash
+ENABLE_TRADING=true
+ENABLE_AUTOPILOT=true
+ENABLE_CCXT=true
+```
+
+- Enable reinvestment
+- Monitor autonomous actions
+- Test bot spawning
+- Review capital allocation
+
+### Phase 4: Live Trading (After Validation)
+- Configure exchange API keys
+- Enable per-bot live trading (requires 7-day paper training)
+- Start with small capital
+- Monitor closely
+
+## 🔒 Security Best Practices
+
+1. **Change default secrets:**
+   ```bash
+   JWT_SECRET=$(openssl rand -hex 32)
+   ADMIN_PASSWORD=$(openssl rand -base64 24)
+   ```
+
+2. **Firewall configuration:**
+   ```bash
+   sudo ufw allow 22/tcp    # SSH
+   sudo ufw allow 80/tcp    # HTTP
+   sudo ufw allow 443/tcp   # HTTPS
+   sudo ufw enable
+   ```
+
+3. **SSL/TLS (Let's Encrypt):**
+   ```bash
+   sudo apt install certbot python3-certbot-nginx
+   sudo certbot --nginx -d your-domain.com
+   ```
+
+4. **File permissions:**
+   ```bash
+   sudo chmod 600 /var/amarktai/app/backend/.env
+   ```
+
+## 🐛 Troubleshooting
+
+### Service Won't Start
+
+```bash
+# Check logs
+sudo journalctl -u amarktai-api -n 50
+
+# Common issues:
+# 1. .env file missing → sudo cp .env.example .env
+# 2. MongoDB not running → sudo systemctl start mongod
+# 3. Port 8000 in use → sudo lsof -i :8000
+```
+
+### Dependencies Failed
+
+```bash
+# Backend
+cd /var/amarktai/app/backend
+source /var/amarktai/venv/bin/activate
+pip install -r requirements.txt
+
+# Frontend
+cd /var/amarktai/app/frontend
+rm -rf node_modules
+npm install
+npm run build
+```
+
+### Health Check Failed
+
+```bash
+# Run with verbose output
+bash tools/health_check.sh
+
+# Manual test
+curl http://127.0.0.1:8000/api/health/ping
+```
+
+## 🔄 Updates
+
+```bash
+# Pull latest code
+cd /var/amarktai/app
+sudo git pull
+
+# Update backend
+source /var/amarktai/venv/bin/activate
+pip install -r backend/requirements.txt
+
+# Rebuild frontend (if changed)
+cd frontend && npm install && npm run build
+
+# Restart service
+sudo systemctl restart amarktai-api
+
+# Verify
+bash tools/health_check.sh
+```
+
+## ✅ What's Fixed (December 2025)
+
+### Backend Dependencies
+- ✅ NumPy version conflict (scipy <2.3 requirement)
+- ✅ Huggingface hub version (<1.0 for transformers)
+- ✅ Tokenizers version (<0.21 for transformers)
+- ✅ Packaging version (<25 for langchain)
+- ✅ Protobuf version (3.19.5-7.0 range)
+- ✅ Moved uagents/cosmpy to optional requirements-ai.txt
+
+### Frontend Dependencies  
+- ✅ react-day-picker upgraded to v9 (removes date-fns conflict)
+- ✅ React 19 compatibility verified
+- ✅ Fixed syntax errors in WalletHub.js and WalletOverview.js
+- ✅ npm install works on Node 20
+- ✅ npm run build succeeds
+
+### Backend Code Issues
+- ✅ autopilot.start() now uses await (no more RuntimeWarning)
+- ✅ autopilot.stop() is idempotent with try/except
+- ✅ All shutdown calls wrapped in try/except (no cascade failures)
+- ✅ CCXT sessions close all 3 exchanges (luno, binance, kucoin)
+- ✅ Duplicate self_healing imports fixed
+- ✅ Added is_admin() and require_admin() to auth.py
+- ✅ Feature flags added (ENABLE_TRADING, etc.)
+
+### Deployment
+- ✅ Python 3.12 compatibility
+- ✅ Node 20 compatibility
+- ✅ Automated setup scripts
+- ✅ Systemd service with security hardening
+- ✅ Health check script
+- ✅ Comprehensive documentation
+
+## 🎯 Phase 1: Ledger-First Accounting
 
 **Immutable ledger** for fills and events provides single source of truth for all accounting:
 - ✅ **Fills Ledger**: Immutable trade execution records
@@ -11,84 +405,7 @@
 - ✅ **Endpoints**: `/api/portfolio/summary`, `/api/profits`, `/api/countdown/status`
 - ✅ **Phase 1 Status**: Read-only + parallel write (opt-in)
 
-See [Ledger Documentation](#ledger-first-accounting) below for details.
-
-## ⚡ Quick Start (Ubuntu 24.04)
-
-### One-Command Setup
-
-```bash
-# Run as root or with sudo
-sudo ./deployment/vps-setup.sh
-```
-
-This idempotent script will:
-- ✅ Install Python 3.12 (Ubuntu 24.04 default), Node.js 20.x, MongoDB
-- ✅ Setup Python virtual environment with all dependencies
-- ✅ Configure systemd service for auto-restart
-- ✅ Setup nginx reverse proxy with CORS
-- ✅ Create necessary directories and permissions
-
-### Manual Configuration
-
-After running the setup script:
-
-1. **Edit `.env` file** with your configuration:
-   ```bash
-   sudo nano /var/amarktai/backend/.env
-   ```
-   
-   **Required**:
-   - `JWT_SECRET` - Generate with: `openssl rand -hex 32`
-   - `MONGO_URL` - MongoDB connection string
-   - `OPENAI_API_KEY` - For AI trading decisions
-   
-   **Optional (for SMTP reports)**:
-   - `SMTP_USER` - Gmail address or SMTP username
-   - `SMTP_PASSWORD` - App-specific password (not your Gmail password)
-   - `DAILY_REPORT_TIME` - Time to send reports (e.g., "08:00" for 8 AM UTC)
-
-2. **Restart services**:
-   ```bash
-   sudo systemctl restart amarktai-api
-   sudo systemctl reload nginx
-   ```
-
-3. **Verify deployment**:
-   ```bash
-   cd /var/amarktai
-   ./deployment/smoke_test.sh
-   ```
-
-### Access Your Platform
-
-- **Web UI**: `http://YOUR_SERVER_IP`
-- **API**: `http://YOUR_SERVER_IP/api`
-- **Health Check**: `curl http://YOUR_SERVER_IP/api/health/ping`
-
-### Optional: SSL with Let's Encrypt
-
-```bash
-sudo apt install certbot python3-certbot-nginx
-sudo certbot --nginx -d yourdomain.com
-```
-
-## 🏗️ Architecture
-# Amarktai Network (Production-Ready)
-
-Autonomous AI cryptocurrency trading system designed for **plug-and-play deployment** to Ubuntu 24.04 VPS.
-
-- **Frontend**: Served by Nginx at `/`
-- **Backend API**: Reverse-proxied under `/api`
-- **WebSocket**: Real-time updates at `/api/ws`
-- **SSE**: Server-sent events at `/api/realtime/events`
-- **Static Assets**: Served from `frontend/public/assets/` as `/assets/...`
-
-```
-Client → Nginx (80/443) → FastAPI Backend (8000)
-                       ↓
-                   MongoDB (27017)
-```
+See [Ledger Documentation](#ledger-first-accounting) section below for details.
 
 ## 🚀 Features
 

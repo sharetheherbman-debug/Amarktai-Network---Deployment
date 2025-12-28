@@ -9,7 +9,7 @@ const WalletHub = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const backendUrl = process.env. || '';
+  const backendUrl = process.env.REACT_APP_API_BASE || '';
 
   useEffect(() => {
     loadWalletData();

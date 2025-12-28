@@ -58,6 +58,19 @@ async def verify_admin_password(password: str) -> bool:
     return password == admin_password
 
 async def is_admin(user_id: str) -> bool:
+    """Check if user is an admin by querying the database"""
+    from database import users_collection
+    user = await users_collection.find_one({"id": user_id}, {"_id": 0, "role": 1, "is_admin": 1})
+    if not user:
+        return False
+    return user.get("role") == "admin" or user.get("is_admin", False)
+
+async def require_admin(user_id: str = Depends(get_current_user)):
+    """Dependency that raises 403 if user is not admin"""
+    if not await is_admin(user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
     """Check if user has admin privileges"""
     try:
         from database import users_collection

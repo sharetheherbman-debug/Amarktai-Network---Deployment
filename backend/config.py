@@ -36,6 +36,24 @@ FETCHAI_API_KEY = os.getenv('FETCHAI_API_KEY', '')
 FLOKX_API_KEY = os.getenv('FLOKX_API_KEY', '')
 
 # ============================================================================
+# FEATURE FLAGS (Safe defaults for production)
+# ============================================================================
+
+# Trading Feature Flags
+ENABLE_TRADING = os.getenv('ENABLE_TRADING', 'false').lower() == 'true'
+ENABLE_AUTOPILOT = os.getenv('ENABLE_AUTOPILOT', 'false').lower() == 'true'
+ENABLE_CCXT = os.getenv('ENABLE_CCXT', 'true').lower() == 'true'  # Safe for price data
+ENABLE_UAGENTS = os.getenv('ENABLE_UAGENTS', 'false').lower() == 'true'
+PAYMENT_AGENT_ENABLED = os.getenv('PAYMENT_AGENT_ENABLED', 'false').lower() == 'true'
+
+# Safe mode: All trading disabled by default
+# Enable gradually:
+# 1. ENABLE_CCXT=true (price data only)
+# 2. ENABLE_TRADING=true + paper mode only
+# 3. ENABLE_AUTOPILOT=true for autonomous management
+# 4. Configure API keys and enable live trading
+
+# ============================================================================
 # SYSTEM CONFIGURATION
 # ============================================================================
 

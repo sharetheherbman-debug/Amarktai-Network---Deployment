@@ -7,7 +7,7 @@ const WalletOverview = () => {
   const [requirements, setRequirements] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const backendUrl = process.env. || '';
+  const backendUrl = process.env.REACT_APP_API_BASE || '';
 
   useEffect(() => {
     loadWalletData();

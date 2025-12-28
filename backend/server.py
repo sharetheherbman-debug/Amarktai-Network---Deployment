@@ -44,6 +44,10 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events with feature flags for plug-and-play stability"""
     logger.info("🚀 Starting Amarktai Network...")
     
+    # Start autonomous systems
+    from autopilot_engine import autopilot
+    await autopilot.start()
+    logger.info("🤖 Autopilot Engine started")
     # Feature flags for safe plug-and-play deployment
     enable_trading = os.getenv('ENABLE_TRADING', '0') == '1'
     enable_autopilot = os.getenv('ENABLE_AUTOPILOT', '0') == '1'
@@ -120,6 +124,35 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Could not start wallet monitor: {e}")
     
+    # Start AI Backend Scheduler (nightly at 2 AM)
+    from ai_scheduler import ai_scheduler
+    await ai_scheduler.start()
+    logger.info("🧠 AI Backend Scheduler started - runs nightly at 2 AM (promotions, rankings, evolution)")
+    
+    # Start AI Memory Manager (archives old chats, cleans up after 6 months)
+    from ai_memory_manager import memory_manager
+    asyncio.create_task(memory_manager.run_maintenance())
+    logger.info("💾 AI Memory Manager started - archives 30-day old chats, deletes 6-month old archives")
+    
+    # Start Production Trading Engine
+    from engines.trading_engine_production import trading_engine
+    trading_engine.start()
+    logger.info("💹 Production Trading Engine started - 50 trades/day limit, 25-30 min cooldown")
+    
+    # Start Production Autopilot (R500 reinvestment, auto-spawn, rebalancing)
+    from engines.autopilot_production import autopilot_production
+    autopilot_production.start()
+    logger.info("🤖 Production Autopilot started - R500 reinvestment, auto-spawn, intelligent rebalancing")
+    
+    # Start Risk Management (Stop Loss, Take Profit, Trailing Stop)
+    from engines.risk_management import risk_management
+    risk_management.start()
+    logger.info("🎯 Risk Management started - Stop Loss, Take Profit, Trailing Stop active")
+    
+    # Start Engines Self-Healing System (rogue bot detection)
+    from engines.self_healing import self_healing as engines_self_healing
+    engines_self_healing.start()
+    logger.info("🛡️ Engines Self-Healing System started - rogue bot detection every 30 min")
     if enable_schedulers:
         # Start AI Backend Scheduler (nightly at 2 AM)
         from ai_scheduler import ai_scheduler
@@ -156,6 +189,63 @@ async def lifespan(app: FastAPI):
     
     yield
     
+    # Shutdown - each in try/except to prevent cascade failures
+    logger.info("🔴 Shutting down Amarktai Network...")
+    
+    try:
+        autopilot.stop()
+    except Exception as e:
+        logger.warning(f"Autopilot stop warning: {e}")
+    
+    try:
+        bodyguard.stop()
+    except Exception as e:
+        logger.warning(f"Bodyguard stop warning: {e}")
+    
+    try:
+        await autonomous_scheduler.stop()
+    except Exception as e:
+        logger.warning(f"Autonomous scheduler stop warning: {e}")
+    
+    try:
+        await self_healing.stop()
+    except Exception as e:
+        logger.warning(f"Self-healing stop warning: {e}")
+    
+    try:
+        engines_self_healing.stop()
+    except Exception as e:
+        logger.warning(f"Engines self-healing stop warning: {e}")
+    
+    try:
+        await advanced_orders.stop()
+    except Exception as e:
+        logger.warning(f"Advanced orders stop warning: {e}")
+    
+    try:
+        trading_scheduler.stop()
+    except Exception as e:
+        logger.warning(f"Trading scheduler stop warning: {e}")
+    
+    try:
+        ai_scheduler.stop()
+    except Exception as e:
+        logger.warning(f"AI scheduler stop warning: {e}")
+    
+    try:
+        autopilot_production.stop()
+    except Exception as e:
+        logger.warning(f"Production autopilot stop warning: {e}")
+    
+    try:
+        risk_management.stop()
+    except Exception as e:
+        logger.warning(f"Risk management stop warning: {e}")
+    
+    try:
+        reinvest_service.stop()
+    except Exception as e:
+        logger.warning(f"Reinvestment service stop warning: {e}")
     # Shutdown - HARDENED: Wrap each stop in try/except to prevent crashes
     logger.info("🔴 Shutting down systems...")
     
@@ -244,6 +334,15 @@ async def lifespan(app: FastAPI):
     try:
         await close_db()
     except Exception as e:
+        logger.warning(f"CCXT close warning (non-fatal): {e}")
+    
+    try:
+        await close_db()
+        logger.info("✅ Database closed")
+    except Exception as e:
+        logger.warning(f"Database close warning: {e}")
+    
+    logger.info("🔴 All systems stopped gracefully")
         logger.error(f"Error closing database: {e}")
     
     logger.info("🔴 All systems stopped")
