@@ -141,6 +141,17 @@ fi
 # ============================================================================
 log_section "5. Installing Systemd Service"
 
+# Create amarktai user if it doesn't exist
+if ! id -u amarktai > /dev/null 2>&1; then
+    log_info "Creating amarktai system user..."
+    useradd --system --no-create-home --shell /bin/false amarktai
+    log_success "Created amarktai user"
+fi
+
+# Set ownership of project directory
+log_info "Setting ownership of $PROJECT_ROOT to amarktai user..."
+chown -R amarktai:amarktai "$PROJECT_ROOT"
+
 # Create service file
 SERVICE_FILE="/etc/systemd/system/amarktai-api.service"
 log_info "Creating systemd service file at $SERVICE_FILE..."
@@ -153,7 +164,8 @@ Wants=mongodb.service
 
 [Service]
 Type=simple
-User=runner
+User=amarktai
+Group=amarktai
 WorkingDirectory=$BACKEND_DIR
 Environment="PATH=$BACKEND_DIR/.venv/bin"
 ExecStart=$BACKEND_DIR/.venv/bin/uvicorn server:app --host 127.0.0.1 --port 8000
