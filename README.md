@@ -1,8 +1,22 @@
 # Amarktai Network - Production Trading Platform
 
-**Production-grade, plug-and-play deployment** for Ubuntu 24.04 with systemd + nginx. Clean installation with Python 3.12, Node 20, and automated scripts.
+**Production-grade, plug-and-play deployment** for Ubuntu 24.04 with systemd + nginx. Clean installation with Python 3.12, Node 20, and **modular dependencies**.
 
-## 🚀 Quick Start (New Deployment Method)
+## 🎯 New: Modular Requirements System
+
+Dependencies are now split into optional modules for faster, conflict-free installations:
+
+- **`backend/requirements/base.txt`** - Core API (FastAPI, MongoDB, Auth) - **Required**
+- **`backend/requirements/trading.txt`** - CCXT exchange integration - *Optional*
+- **`backend/requirements/ai.txt`** - ML, transformers, LangChain - *Optional*
+- **`backend/requirements/agents.txt`** - Fetch.ai uAgents - *Optional, conflicts with AI*
+- **`backend/requirements/dev.txt`** - Testing, linting - *Development only*
+
+**Installation time:** 30 seconds (base) vs 5 minutes (all features)
+
+See **[reports/dependency-audit.md](reports/dependency-audit.md)** for complete details.
+
+## 🚀 Quick Start (Modular Installation)
 
 ### Prerequisites
 - Ubuntu 24.04 LTS
@@ -20,25 +34,64 @@ sudo git clone https://github.com/amarktainetwork-blip/Amarktai-Network---Deploy
 cd app
 ```
 
-### Step 2: Setup Backend
+### Step 2: Choose Your Installation
 
+#### Option A: Minimal (API Only - 30 seconds)
 ```bash
-# Run automated backend setup (Python 3.12 + dependencies)
-sudo bash tools/backend_setup.sh
+cd backend
+python3.12 -m venv /var/amarktai/venv
+source /var/amarktai/venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements/base.txt
 ```
 
-This script:
-- ✅ Installs Python 3.12 and system dependencies
-- ✅ Creates virtual environment at /var/amarktai/venv
-- ✅ Installs all Python packages (fixed dependency conflicts)
-- ✅ Checks for syntax errors
-- ✅ Sets proper permissions
+**Use case:** Testing, development, API-only deployments
+**Packages:** ~40 packages, ~50MB
+**Features:** Health endpoints, OpenAPI, authentication, scheduling
+
+#### Option B: With Trading (1 minute)
+```bash
+pip install -r requirements/base.txt -r requirements/trading.txt
+```
+
+**Use case:** Trading functionality without AI
+**Additional:** CCXT, exchange integration
+
+#### Option C: With AI (3 minutes)
+```bash
+pip install -r requirements/base.txt -r requirements/ai.txt
+```
+
+**Use case:** AI features without trading
+**Additional:** NumPy, SciPy, transformers, LangChain, OpenAI
+
+#### Option D: Full Stack (3.5 minutes)
+```bash
+pip install -r requirements/base.txt \
+            -r requirements/trading.txt \
+            -r requirements/ai.txt
+```
+
+**Use case:** Complete production deployment
+**Everything:** Trading + AI + ML features
+
+#### Option E: Development (4 minutes)
+```bash
+pip install -r requirements/base.txt \
+            -r requirements/trading.txt \
+            -r requirements/ai.txt \
+            -r requirements/dev.txt
+```
+
+**Use case:** Local development
+**Additional:** pytest, black, flake8, mypy
 
 ### Step 3: Configure Environment
 
 ```bash
-# Edit .env file
-sudo nano /var/amarktai/app/backend/.env
+# Copy and edit .env file
+cp backend/.env.example backend/.env
+nano backend/.env
 ```
 
 **Required variables:**
@@ -51,22 +104,21 @@ ADMIN_PASSWORD=<run: openssl rand -base64 24>
 MONGO_URL=mongodb://127.0.0.1:27017
 DB_NAME=amarktai_trading
 
-# AI (required for functionality)
+# AI (if using ai.txt)
 OPENAI_API_KEY=sk-your-key-here
 ```
 
-**Feature flags (safe defaults):**
+**Feature flags (control what runs):**
 ```bash
-# Start with all disabled for safety
-ENABLE_TRADING=false      # Master trading switch
-ENABLE_AUTOPILOT=false    # Autonomous management
-ENABLE_CCXT=true          # Price data (safe)
-ENABLE_UAGENTS=false      # Fetch.ai agents (optional)
+# Start with safe defaults
+ENABLE_TRADING=false      # Requires trading.txt
+ENABLE_AI=false           # Requires ai.txt  
+ENABLE_AUTOPILOT=false    # Autonomous trading
+ENABLE_CCXT=true          # Price data (safe, requires trading.txt)
+ENABLE_AGENTS=false       # Requires agents.txt
 ```
 
-See [Feature Flags](#feature-flags) section for gradual enablement guide.
-
-### Step 4: Setup MongoDB
+### Step 4: Install Systemd Service (Optional)
 
 **Option A: Docker (Recommended)**
 ```bash

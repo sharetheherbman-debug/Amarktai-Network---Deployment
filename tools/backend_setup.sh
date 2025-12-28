@@ -72,7 +72,50 @@ echo "✅ Pip upgraded"
 # Install Python dependencies
 echo ""
 echo "📦 Installing Python dependencies..."
-if [ -f "$BACKEND_DIR/requirements.txt" ]; then
+if [ -f "$BACKEND_DIR/requirements/base.txt" ]; then
+    echo "Installing base requirements (core API)..."
+    pip install --quiet -r "$BACKEND_DIR/requirements/base.txt"
+    echo "✅ Base dependencies installed"
+    
+    # Optional: Install trading dependencies
+    if [ -f "$BACKEND_DIR/requirements/trading.txt" ]; then
+        read -p "Install trading features (CCXT)? [Y/n] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            echo "Installing trading dependencies..."
+            pip install --quiet -r "$BACKEND_DIR/requirements/trading.txt"
+            echo "✅ Trading dependencies installed"
+        fi
+    fi
+    
+    # Optional: Install AI dependencies
+    if [ -f "$BACKEND_DIR/requirements/ai.txt" ]; then
+        read -p "Install AI features (ML, transformers, LangChain)? [Y/n] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Skipping AI dependencies (can install later)"
+        else
+            echo "Installing AI dependencies (this may take 2-3 minutes)..."
+            pip install --quiet -r "$BACKEND_DIR/requirements/ai.txt"
+            echo "✅ AI dependencies installed"
+        fi
+    fi
+    
+    # Optional: Install agent dependencies (conflicts with AI)
+    if [ -f "$BACKEND_DIR/requirements/agents.txt" ]; then
+        read -p "Install Fetch.ai agent features (conflicts with AI)? [y/N] " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo "⚠️  Warning: Agents conflict with AI features (protobuf version)"
+            echo "Installing agent dependencies..."
+            pip install --quiet -r "$BACKEND_DIR/requirements/agents.txt"
+            echo "✅ Agent dependencies installed"
+        fi
+    fi
+    
+    # Legacy support: Install from old requirements.txt if new structure doesn't exist
+elif [ -f "$BACKEND_DIR/requirements.txt" ]; then
+    echo "⚠️  Using legacy requirements.txt (consider migrating to modular structure)"
     echo "Installing from requirements.txt..."
     pip install --quiet -r "$BACKEND_DIR/requirements.txt"
     echo "✅ Dependencies installed"
@@ -88,15 +131,26 @@ if [ -f "$BACKEND_DIR/requirements.txt" ]; then
         fi
     fi
 else
-    echo -e "${RED}❌ requirements.txt not found in $BACKEND_DIR${NC}"
+    echo -e "${RED}❌ No requirements files found in $BACKEND_DIR${NC}"
     exit 1
 fi
 
 # Verify installation
 echo ""
 echo "✅ Verifying installation..."
-python3 -c "import fastapi, uvicorn, motor; print('Core packages: OK')"
-python3 -c "import numpy, scipy, pandas; print('Data science packages: OK')"
+python3 -c "import fastapi, uvicorn, motor; print('Core packages: OK')" || {
+    echo -e "${RED}❌ Core package verification failed${NC}"
+    exit 1
+}
+
+# Check optional packages
+if pip list | grep -q "ccxt"; then
+    python3 -c "import ccxt; print('Trading packages: OK')" || echo "⚠️  CCXT import failed"
+fi
+
+if pip list | grep -q "numpy"; then
+    python3 -c "import numpy, scipy, pandas; print('AI/ML packages: OK')" || echo "⚠️  AI package import failed"
+fi
 
 # Compile Python files to check for syntax errors
 echo ""
@@ -139,9 +193,18 @@ echo "Next steps:"
 echo "1. Edit .env file: sudo nano $BACKEND_DIR/.env"
 echo "   - Set JWT_SECRET (run: openssl rand -hex 32)"
 echo "   - Set MONGO_URL"
-echo "   - Set OPENAI_API_KEY"
+echo "   - Set OPENAI_API_KEY (if AI features installed)"
+echo "   - Set feature flags:"
+echo "     ENABLE_TRADING=true (if trading.txt installed)"
+echo "     ENABLE_AI=true (if ai.txt installed)"
+echo "     ENABLE_AGENTS=true (if agents.txt installed)"
 echo ""
-echo "2. Install systemd service: sudo bash tools/systemd_install.sh"
+echo "2. Install additional features:"
+echo "   Trading: pip install -r $BACKEND_DIR/requirements/trading.txt"
+echo "   AI: pip install -r $BACKEND_DIR/requirements/ai.txt"
+echo "   Dev tools: pip install -r $BACKEND_DIR/requirements/dev.txt"
+echo ""
+echo "3. Install systemd service: sudo bash tools/systemd_install.sh"
 echo ""
 echo "3. Start service: sudo systemctl start amarktai-api"
 echo ""

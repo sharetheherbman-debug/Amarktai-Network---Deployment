@@ -1,0 +1,14 @@
+# Trading Requirements - CCXT and Trading-specific dependencies
+# Install with: pip install -r base.txt -r trading.txt
+
+# CCXT for exchange integration
+ccxt==4.5.21
+
+# Crypto utilities
+coincurve==21.0.0
+
+# Rate limiting and caching
+cachetools==6.2.2
+
+# Additional utilities for trading
+fastuuid==0.14.0
