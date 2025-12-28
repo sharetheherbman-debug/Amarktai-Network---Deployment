@@ -41,40 +41,80 @@ api_router = APIRouter()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown events"""
+    """Startup and shutdown events with feature flags for plug-and-play stability"""
     logger.info("🚀 Starting Amarktai Network...")
     
     # Start autonomous systems
     from autopilot_engine import autopilot
     await autopilot.start()
     logger.info("🤖 Autopilot Engine started")
+    # Feature flags for safe plug-and-play deployment
+    enable_trading = os.getenv('ENABLE_TRADING', '0') == '1'
+    enable_autopilot = os.getenv('ENABLE_AUTOPILOT', '0') == '1'
+    enable_ccxt = os.getenv('ENABLE_CCXT', '0') == '1'
+    enable_schedulers = os.getenv('ENABLE_SCHEDULERS', '1') == '1'
+    
+    logger.info(f"🎚️ Feature flags: TRADING={enable_trading}, AUTOPILOT={enable_autopilot}, CCXT={enable_ccxt}, SCHEDULERS={enable_schedulers}")
+    
+    # Track background tasks for clean shutdown
+    background_tasks = []
+    
+    # Start autonomous systems based on feature flags
+    if enable_autopilot:
+        from autopilot_engine import autopilot
+        await autopilot.start()  # FIXED: Added await
+        logger.info("🤖 Autopilot Engine started")
+    else:
+        logger.info("🤖 Autopilot Engine disabled (ENABLE_AUTOPILOT=0)")
     
     from ai_bodyguard import bodyguard
-    asyncio.create_task(bodyguard.start())
+    task = asyncio.create_task(bodyguard.start())
+    background_tasks.append(task)
     logger.info("🛡️ AI Bodyguard activated")
     
     from self_learning import learning_system
     await learning_system.init_db()
     logger.info("📚 Self-Learning System initialized")
     
-    # Start NEW Autonomous Scheduler
-    from autonomous_scheduler import autonomous_scheduler
-    await autonomous_scheduler.start()
-    logger.info("🤖 Autonomous Scheduler started (lifecycle, capital, regime)")
+    if enable_schedulers:
+        # Start NEW Autonomous Scheduler
+        from autonomous_scheduler import autonomous_scheduler
+        await autonomous_scheduler.start()
+        logger.info("🤖 Autonomous Scheduler started (lifecycle, capital, regime)")
+        
+        # Start Self-Healing System (use engines.self_healing only, not duplicate)
+        from engines.self_healing import self_healing
+        self_healing.start()
+        logger.info("🏥 Self-Healing System started")
+        
+        # Start Advanced Orders Monitor
+        from advanced_orders import advanced_orders
+        await advanced_orders.start()
+        logger.info("📈 Advanced Orders monitoring started")
+    else:
+        logger.info("📅 Schedulers disabled (ENABLE_SCHEDULERS=0)")
     
-    # Start Self-Healing System
-    from self_healing import self_healing
-    await self_healing.start()
-    logger.info("🏥 Self-Healing System started")
-    
-    # Start Advanced Orders Monitor
-    from advanced_orders import advanced_orders
-    await advanced_orders.start()
-    logger.info("📈 Advanced Orders monitoring started")
-    
-    # Start Paper Trading Scheduler
-    trading_scheduler.start()
-    logger.info("💹 Paper Trading Scheduler started - trades every 10 seconds")
+    if enable_trading:
+        # Start Paper Trading Scheduler
+        trading_scheduler.start()
+        logger.info("💹 Paper Trading Scheduler started - trades every 10 seconds")
+        
+        # Start Production Trading Engine
+        from engines.trading_engine_production import trading_engine
+        trading_engine.start()
+        logger.info("💹 Production Trading Engine started - 50 trades/day limit, 25-30 min cooldown")
+        
+        # Start Production Autopilot (R500 reinvestment, auto-spawn, rebalancing)
+        from engines.autopilot_production import autopilot_production
+        autopilot_production.start()
+        logger.info("🤖 Production Autopilot started - R500 reinvestment, auto-spawn, intelligent rebalancing")
+        
+        # Start Risk Management (Stop Loss, Take Profit, Trailing Stop)
+        from engines.risk_management import risk_management
+        risk_management.start()
+        logger.info("🎯 Risk Management started - Stop Loss, Take Profit, Trailing Stop active")
+    else:
+        logger.info("💹 Trading engines disabled (ENABLE_TRADING=0)")
     
     # Start wallet balance monitor
     try:
@@ -113,6 +153,17 @@ async def lifespan(app: FastAPI):
     from engines.self_healing import self_healing as engines_self_healing
     engines_self_healing.start()
     logger.info("🛡️ Engines Self-Healing System started - rogue bot detection every 30 min")
+    if enable_schedulers:
+        # Start AI Backend Scheduler (nightly at 2 AM)
+        from ai_scheduler import ai_scheduler
+        await ai_scheduler.start()
+        logger.info("🧠 AI Backend Scheduler started - runs nightly at 2 AM (promotions, rankings, evolution)")
+        
+        # Start AI Memory Manager (archives old chats, cleans up after 6 months)
+        from ai_memory_manager import memory_manager
+        task = asyncio.create_task(memory_manager.run_maintenance())
+        background_tasks.append(task)
+        logger.info("💾 AI Memory Manager started - archives 30-day old chats, deletes 6-month old archives")
     
     # Initialize Fetch.ai and FLOKx integrations with env keys if available
     fetchai_key = os.environ.get('FETCHAI_API_KEY', '')
@@ -195,12 +246,93 @@ async def lifespan(app: FastAPI):
         reinvest_service.stop()
     except Exception as e:
         logger.warning(f"Reinvestment service stop warning: {e}")
+    # Shutdown - HARDENED: Wrap each stop in try/except to prevent crashes
+    logger.info("🔴 Shutting down systems...")
     
-    # Close CCXT async sessions
+    # Cancel background tasks first with timeout
+    if background_tasks:
+        logger.info(f"📋 Cancelling {len(background_tasks)} background tasks...")
+        for task in background_tasks:
+            if not task.done():
+                task.cancel()
+        
+        # Wait for tasks to complete with timeout
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*background_tasks, return_exceptions=True),
+                timeout=5.0
+            )
+            logger.info("✅ Background tasks cancelled")
+        except asyncio.TimeoutError:
+            logger.warning("⚠️ Background task cancellation timed out after 5s")
+        except Exception as e:
+            logger.error(f"Error cancelling background tasks: {e}")
+    
+    # Stop subsystems based on feature flags
+    if enable_autopilot:
+        try:
+            autopilot.stop()
+        except Exception as e:
+            logger.error(f"Error stopping autopilot: {e}")
+    
     try:
-        from paper_trading_engine import paper_engine
-        await paper_engine.close_exchanges()
-        logger.info("✅ CCXT sessions closed")
+        bodyguard.stop()
+    except Exception as e:
+        logger.error(f"Error stopping bodyguard: {e}")
+    
+    if enable_schedulers:
+        try:
+            await autonomous_scheduler.stop()
+        except Exception as e:
+            logger.error(f"Error stopping autonomous_scheduler: {e}")
+        
+        try:
+            await self_healing.stop()
+        except Exception as e:
+            logger.error(f"Error stopping self_healing: {e}")
+        
+        try:
+            await advanced_orders.stop()
+        except Exception as e:
+            logger.error(f"Error stopping advanced_orders: {e}")
+        
+        try:
+            ai_scheduler.stop()
+        except Exception as e:
+            logger.error(f"Error stopping ai_scheduler: {e}")
+    
+    if enable_trading:
+        try:
+            trading_scheduler.stop()
+        except Exception as e:
+            logger.error(f"Error stopping trading_scheduler: {e}")
+        
+        try:
+            autopilot_production.stop()
+        except Exception as e:
+            logger.error(f"Error stopping autopilot_production: {e}")
+        
+        try:
+            risk_management.stop()
+        except Exception as e:
+            logger.error(f"Error stopping risk_management: {e}")
+    
+    try:
+        reinvest_service.stop()
+    except Exception as e:
+        logger.error(f"Error stopping reinvest_service: {e}")
+    
+    # Close CCXT async sessions - ALWAYS TRY (even if ENABLE_CCXT=0)
+    if enable_ccxt or enable_trading:
+        try:
+            from paper_trading_engine import paper_engine
+            await paper_engine.close_exchanges()
+            logger.info("✅ CCXT sessions closed")
+        except Exception as e:
+            logger.error(f"Error closing CCXT sessions: {e}")
+    
+    try:
+        await close_db()
     except Exception as e:
         logger.warning(f"CCXT close warning (non-fatal): {e}")
     
@@ -211,6 +343,9 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Database close warning: {e}")
     
     logger.info("🔴 All systems stopped gracefully")
+        logger.error(f"Error closing database: {e}")
+    
+    logger.info("🔴 All systems stopped")
 
 app = FastAPI(lifespan=lifespan)
 

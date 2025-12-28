@@ -71,5 +71,25 @@ async def require_admin(user_id: str = Depends(get_current_user)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
+    """Check if user has admin privileges"""
+    try:
+        from database import users_collection
+        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        if user:
+            # Check if user has is_admin field set to True or role == 'admin'
+            return user.get('is_admin', False) or user.get('role', '') == 'admin'
+        return False
+    except Exception as e:
+        # Log error but don't crash - default to non-admin
+        import logging
+        logging.getLogger(__name__).error(f"Error checking admin status: {e}")
+        return False
+
+async def require_admin(user_id: str = Depends(get_current_user)) -> str:
+    """Require user to be admin, raises 403 if not"""
+    if not await is_admin(user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required"
         )
     return user_id
