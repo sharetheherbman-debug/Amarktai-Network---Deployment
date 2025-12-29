@@ -203,6 +203,59 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+## 🚀 Quick Start (VPS Deployment)
+
+### Prerequisites
+- Ubuntu 24.04 LTS
+- Python 3.11+
+- MongoDB 6.0+
+- systemd
+
+### Installation
+```bash
+# Clone repository
+git clone https://github.com/amarktainetwork-blip/Amarktai-Network---Deployment.git
+cd Amarktai-Network---Deployment
+
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+pip install -r backend/requirements.txt
+
+# Configure environment
+cp backend/.env.example backend/.env
+nano backend/.env  # Set MONGO_URI, JWT_SECRET, etc.
+
+# Run preflight check
+python -m backend.preflight
+
+# If preflight passes, start server
+uvicorn backend.server:app --host 127.0.0.1 --port 8000
+```
+
+### Common Failures & Fixes
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `ImportError: cannot import name 'wallets_collection'` | Missing collection in database.py | Update to latest version |
+| `AttributeError: 'NoneType' object has no attribute 'add_job'` | Autopilot scheduler not initialized | Check `ENABLE_AUTOPILOT` flag |
+| `RuntimeWarning: coroutine 'stop' was never awaited` | Async shutdown not awaited | Update to latest version |
+| Server doesn't bind to port 8000 | Import-time crash before uvicorn starts | Run `python -m backend.preflight` to diagnose |
+| `ss -tlnp` shows no process on 8000 | Systemd restart loop | Check logs: `journalctl -u amarktai-backend -n 100` |
+
+### Health Check
+After starting, verify:
+```bash
+# Check port is bound
+ss -tlnp | grep 8000
+
+# Ping health endpoint
+curl http://127.0.0.1:8000/api/health/ping
+# Should return: {"status": "healthy", "timestamp": "..."}
+```
+
 ## 📚 Documentation
 
 - **[Backend Dependencies Audit](reports/backend-deps-audit.md)** - Python 3.12 fixes

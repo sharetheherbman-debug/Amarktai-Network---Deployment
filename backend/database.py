@@ -38,6 +38,11 @@ learning_logs_collection = db.learning_logs
 autopilot_actions_collection = db.autopilot_actions
 rogue_detections_collection = db.rogue_detections
 
+# Financial Tracking Collections (required by server.py)
+wallets_collection = db.wallets
+ledger_collection = db.ledger
+profits_collection = db.profits
+
 async def init_db():
     """Initialize database indexes"""
     # User indexes

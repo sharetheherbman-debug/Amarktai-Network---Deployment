@@ -17,7 +17,8 @@ logger = logging.getLogger(__name__)
 
 class AutopilotEngine:
     def __init__(self):
-        self.scheduler = None
+        # Initialize scheduler immediately to prevent NoneType errors
+        self.scheduler = AsyncIOScheduler()
         self.db = None
         self.running = False
         
@@ -29,43 +30,15 @@ class AutopilotEngine:
         self.db = client[db_name]
         
     async def start(self):
-        """Start the autopilot engine"""
-        if self.running:
-            logger.warning("Autopilot Engine already running")
+        """Start the autopilot engine - idempotent, respects feature flags"""
+        # Check feature flag first
+        enable_autopilot = os.getenv('ENABLE_AUTOPILOT', '0') == '1'
+        enable_schedulers = os.getenv('ENABLE_SCHEDULERS', '0') == '1'
+        
+        if not enable_autopilot:
+            logger.info("🤖 Autopilot Engine disabled (ENABLE_AUTOPILOT=0)")
             return
-            
-        await self.init_db()
-        self.running = True
         
-        # Schedule daily reinvestment at 23:59 UTC
-        self.scheduler.add_job(
-            self.daily_reinvestment_cycle,
-            trigger='cron',
-            hour=23,
-            minute=59,
-            timezone='UTC',
-            id='daily_reinvestment'
-        )
-        
-        # Check paper bot promotions every hour
-        self.scheduler.add_job(
-            self.check_paper_bot_promotions,
-            trigger='interval',
-            hours=1,
-            id='paper_bot_check'
-        )
-        
-        # Autopilot strategy optimization every 6 hours
-        self.scheduler.add_job(
-            self.optimize_strategies,
-            trigger='interval',
-            hours=6,
-            id='strategy_optimization'
-        )
-        
-        self.scheduler.start()
-        logger.info("🤖 Autopilot Engine started")
-        """Start the autopilot engine - idempotent"""
         # Prevent multiple starts
         if self.running:
             logger.info("🤖 Autopilot Engine already running, skipping start")
@@ -75,12 +48,8 @@ class AutopilotEngine:
             await self.init_db()
             self.running = True
             
-            # Create scheduler if not exists
-            if self.scheduler is None:
-                self.scheduler = AsyncIOScheduler()
-            
-            # Only add jobs if scheduler is not already running
-            if not self.scheduler.running:
+            # Only add jobs if scheduler is not already running and schedulers are enabled
+            if enable_schedulers and not self.scheduler.running:
                 # Schedule daily reinvestment at 23:59 UTC
                 self.scheduler.add_job(
                     self.daily_reinvestment_cycle,
@@ -108,13 +77,13 @@ class AutopilotEngine:
                 )
                 
                 self.scheduler.start()
-                logger.info("🤖 Autopilot Engine started")
+                logger.info("🤖 Autopilot Engine started with scheduler")
             else:
-                logger.info("🤖 Autopilot Engine scheduler already running")
+                logger.info("🤖 Autopilot Engine started without scheduler (ENABLE_SCHEDULERS=0 or already running)")
         except Exception as e:
             logger.error(f"Failed to start Autopilot Engine: {e}")
             self.running = False
-            raise
+            # Don't raise - let server continue
         
     async def daily_reinvestment_cycle(self):
         """Daily profit reinvestment at 23:59 UTC - LEDGER-BASED"""
@@ -385,27 +354,19 @@ class AutopilotEngine:
         except Exception as e:
             logger.error(f"Strategy optimization error: {e}")
             
-    def stop(self):
-        """Stop the autopilot engine - never raises"""
-        try:
-            self.running = False
-            if self.scheduler and self.scheduler.running:
-                self.scheduler.shutdown(wait=False)
-            logger.info("Autopilot Engine stopped")
-        except Exception as e:
-            logger.warning(f"Autopilot shutdown warning (non-fatal): {e}")
-        """Stop the autopilot engine - never raises, explicitly handles SchedulerNotRunningError"""
+    async def stop(self):
+        """Stop the autopilot engine - async, never raises"""
         try:
             self.running = False
             if self.scheduler is not None and self.scheduler.running:
                 try:
                     self.scheduler.shutdown(wait=False)
-                    logger.info("Autopilot Engine stopped")
+                    logger.info("🤖 Autopilot Engine stopped")
                 except Exception as scheduler_error:
                     # Explicitly catch SchedulerNotRunningError and any other scheduler issues
                     logger.warning(f"Scheduler shutdown warning (ignored): {scheduler_error}")
             else:
-                logger.info("Autopilot Engine already stopped or not running")
+                logger.info("🤖 Autopilot Engine already stopped or not running")
         except Exception as e:
             # Never let shutdown crash the process
             logger.error(f"Error stopping Autopilot Engine (non-fatal): {e}")
