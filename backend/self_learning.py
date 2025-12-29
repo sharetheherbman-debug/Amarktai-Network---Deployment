@@ -37,7 +37,7 @@ class SelfLearningSystem:
             yesterday_start = (datetime.now(timezone.utc) - timedelta(days=1)).replace(hour=0, minute=0, second=0)
             yesterday_end = yesterday_start + timedelta(days=1)
             
-            trades = await self.db.trades.find({
+            trades = await self.db.trades_collection.find({
                 'user_id': user_id,
                 'timestamp': {
                     '$gte': yesterday_start.isoformat(),
@@ -66,7 +66,7 @@ class SelfLearningSystem:
                 'daily_summary': report
             }
             
-            await self.db.learning_data.insert_one(learning_data)
+            await self.db.learning_data_collection.insert_one(learning_data)
             
             # ALSO store in new learning_logs collection
             await self.db.learning_logs_collection.insert_one({
@@ -230,7 +230,7 @@ class SelfLearningSystem:
             # Get recent learning data (last 7 days)
             seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
             
-            learning_data = await self.db.learning_data.find({
+            learning_data = await self.db.learning_data_collection.find({
                 'user_id': user_id,
                 'date': {'$gte': seven_days_ago}
             }).to_list(100)
@@ -278,7 +278,7 @@ class SelfLearningSystem:
             # Get last 7 days of learning data
             seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
             
-            learning_data = await self.db.learning_data.find({
+            learning_data = await self.db.learning_data_collection.find({
                 'user_id': user_id,
                 'date': {'$gte': seven_days_ago}
             }).to_list(100)
