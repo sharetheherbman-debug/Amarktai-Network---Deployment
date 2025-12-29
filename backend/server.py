@@ -189,7 +189,7 @@ async def lifespan(app: FastAPI):
     # Start Daily Reinvestment Scheduler (optional)
     try:
         from services.daily_reinvestment import get_reinvestment_service
-        reinvest_service = get_reinvestment_service(db)
+        reinvest_service = get_reinvestment_service(db.db)
         reinvest_service.start()
         logger.info("💰 Daily Reinvestment Scheduler started")
     except Exception as e:
@@ -298,7 +298,7 @@ async def lifespan(app: FastAPI):
     # Stop optional services
     try:
         from services.daily_reinvestment import get_reinvestment_service
-        reinvest_service = get_reinvestment_service(db)
+        reinvest_service = get_reinvestment_service(db.db)
         reinvest_service.stop()
         logger.info("✅ Reinvestment Service stopped")
     except Exception as e:
