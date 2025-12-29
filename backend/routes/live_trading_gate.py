@@ -9,7 +9,7 @@ from typing import Dict, List
 import logging
 
 from auth import get_current_user
-from database import bots_collection, trades_collection, system_modes_collection, users_collection
+import database as db
 from config import PAPER_TRAINING_DAYS, MIN_WIN_RATE, MIN_PROFIT_PERCENT, MIN_TRADES_FOR_PROMOTION
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ async def check_user_live_eligibility(user_id: str) -> Dict:
     warnings = []
     
     # Check if paper learning period completed
-    user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+    user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
     if not user:
         return {"eligible": False, "reasons": ["User not found"]}
     
@@ -53,7 +53,7 @@ async def check_user_live_eligibility(user_id: str) -> Dict:
         reasons.append(f"Paper trading period incomplete: {days_elapsed}/{required_days} days")
     
     # Check profitability and performance
-    user_bots = await bots_collection.find(
+    user_bots = await db.bots_collection.find(
         {"user_id": user_id, "trading_mode": "paper"},
         {"_id": 0}
     ).to_list(1000)
@@ -88,7 +88,7 @@ async def check_user_live_eligibility(user_id: str) -> Dict:
         reasons.append(f"Overall loss: {profit_pct:.2f}%")
     
     # Check for emergency stop
-    modes = await system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
+    modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
     if modes and modes.get('emergencyStop', False):
         reasons.append("Emergency stop is active")
     
@@ -145,7 +145,7 @@ async def request_live_trading(user_id: str = Depends(get_current_user)):
         
         if eligibility['eligible']:
             # Update user's live_allowed flag
-            await users_collection.update_one(
+            await db.users_collection.update_one(
                 {"id": user_id},
                 {
                     "$set": {
@@ -191,7 +191,7 @@ async def get_live_eligibility(user_id: str = Depends(get_current_user)):
         eligibility = await check_user_live_eligibility(user_id)
         
         # Check if already approved
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         live_allowed = user.get('live_allowed', False) if user else False
         
         return {
@@ -222,7 +222,7 @@ async def start_paper_learning(user_id: str = Depends(get_current_user)):
     Records the start timestamp for tracking learning period completion
     """
     try:
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -237,7 +237,7 @@ async def start_paper_learning(user_id: str = Depends(get_current_user)):
         # Start learning period
         start_ts = datetime.now(timezone.utc).isoformat()
         
-        await users_collection.update_one(
+        await db.users_collection.update_one(
             {"id": user_id},
             {
                 "$set": {

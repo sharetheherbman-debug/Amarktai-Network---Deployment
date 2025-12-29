@@ -11,7 +11,7 @@ from auth import get_current_user
 from engines.wallet_manager import wallet_manager
 from engines.funding_plan_manager import funding_plan_manager
 from jobs.wallet_balance_monitor import wallet_balances_collection
-from database import bots_collection
+import database as db
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ async def get_capital_requirements(user_id: str = Depends(get_current_user)):
     try:
         
         # Get all active bots
-        bots = await bots_collection.find(
+        bots = await db.bots_collection.find(
             {"user_id": user_id, "status": "active"},
             {"_id": 0}
         ).to_list(1000)

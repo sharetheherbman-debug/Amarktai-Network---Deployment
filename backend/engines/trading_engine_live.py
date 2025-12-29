@@ -10,7 +10,7 @@ from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 import logging
 
-from database import trades_collection, bots_collection, api_keys_collection
+import database as db
 from ccxt_service import CCXTService
 from engines.risk_management import risk_management
 from config import *
@@ -26,7 +26,7 @@ class LiveTradingEngine:
     async def init_user_exchanges(self, user_id: str) -> Dict[str, ccxt.Exchange]:
         """Initialize all exchange connections for a user"""
         try:
-            api_keys = await api_keys_collection.find(
+            api_keys = await db.api_keys_collection.find(
                 {"user_id": user_id},
                 {"_id": 0}
             ).to_list(100)
@@ -323,14 +323,14 @@ class LiveTradingEngine:
         """Monitor open positions for stop loss / take profit"""
         try:
             # Get all active live bots for user
-            bots = await bots_collection.find(
+            bots = await db.bots_collection.find(
                 {"user_id": user_id, "status": "active", "mode": "live"},
                 {"_id": 0}
             ).to_list(100)
             
             for bot in bots:
                 # Get bot's open positions (from recent trades)
-                recent_trades = await trades_collection.find(
+                recent_trades = await db.trades_collection.find(
                     {"bot_id": bot['id'], "status": "open"},
                     {"_id": 0}
                 ).sort("timestamp", -1).to_list(10)
@@ -379,7 +379,7 @@ class LiveTradingEngine:
                 pnl = (entry_price - exit_price) * amount
             
             # Update trade in database
-            await trades_collection.update_one(
+            await db.trades_collection.update_one(
                 {"id": trade['id']},
                 {"$set": {
                     "status": "closed",
@@ -392,13 +392,13 @@ class LiveTradingEngine:
             
             # Update bot capital
             new_capital = bot['current_capital'] + pnl
-            await bots_collection.update_one(
+            await db.bots_collection.update_one(
                 {"id": bot['id']},
                 {"$set": {"current_capital": new_capital}}
             )
             
             # Create alert
-            await alerts_collection.insert_one({
+            await db.alerts_collection.insert_one({
                 "user_id": bot['user_id'],
                 "type": "stop_loss" if reason == "stop_loss" else "take_profit",
                 "severity": "high",

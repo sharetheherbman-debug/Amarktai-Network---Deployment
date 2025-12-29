@@ -62,16 +62,16 @@ async def deep_strategy_analysis(
 ):
     """Get deep AI strategy analysis for a bot"""
     try:
-        from database import bots_collection, trades_collection
+        import database as db
         
         # Get bot
-        bot = await bots_collection.find_one({"id": bot_id, "user_id": current_user['id']}, {"_id": 0})
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": current_user['id']}, {"_id": 0})
         
         if not bot:
             raise HTTPException(status_code=404, detail="Bot not found")
         
         # Get recent trades
-        recent_trades = await trades_collection.find(
+        recent_trades = await db.trades_collection.find(
             {"bot_id": bot_id},
             {"_id": 0}
         ).sort("timestamp", -1).limit(50).to_list(50)

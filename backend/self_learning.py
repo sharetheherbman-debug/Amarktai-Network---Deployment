@@ -19,17 +19,14 @@ class SelfLearningSystem:
     def __init__(self):
         self.db = None
         
-    async def init_db(self):
+    async def db.init_db(self):
         """Initialize database connection"""
-        from database import (
-            db, trades_collection, bots_collection, 
-            learning_logs_collection, alerts_collection
-        )
+        import database as db
         self.db = db
-        self.trades_collection = trades_collection
-        self.bots_collection = bots_collection
-        self.learning_logs_collection = learning_logs_collection
-        self.alerts_collection = alerts_collection
+        self.db.trades_collection = db.trades_collection
+        self.db.bots_collection = db.bots_collection
+        self.db.learning_logs_collection = db.learning_logs_collection
+        self.db.alerts_collection = db.alerts_collection
         
     async def analyze_daily_trades(self, user_id: str):
         """Analyze yesterday's trades and generate learning report"""
@@ -72,7 +69,7 @@ class SelfLearningSystem:
             await self.db.learning_data.insert_one(learning_data)
             
             # ALSO store in new learning_logs collection
-            await self.learning_logs_collection.insert_one({
+            await self.db.learning_logs_collection.insert_one({
                 'user_id': user_id,
                 'timestamp': datetime.now(timezone.utc).isoformat(),
                 'type': 'daily_analysis',
@@ -84,7 +81,7 @@ class SelfLearningSystem:
             })
             
             # Create alert with learning report
-            await self.alerts_collection.insert_one({
+            await self.db.alerts_collection.insert_one({
                 'user_id': user_id,
                 'type': 'learning',
                 'severity': 'low',
@@ -173,7 +170,7 @@ class SelfLearningSystem:
         """Run daily learning analysis on demand"""
         try:
             if not self.db:
-                await self.init_db()
+                await self.db.init_db()
             
             await self.analyze_daily_trades(user_id)
             
@@ -193,7 +190,7 @@ class SelfLearningSystem:
         try:
             # In production, fetch real BTC price data
             # For now, simulate based on trade patterns
-            recent_trades = await self.trades_collection.find({}).sort('timestamp', -1).limit(100).to_list(100)
+            recent_trades = await self.db.trades_collection.find({}).sort('timestamp', -1).limit(100).to_list(100)
             
             if len(recent_trades) < 10:
                 return "normal"

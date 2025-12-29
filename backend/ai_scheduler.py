@@ -5,7 +5,7 @@ No manual intervention needed - system manages itself
 import asyncio
 import logging
 from datetime import datetime, timezone, time, timedelta
-from database import bots_collection, users_collection
+import database as db
 from bot_lifecycle import bot_lifecycle
 from performance_ranker import performance_ranker
 from engines.capital_allocator import capital_allocator
@@ -25,7 +25,7 @@ class AIScheduler:
         
         try:
             # Get all users
-            users = await users_collection.find({}, {"_id": 0, "id": 1}).to_list(1000)
+            users = await db.users_collection.find({}, {"_id": 0, "id": 1}).to_list(1000)
             
             for user in users:
                 user_id = user['id']

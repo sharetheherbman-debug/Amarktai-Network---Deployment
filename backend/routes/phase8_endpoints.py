@@ -102,8 +102,8 @@ async def send_daily_report(current_user: Dict = Depends(get_current_user)):
     """Send daily performance report to user's email"""
     try:
         # Get user email
-        from database import users_collection
-        user = await users_collection.find_one({"id": current_user['id']}, {"_id": 0})
+        import database as db
+        user = await db.users_collection.find_one({"id": current_user['id']}, {"_id": 0})
         
         if not user or not user.get('email'):
             raise HTTPException(status_code=404, detail="User email not found")
@@ -121,8 +121,8 @@ async def send_daily_report(current_user: Dict = Depends(get_current_user)):
 async def test_email(current_user: Dict = Depends(get_current_user)):
     """Test email configuration"""
     try:
-        from database import users_collection
-        user = await users_collection.find_one({"id": current_user['id']}, {"_id": 0})
+        import database as db
+        user = await db.users_collection.find_one({"id": current_user['id']}, {"_id": 0})
         
         if not user or not user.get('email'):
             raise HTTPException(status_code=404, detail="User email not found")
@@ -146,8 +146,8 @@ async def test_email(current_user: Dict = Depends(get_current_user)):
 async def preview_daily_report(current_user: Dict = Depends(get_current_user)):
     """Preview daily report without sending email"""
     try:
-        from database import users_collection
-        user = await users_collection.find_one({"id": current_user['id']}, {"_id": 0})
+        import database as db
+        user = await db.users_collection.find_one({"id": current_user['id']}, {"_id": 0})
         
         if not user or not user.get('email'):
             raise HTTPException(status_code=404, detail="User email not found")

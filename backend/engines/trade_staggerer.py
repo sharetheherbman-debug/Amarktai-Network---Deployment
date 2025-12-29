@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 from collections import deque
 import logging
 
-from database import bots_collection
+import database as db
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +155,7 @@ class TradeStaggerer:
         """Calculate staggered schedule for all active bots"""
         try:
             # Get all active bots
-            bots = await bots_collection.find(
+            bots = await db.bots_collection.find(
                 {"user_id": user_id, "status": "active"},
                 {"_id": 0, "id": 1, "name": 1, "exchange": 1}
             ).to_list(1000)

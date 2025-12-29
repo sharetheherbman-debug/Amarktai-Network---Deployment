@@ -7,7 +7,7 @@ Ensures clean separation of paper and live trading data:
 - Smooth transitions from paper to live
 """
 
-from database import bots_collection, trades_collection, system_modes_collection
+import database as db
 from logger_config import logger
 from datetime import datetime, timezone
 
@@ -18,7 +18,7 @@ class ModeManager:
     async def get_user_mode_stats(self, user_id: str) -> dict:
         """Get separate paper and live stats for user"""
         try:
-            bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+            bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(100)
             active_bots = [b for b in bots if b.get('status') == 'active']
             
             # Separate by mode
@@ -38,26 +38,26 @@ class ModeManager:
             # Get today's trades
             today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0).isoformat()
             
-            paper_trades_today = await trades_collection.count_documents({
+            paper_trades_today = await db.trades_collection.count_documents({
                 "user_id": user_id,
                 "timestamp": {"$gte": today_start},
                 "mode": "paper"
             })
             
-            live_trades_today = await trades_collection.count_documents({
+            live_trades_today = await db.trades_collection.count_documents({
                 "user_id": user_id,
                 "timestamp": {"$gte": today_start},
                 "mode": "live"
             })
             
             # Get today's PnL
-            paper_trades = await trades_collection.find({
+            paper_trades = await db.trades_collection.find({
                 "user_id": user_id,
                 "timestamp": {"$gte": today_start},
                 "mode": "paper"
             }, {"_id": 0}).to_list(10000)
             
-            live_trades = await trades_collection.find({
+            live_trades = await db.trades_collection.find({
                 "user_id": user_id,
                 "timestamp": {"$gte": today_start},
                 "mode": "live"
@@ -94,7 +94,7 @@ class ModeManager:
     async def switch_bot_to_live(self, bot_id: str) -> dict:
         """Switch bot from paper to live - preserve history, start fresh"""
         try:
-            bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+            bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
             if not bot:
                 return {"success": False, "error": "Bot not found"}
             
@@ -113,7 +113,7 @@ class ModeManager:
             # Reset for live trading
             initial_capital = bot.get('initial_capital', 1000)
             
-            await bots_collection.update_one(
+            await db.bots_collection.update_one(
                 {"id": bot_id},
                 {"$set": {
                     "trading_mode": "live",

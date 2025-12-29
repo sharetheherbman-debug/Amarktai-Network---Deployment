@@ -4,7 +4,7 @@ Integrates trade limiter, paper trading, and scheduler
 """
 import asyncio
 from datetime import datetime, timezone, timedelta
-from database import bots_collection, trades_collection
+import database as db
 from engines.trade_limiter import trade_limiter
 from logger_config import logger
 import random
@@ -46,7 +46,7 @@ class TradingEngineProduction:
             new_capital = current_capital + net_profit
             
             # Update bot in database
-            await bots_collection.update_one(
+            await db.bots_collection.update_one(
                 {"id": bot_id},
                 {
                     "$set": {
@@ -79,7 +79,7 @@ class TradingEngineProduction:
                 "status": "completed"
             }
             
-            await trades_collection.insert_one(trade)
+            await db.trades_collection.insert_one(trade)
             
             # Log trade
             emoji = "🟢" if net_profit > 0 else "🔴"
@@ -127,7 +127,7 @@ class TradingEngineProduction:
         while self.is_running:
             try:
                 # Get all active bots
-                bots = await bots_collection.find({
+                bots = await db.bots_collection.find({
                     "status": "active"
                 }, {"_id": 0}).to_list(1000)
                 

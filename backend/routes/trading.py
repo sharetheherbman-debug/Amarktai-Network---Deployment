@@ -4,7 +4,7 @@ from typing import Optional, List
 import logging
 
 from models import User, UserLogin, Bot, BotCreate, APIKey, APIKeyCreate, Trade, SystemMode, Alert, ChatMessage, BotRiskMode
-from database import users_collection, bots_collection, api_keys_collection, trades_collection, system_modes_collection, alerts_collection, chat_messages_collection
+import database as db
 from auth import create_access_token, get_current_user, get_password_hash, verify_password
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ from ccxt_service import ccxt_service
 async def get_overview(user_id: str = Depends(get_current_user)):
     """Get dashboard overview - FIXED with accurate counts + mode display"""
     try:
-        bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
+        bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
         
         # Accurate counts
         active_bots = [b for b in bots if b.get('status') == 'active']
@@ -35,7 +35,7 @@ async def get_overview(user_id: str = Depends(get_current_user)):
         exposure = (total_capital / (total_capital + 1000)) * 100 if total_capital > 0 else 0
         
         # Get system modes
-        modes = await system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
+        modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
         
         # Determine display text
         if live_bots > 0:
@@ -91,7 +91,7 @@ async def get_metrics(user_id: str = Depends(get_current_user)):
 async def get_recent_trades(limit: int = 50, user_id: str = Depends(get_current_user)):
     """Get recent trades for live feed - NO LIMIT"""
     try:
-        trades = await trades_collection.find(
+        trades = await db.trades_collection.find(
             {"user_id": user_id},
             {"_id": 0}
         ).sort("timestamp", -1).limit(limit).to_list(limit)
@@ -108,7 +108,7 @@ async def get_recent_trades(limit: int = 50, user_id: str = Depends(get_current_
 @router.get("/system/mode")
 async def get_system_modes(user_id: str = Depends(get_current_user)):
     """Get current system mode states"""
-    modes = await system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
+    modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
     
     if not modes:
         # Create default modes
@@ -119,7 +119,7 @@ async def get_system_modes(user_id: str = Depends(get_current_user)):
             "autopilot": False,
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
-        await system_modes_collection.insert_one(modes)
+        await db.system_modes_collection.insert_one(modes)
     
     return modes
 

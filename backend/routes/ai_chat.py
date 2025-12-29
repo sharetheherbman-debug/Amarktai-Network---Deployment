@@ -10,13 +10,7 @@ import logging
 import json
 
 from auth import get_current_user
-from database import (
-    chat_messages_collection, 
-    bots_collection, 
-    trades_collection,
-    system_modes_collection,
-    users_collection
-)
+import database as db
 from ai_super_brain import AISuperBrain
 from engines.trade_budget_manager import trade_budget_manager
 from websocket_manager import manager
@@ -38,19 +32,19 @@ class AIActionRouter:
     async def get_system_state(user_id: str) -> Dict:
         """Get comprehensive system state for AI context"""
         # Get bots
-        bots = await bots_collection.find(
+        bots = await db.bots_collection.find(
             {"user_id": user_id},
             {"_id": 0}
         ).to_list(1000)
         
         # Get system modes
-        modes = await system_modes_collection.find_one(
+        modes = await db.system_modes_collection.find_one(
             {"user_id": user_id},
             {"_id": 0}
         )
         
         # Get recent trades
-        recent_trades = await trades_collection.find(
+        recent_trades = await db.trades_collection.find(
             {"user_id": user_id},
             {"_id": 0}
         ).sort("timestamp", -1).limit(10).to_list(10)
@@ -88,7 +82,7 @@ class AIActionRouter:
         try:
             if action == "start_bot":
                 bot_id = params.get('bot_id')
-                result = await bots_collection.update_one(
+                result = await db.bots_collection.update_one(
                     {"id": bot_id, "user_id": user_id},
                     {"$set": {"status": "active"}}
                 )
@@ -97,7 +91,7 @@ class AIActionRouter:
             elif action == "pause_bot":
                 bot_id = params.get('bot_id')
                 reason = params.get('reason', 'AI recommendation')
-                result = await bots_collection.update_one(
+                result = await db.bots_collection.update_one(
                     {"id": bot_id, "user_id": user_id},
                     {"$set": {
                         "status": "paused",
@@ -109,20 +103,20 @@ class AIActionRouter:
             
             elif action == "stop_bot":
                 bot_id = params.get('bot_id')
-                result = await bots_collection.update_one(
+                result = await db.bots_collection.update_one(
                     {"id": bot_id, "user_id": user_id},
                     {"$set": {"status": "stopped"}}
                 )
                 return {"success": result.modified_count > 0, "action": "stop_bot", "bot_id": bot_id}
             
             elif action == "emergency_stop":
-                result = await system_modes_collection.update_one(
+                result = await db.system_modes_collection.update_one(
                     {"user_id": user_id},
                     {"$set": {"emergencyStop": True}},
                     upsert=True
                 )
                 # Pause all bots
-                await bots_collection.update_many(
+                await db.bots_collection.update_many(
                     {"user_id": user_id, "status": "active"},
                     {"$set": {
                         "status": "paused",
@@ -179,7 +173,7 @@ async def ai_chat(
             "content": content,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
-        await chat_messages_collection.insert_one(user_msg)
+        await db.chat_messages_collection.insert_one(user_msg)
         
         # Get system state for AI context
         system_state = await action_router.get_system_state(user_id)
@@ -303,7 +297,7 @@ Instructions:
             "content": ai_response,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
-        await chat_messages_collection.insert_one(ai_msg)
+        await db.chat_messages_collection.insert_one(ai_msg)
         
         # Send real-time update
         await manager.send_message(user_id, {
@@ -330,7 +324,7 @@ async def get_chat_history(
 ):
     """Get chat history for user"""
     try:
-        messages = await chat_messages_collection.find(
+        messages = await db.chat_messages_collection.find(
             {"user_id": user_id},
             {"_id": 0}
         ).sort("timestamp", -1).limit(limit).to_list(limit)
@@ -353,7 +347,7 @@ async def get_chat_history(
 async def clear_chat_history(user_id: str = Depends(get_current_user)):
     """Clear chat history for user"""
     try:
-        result = await chat_messages_collection.delete_many({"user_id": user_id})
+        result = await db.chat_messages_collection.delete_many({"user_id": user_id})
         
         return {
             "success": True,
@@ -387,7 +381,7 @@ async def execute_ai_action(
         
         # Check if 2FA is required
         if require_2fa:
-            user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+            user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
             if user and user.get('two_factor_enabled'):
                 otp_code = action_data.get('otp_code')
                 if not otp_code:

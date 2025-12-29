@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 from datetime import datetime, timezone, timedelta
 import logging
 
-from database import db
+import database as db
 
 logger = logging.getLogger(__name__)
 

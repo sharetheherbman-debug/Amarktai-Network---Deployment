@@ -5,7 +5,7 @@ Run once to update all existing bots with new lifecycle tracking fields
 
 import asyncio
 from datetime import datetime, timezone, timedelta
-from database import bots_collection
+import database as db
 import logging
 
 logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ async def migrate_bot_lifecycle_fields():
     
     try:
         # Get all bots without lifecycle fields
-        bots = await bots_collection.find({}, {"_id": 0}).to_list(10000)
+        bots = await db.bots_collection.find({}, {"_id": 0}).to_list(10000)
         
         updated_count = 0
         
@@ -91,7 +91,7 @@ async def migrate_bot_lifecycle_fields():
             
             # Apply updates
             if updates:
-                await bots_collection.update_one(
+                await db.bots_collection.update_one(
                     {"id": bot['id']},
                     {"$set": updates}
                 )

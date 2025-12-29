@@ -14,7 +14,7 @@ preventing the profit corruption issue that existed in this old implementation.
 
 import asyncio
 from datetime import datetime, timezone
-from database import bots_collection, trades_collection
+import database as db
 from logger_config import logger
 from performance_ranker import performance_ranker
 
@@ -59,7 +59,7 @@ class CapitalAllocator:
                     
                     # Update bot capital
                     new_capital = current_capital - takeable
-                    await bots_collection.update_one(
+                    await db.bots_collection.update_one(
                         {"id": bot['id']},
                         {
                             "$set": {"current_capital": new_capital},
@@ -81,7 +81,7 @@ class CapitalAllocator:
                     current_capital = bot.get('current_capital', 1000)
                     new_capital = current_capital + capital_per_top_bot
                     
-                    await bots_collection.update_one(
+                    await db.bots_collection.update_one(
                         {"id": bot['id']},
                         {
                             "$set": {"current_capital": new_capital},
@@ -115,7 +115,7 @@ class CapitalAllocator:
             # Calculate today's profit
             today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0).isoformat()
             
-            trades_today = await trades_collection.find({
+            trades_today = await db.trades_collection.find({
                 "user_id": user_id,
                 "timestamp": {"$gte": today_start}
             }, {"_id": 0}).to_list(10000)
@@ -141,7 +141,7 @@ class CapitalAllocator:
                 current_capital = bot.get('current_capital', 1000)
                 new_capital = current_capital + capital_per_bot
                 
-                await bots_collection.update_one(
+                await db.bots_collection.update_one(
                     {"id": bot['id']},
                     {
                         "$set": {"current_capital": new_capital},
@@ -171,7 +171,7 @@ class CapitalAllocator:
         """Auto-spawn new bot when R1000 profit milestone reached"""
         try:
             # Get total user profit
-            trades = await trades_collection.find(
+            trades = await db.trades_collection.find(
                 {"user_id": user_id},
                 {"_id": 0}
             ).to_list(10000)
@@ -179,7 +179,7 @@ class CapitalAllocator:
             total_profit = sum(t.get('pnl', 0) for t in trades)
             
             # Check bot count
-            bot_count = await bots_collection.count_documents({
+            bot_count = await db.bots_collection.count_documents({
                 "user_id": user_id,
                 "status": "active"
             })
@@ -208,7 +208,7 @@ class CapitalAllocator:
                     "created_at": datetime.now(timezone.utc).isoformat()
                 }
                 
-                await bots_collection.insert_one(new_bot)
+                await db.bots_collection.insert_one(new_bot)
                 logger.info(f"Auto-spawned new bot for user {user_id} (milestone: R1000 profit)")
                 
                 return {

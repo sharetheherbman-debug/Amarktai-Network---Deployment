@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 import logging
 
 from auth import get_current_user
-from database import get_database
+import database as db
 from services.ledger_service import get_ledger_service
 
 router = APIRouter(prefix="/api", tags=["ledger"])

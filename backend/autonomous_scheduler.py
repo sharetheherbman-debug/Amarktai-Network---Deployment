@@ -12,7 +12,7 @@ from bot_lifecycle import bot_lifecycle
 from performance_ranker import performance_ranker
 from engines.capital_allocator import capital_allocator
 from market_regime import market_regime_detector
-from database import users_collection, bots_collection
+import database as db
 from engines.self_healing import self_healing
 from engines.auto_promotion_manager import auto_promotion_manager
 from engines.bot_spawner import bot_spawner
@@ -56,7 +56,7 @@ class AutonomousScheduler:
                 logger.info("⏰ Running hourly autonomous tasks...")
                 
                 # Get all users
-                users = await users_collection.find({}, {"_id": 0}).to_list(1000)
+                users = await db.users_collection.find({}, {"_id": 0}).to_list(1000)
                 
                 for user in users:
                     user_id = user.get('id')
@@ -84,7 +84,7 @@ class AutonomousScheduler:
                 logger.info("🌅 Running daily autonomous tasks...")
                 
                 # Get all users
-                users = await users_collection.find({}, {"_id": 0}).to_list(1000)
+                users = await db.users_collection.find({}, {"_id": 0}).to_list(1000)
                 
                 for user in users:
                     user_id = user.get('id')
@@ -116,9 +116,9 @@ class AutonomousScheduler:
                 
                 logger.info("Checking bot spawning needs...")
                 # Check if any users need more bots spawned
-                users = await users_collection.find({}, {"_id": 0, "id": 1}).to_list(100)
+                users = await db.users_collection.find({}, {"_id": 0, "id": 1}).to_list(100)
                 for user in users:
-                    bot_count = await bots_collection.count_documents({"user_id": user['id']})
+                    bot_count = await db.bots_collection.count_documents({"user_id": user['id']})
                     if bot_count < 45:
                         logger.info(f"User {user['id'][:8]} has {bot_count}/45 bots - spawning more")
                         # Will implement gradual spawning vs all at once
@@ -146,7 +146,7 @@ class AutonomousScheduler:
                     regimes[pair] = regime
                 
                 # Get all active bots and adjust based on their trading pair
-                bots = await bots_collection.find(
+                bots = await db.bots_collection.find(
                     {"status": "active"},
                     {"_id": 0}
                 ).to_list(1000)

@@ -67,10 +67,10 @@ class MLPredictor:
     async def detect_anomalies(self, user_id: str) -> dict:
         """Detect anomalous trading patterns"""
         try:
-            from database import trades_collection
+            import database as db
             
             # Get recent trades
-            trades = await trades_collection.find(
+            trades = await db.trades_collection.find(
                 {"user_id": user_id},
                 {"_id": 0}
             ).sort("timestamp", -1).limit(100).to_list(100)

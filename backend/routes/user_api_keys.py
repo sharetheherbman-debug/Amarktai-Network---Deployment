@@ -10,7 +10,7 @@ import logging
 import os
 
 from auth import get_current_user
-from database import users_collection
+import database as db
 from routes.api_key_management import encrypt_api_key, decrypt_api_key
 
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ async def get_user_api_key(user_id: str, service: str) -> Optional[str]:
         Decrypted API key or None if not found
     """
     try:
-        user = await users_collection.find_one({"_id": user_id})
+        user = await db.users_collection.find_one({"_id": user_id})
         if not user:
             return None
             
@@ -89,7 +89,7 @@ async def set_user_api_key(user_id: str, service: str, api_key: str) -> bool:
     try:
         encrypted_key = encrypt_api_key(api_key)
         
-        result = await users_collection.update_one(
+        result = await db.users_collection.update_one(
             {"_id": user_id},
             {
                 "$set": {
@@ -217,7 +217,7 @@ async def delete_user_api_key(
         Success status
     """
     try:
-        result = await users_collection.update_one(
+        result = await db.users_collection.update_one(
             {"_id": user_id},
             {"$unset": {f"api_keys.{service}": ""}}
         )
@@ -279,7 +279,7 @@ async def save_payment_config(
         if encrypted_seed:
             payment_config["wallet_seed"] = encrypted_seed
         
-        result = await users_collection.update_one(
+        result = await db.users_collection.update_one(
             {"_id": user_id},
             {
                 "$set": {
@@ -324,7 +324,7 @@ async def get_payment_config(user_id: str = Depends(get_current_user)):
         Payment configuration (without sensitive wallet seed)
     """
     try:
-        user = await users_collection.find_one({"_id": user_id})
+        user = await db.users_collection.find_one({"_id": user_id})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -444,7 +444,7 @@ async def get_user_payment_agent(user_id: str):
     """
     from engines.payment_agent import PaymentAgent
     
-    user = await users_collection.find_one({"_id": user_id})
+    user = await db.users_collection.find_one({"_id": user_id})
     if not user:
         return None
     

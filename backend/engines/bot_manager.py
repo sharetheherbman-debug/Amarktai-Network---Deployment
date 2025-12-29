@@ -4,7 +4,7 @@ Bot Manager - Enforces limits and manages bot lifecycle
 import asyncio
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
-from database import bots_collection
+import database as db
 from config import EXCHANGE_BOT_LIMITS, NEW_BOT_CAPITAL
 from logger_config import logger
 
@@ -17,7 +17,7 @@ class BotManager:
         """Check if user can create a bot on this exchange"""
         try:
             # Get current bot count for this exchange
-            count = await bots_collection.count_documents({
+            count = await db.bots_collection.count_documents({
                 "user_id": user_id,
                 "exchange": exchange
             })
@@ -75,7 +75,7 @@ class BotManager:
                 "learning_complete": False
             }
             
-            await bots_collection.insert_one(bot)
+            await db.bots_collection.insert_one(bot)
             
             logger.info(f"✅ Created bot: {name} on {exchange} for user {user_id[:8]}")
             
@@ -103,7 +103,7 @@ class BotManager:
             else:
                 return {"success": False, "message": "❌ No bot specified"}
             
-            result = await bots_collection.delete_one(query)
+            result = await db.bots_collection.delete_one(query)
             
             if result.deleted_count > 0:
                 return {"success": True, "message": "✅ Bot deleted"}
@@ -116,7 +116,7 @@ class BotManager:
     async def update_bot_status(self, user_id: str, bot_id: str, status: str) -> dict:
         """Update bot status (active/paused)"""
         try:
-            result = await bots_collection.update_one(
+            result = await db.bots_collection.update_one(
                 {"user_id": user_id, "id": bot_id},
                 {"$set": {"status": status}}
             )
@@ -132,7 +132,7 @@ class BotManager:
     async def reset_daily_trade_counts(self):
         """Reset daily trade counts for all bots (called at midnight)"""
         try:
-            result = await bots_collection.update_many(
+            result = await db.bots_collection.update_many(
                 {},
                 {"$set": {"daily_trade_count": 0}}
             )

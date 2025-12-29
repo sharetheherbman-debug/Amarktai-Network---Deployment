@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 import logging
 from statistics import mean, stdev
 
-from database import trades_collection, bots_collection, learning_logs_collection
+import database as db
 from engines.ai_model_router import ai_model_router
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ class SelfLearningEngine:
     async def analyze_bot_performance(self, bot_id: str) -> Dict:
         """Analyze bot's recent performance for learning"""
         try:
-            bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+            bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
             
             if not bot:
                 return {"error": "Bot not found"}
@@ -42,7 +42,7 @@ class SelfLearningEngine:
             # Get recent trades (last 30 days or 50 trades, whichever is less)
             thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
             
-            recent_trades = await trades_collection.find(
+            recent_trades = await db.trades_collection.find(
                 {
                     "bot_id": bot_id,
                     "timestamp": {"$gte": thirty_days_ago}
@@ -220,7 +220,7 @@ class SelfLearningEngine:
     async def apply_adjustments(self, bot_id: str, adjustments: List[Dict]) -> Dict:
         """Apply approved adjustments to bot"""
         try:
-            bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+            bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
             
             if not bot:
                 return {"error": "Bot not found"}
@@ -255,13 +255,13 @@ class SelfLearningEngine:
             
             if updates:
                 # Apply updates to bot
-                await bots_collection.update_one(
+                await db.bots_collection.update_one(
                     {"id": bot_id},
                     {"$set": updates}
                 )
                 
                 # Log the learning action
-                await learning_logs_collection.insert_one({
+                await db.learning_logs_collection.insert_one({
                     "user_id": bot.get('user_id'),
                     "bot_id": bot_id,
                     "bot_name": bot.get('name'),
@@ -288,7 +288,7 @@ class SelfLearningEngine:
         """Run full learning cycle for all user's bots"""
         try:
             # Get all active bots
-            bots = await bots_collection.find(
+            bots = await db.bots_collection.find(
                 {"user_id": user_id, "status": "active"},
                 {"_id": 0, "id": 1, "name": 1}
             ).to_list(1000)

@@ -27,7 +27,7 @@ Exchange limits are sourced from official documentation:
 import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
-from database import bots_collection, trades_collection
+import database as db
 from exchange_limits import EXCHANGE_LIMITS, get_exchange_limits
 import logging
 
@@ -71,7 +71,7 @@ class TradeBudgetManager:
         if user_id:
             query["user_id"] = user_id
             
-        bots = await bots_collection.find(query, {"_id": 0}).to_list(1000)
+        bots = await db.bots_collection.find(query, {"_id": 0}).to_list(1000)
         return bots
     
     async def calculate_bot_daily_budget(self, bot_id: str, exchange: str) -> int:
@@ -124,7 +124,7 @@ class TradeBudgetManager:
         
         # Count trades executed today
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        trades_today = await trades_collection.count_documents({
+        trades_today = await db.trades_collection.count_documents({
             "bot_id": bot_id,
             "timestamp": {"$gte": today_start.isoformat()}
         })
@@ -144,7 +144,7 @@ class TradeBudgetManager:
         """
         try:
             # Check bot exists and is active
-            bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+            bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
             if not bot:
                 return False, "Bot not found"
             
@@ -183,7 +183,7 @@ class TradeBudgetManager:
         # Count trades in last 10 seconds for this exchange
         ten_seconds_ago = datetime.now(timezone.utc) - timedelta(seconds=10)
         
-        recent_trades = await trades_collection.count_documents({
+        recent_trades = await db.trades_collection.count_documents({
             "exchange": exchange,
             "timestamp": {"$gte": ten_seconds_ago.isoformat()}
         })
@@ -211,7 +211,7 @@ class TradeBudgetManager:
         """
         try:
             # Update bot's daily trade count
-            await bots_collection.update_one(
+            await db.bots_collection.update_one(
                 {"id": bot_id},
                 {
                     "$inc": {"daily_trade_count": 1},
@@ -226,7 +226,7 @@ class TradeBudgetManager:
     async def reset_daily_budgets(self):
         """Reset daily trade counts for all bots (called at midnight UTC)"""
         try:
-            result = await bots_collection.update_many(
+            result = await db.bots_collection.update_many(
                 {},
                 {"$set": {"daily_trade_count": 0}}
             )
@@ -252,7 +252,7 @@ class TradeBudgetManager:
             
             # Count trades today
             today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-            trades_today = await trades_collection.count_documents({
+            trades_today = await db.trades_collection.count_documents({
                 "exchange": exchange,
                 "timestamp": {"$gte": today_start.isoformat()}
             })

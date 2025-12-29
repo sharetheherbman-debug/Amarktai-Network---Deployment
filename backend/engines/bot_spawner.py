@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 import logging
 
-from database import bots_collection
+import database as db
 from engines.wallet_manager import wallet_manager
 from config import *
 
@@ -39,7 +39,7 @@ class BotSpawner:
     async def get_bot_count(self, user_id: str) -> Dict:
         """Get current bot count per exchange"""
         try:
-            bots = await bots_collection.find(
+            bots = await db.bots_collection.find(
                 {"user_id": user_id},
                 {"_id": 0, "exchange": 1, "status": 1}
             ).to_list(1000)
@@ -150,7 +150,7 @@ class BotSpawner:
                 "auto_spawned": True  # Mark as auto-spawned
             }
             
-            await bots_collection.insert_one(bot_doc)
+            await db.bots_collection.insert_one(bot_doc)
             
             logger.info(f"🤖 Spawned {config['name']} on {config['exchange']} with R{config['capital']:.2f}")
             

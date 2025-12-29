@@ -9,7 +9,7 @@ import asyncio
 import aiohttp
 from datetime import datetime, timezone
 from logger_config import logger
-from database import alerts_collection
+import database as db
 
 
 class FLOKxIntegration:
@@ -130,7 +130,7 @@ class FLOKxIntegration:
                 "read": False
             }
             
-            await alerts_collection.insert_one(alert)
+            await db.alerts_collection.insert_one(alert)
             logger.info(f"FLOKx alert created for {user_id}: {pair}")
             
             return alert

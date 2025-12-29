@@ -9,7 +9,7 @@ AI Super-Brain
 import asyncio
 from datetime import datetime, timezone, timedelta
 from logger_config import logger
-from database import trades_collection, bots_collection
+import database as db
 import os
 
 
@@ -53,12 +53,12 @@ class AISuperBrain:
         # Get last 7 days of trades
         seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
         
-        trades = await trades_collection.find({
+        trades = await db.trades_collection.find({
             "user_id": user_id,
             "timestamp": {"$gte": seven_days_ago}
         }, {"_id": 0}).to_list(10000)
         
-        bots = await bots_collection.find(
+        bots = await db.bots_collection.find(
             {"user_id": user_id, "status": "active"},
             {"_id": 0}
         ).to_list(1000)

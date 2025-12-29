@@ -9,7 +9,7 @@ Advanced Order Types
 import asyncio
 from datetime import datetime, timezone
 from logger_config import logger
-from database import bots_collection, trades_collection
+import database as db
 
 
 class AdvancedOrderManager:
@@ -124,7 +124,7 @@ class AdvancedOrderManager:
         """Execute advanced order"""
         try:
             # Get bot
-            bot = await bots_collection.find_one(
+            bot = await db.bots_collection.find_one(
                 {"id": order['bot_id']},
                 {"_id": 0}
             )
@@ -145,7 +145,7 @@ class AdvancedOrderManager:
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
-            await trades_collection.insert_one(trade)
+            await db.trades_collection.insert_one(trade)
             order['status'] = 'executed'
             
             logger.info(f"Order executed: {order['type']} for {order['pair']} at R{price:.2f}")

@@ -11,7 +11,7 @@ import logging
 from decimal import Decimal
 
 from auth import get_current_user
-from database import bots_collection, trades_collection, users_collection
+import database as db
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ async def get_profits(
             start_date = datetime(2020, 1, 1, tzinfo=timezone.utc)
         
         # Get all trades for period
-        trades_cursor = trades_collection.find({
+        trades_cursor = db.trades_collection.find({
             "user_id": user_id,
             "created_at": {"$gte": start_date.isoformat()}
         })
@@ -80,7 +80,7 @@ async def get_profits(
         win_rate = (winning_trades / closed_trades * 100) if closed_trades > 0 else 0.0
         
         # Get user's starting capital for period
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         initial_capital = user.get("initial_capital", 1000.0) if user else 1000.0
         
         # Calculate ROI
@@ -126,12 +126,12 @@ async def get_countdown_status(user_id: str = Depends(get_current_user)):
     """
     try:
         # Get user data
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
         # Get current capital (sum of all bot capitals + wallet balance)
-        bots_cursor = bots_collection.find({"user_id": user_id, "status": {"$ne": "deleted"}})
+        bots_cursor = db.bots_collection.find({"user_id": user_id, "status": {"$ne": "deleted"}})
         bots = await bots_cursor.to_list(1000)
         
         total_capital = 0.0
@@ -144,7 +144,7 @@ async def get_countdown_status(user_id: str = Depends(get_current_user)):
         
         # Get trades for last 30 days to calculate average daily profit
         thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
-        trades_cursor = trades_collection.find({
+        trades_cursor = db.trades_collection.find({
             "user_id": user_id,
             "status": "closed",
             "created_at": {"$gte": thirty_days_ago.isoformat()}
@@ -225,7 +225,7 @@ async def get_portfolio_summary(user_id: str = Depends(get_current_user)):
     """
     try:
         # Get all user bots
-        bots_cursor = bots_collection.find({"user_id": user_id, "status": {"$ne": "deleted"}})
+        bots_cursor = db.bots_collection.find({"user_id": user_id, "status": {"$ne": "deleted"}})
         bots = await bots_cursor.to_list(1000)
         
         # Calculate total equity
@@ -251,7 +251,7 @@ async def get_portfolio_summary(user_id: str = Depends(get_current_user)):
             bots_by_exchange[exchange] = bots_by_exchange.get(exchange, 0) + 1
         
         # Get all trades
-        trades_cursor = trades_collection.find({"user_id": user_id})
+        trades_cursor = db.trades_collection.find({"user_id": user_id})
         trades = await trades_cursor.to_list(10000)
         
         # Calculate realized and unrealized PnL
@@ -277,7 +277,7 @@ async def get_portfolio_summary(user_id: str = Depends(get_current_user)):
             max_drawdown_percent = abs(equity_change / total_initial * 100)
         
         # Get user info
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         funded_capital = user.get("funded_capital", total_initial) if user else total_initial
         
         # Calculate returns

@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 
 from auth import get_current_user
-from database import system_modes_collection, bots_collection
+import database as db
 from engines.audit_logger import audit_logger
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ async def activate_emergency_stop(
         user_id = current_user['id']
         
         # Set emergency stop flag
-        await system_modes_collection.update_one(
+        await db.system_modes_collection.update_one(
             {"user_id": user_id},
             {
                 "$set": {
@@ -42,7 +42,7 @@ async def activate_emergency_stop(
         )
         
         # Pause all active bots
-        result = await bots_collection.update_many(
+        result = await db.bots_collection.update_many(
             {"user_id": user_id, "status": "active"},
             {"$set": {"status": "paused"}}
         )
@@ -80,7 +80,7 @@ async def deactivate_emergency_stop(current_user: Dict = Depends(get_current_use
         user_id = current_user['id']
         
         # Check if emergency stop is active
-        modes = await system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
+        modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
         
         if not modes or not modes.get('emergencyStop'):
             return {
@@ -89,7 +89,7 @@ async def deactivate_emergency_stop(current_user: Dict = Depends(get_current_use
             }
         
         # Disable emergency stop
-        await system_modes_collection.update_one(
+        await db.system_modes_collection.update_one(
             {"user_id": user_id},
             {
                 "$set": {
@@ -134,7 +134,7 @@ async def get_emergency_stop_status(current_user: Dict = Depends(get_current_use
     try:
         user_id = current_user['id']
         
-        modes = await system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
+        modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
         
         if not modes:
             return {

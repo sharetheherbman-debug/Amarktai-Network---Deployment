@@ -10,7 +10,7 @@ import asyncio
 from datetime import datetime, timezone
 import time
 
-from database import db
+import database as db
 from websocket_manager import manager
 
 logger = logging.getLogger(__name__)

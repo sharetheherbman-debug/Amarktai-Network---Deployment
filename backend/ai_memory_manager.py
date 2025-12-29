@@ -7,7 +7,7 @@ AI Memory Management System
 
 import asyncio
 from datetime import datetime, timezone, timedelta
-from database import chat_messages_collection
+import database as db
 from logger_config import logger
 import zipfile
 import json
@@ -25,7 +25,7 @@ class AIMemoryManager:
         try:
             cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
             
-            messages = await chat_messages_collection.find(
+            messages = await db.chat_messages_collection.find(
                 {
                     "user_id": user_id,
                     "timestamp": {"$gte": cutoff_date}
@@ -46,7 +46,7 @@ class AIMemoryManager:
             cutoff_iso = cutoff_date.isoformat()
             
             # Find all messages older than 30 days
-            old_messages = await chat_messages_collection.find(
+            old_messages = await db.chat_messages_collection.find(
                 {"timestamp": {"$lt": cutoff_iso}},
                 {"_id": 0}
             ).to_list(None)
@@ -76,7 +76,7 @@ class AIMemoryManager:
                 logger.info(f"Archived {len(messages)} messages for user {user_id} to {archive_file}")
             
             # Delete archived messages from database
-            delete_result = await chat_messages_collection.delete_many(
+            delete_result = await db.chat_messages_collection.delete_many(
                 {"timestamp": {"$lt": cutoff_iso}}
             )
             

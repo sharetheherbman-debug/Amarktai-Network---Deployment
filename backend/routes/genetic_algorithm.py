@@ -9,7 +9,7 @@ from typing import Dict, List
 import logging
 
 from auth import get_current_user
-from database import bots_collection
+import database as db
 from bot_dna_evolution import BotDNAEvolution
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ async def get_evolution_status(user_id: str = Depends(get_current_user)):
     """
     try:
         # Get all bots
-        bots = await bots_collection.find(
+        bots = await db.bots_collection.find(
             {"user_id": user_id},
             {"_id": 0}
         ).to_list(1000)
@@ -141,7 +141,7 @@ async def mutate_bot(
     """
     try:
         # Verify bot belongs to user
-        bot = await bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
         if not bot:
             raise HTTPException(status_code=404, detail="Bot not found")
         
@@ -151,13 +151,13 @@ async def mutate_bot(
         new_dna = dna_evolution._mutate(bot)
         
         # Update bot
-        await bots_collection.update_one(
+        await db.bots_collection.update_one(
             {"id": bot_id},
             {"$set": new_dna}
         )
         
         # Get updated bot
-        updated_bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
         
         logger.info(f"Bot {bot_id[:8]} manually mutated")
         
@@ -203,8 +203,8 @@ async def crossover_bots(
             raise HTTPException(status_code=400, detail="Both parent IDs are required")
         
         # Get parent bots
-        parent1 = await bots_collection.find_one({"id": parent1_id, "user_id": user_id}, {"_id": 0})
-        parent2 = await bots_collection.find_one({"id": parent2_id, "user_id": user_id}, {"_id": 0})
+        parent1 = await db.bots_collection.find_one({"id": parent1_id, "user_id": user_id}, {"_id": 0})
+        parent2 = await db.bots_collection.find_one({"id": parent2_id, "user_id": user_id}, {"_id": 0})
         
         if not parent1 or not parent2:
             raise HTTPException(status_code=404, detail="One or both parent bots not found")
@@ -233,7 +233,7 @@ async def crossover_bots(
             "generation": max(parent1.get('generation', 0), parent2.get('generation', 0)) + 1
         }
         
-        await bots_collection.insert_one(new_bot)
+        await db.bots_collection.insert_one(new_bot)
         
         logger.info(f"Offspring bot created from {parent1_id[:8]} x {parent2_id[:8]}")
         
@@ -288,12 +288,12 @@ async def enable_auto_evolution(
         }
     """
     try:
-        from database import users_collection
+        import database as db
         
         interval_hours = data.get('interval_hours', 24)
         min_bots = data.get('min_bots', 10)
         
-        await users_collection.update_one(
+        await db.users_collection.update_one(
             {"id": user_id},
             {
                 "$set": {
@@ -324,9 +324,9 @@ async def enable_auto_evolution(
 async def disable_auto_evolution(user_id: str = Depends(get_current_user)):
     """Disable automatic evolution"""
     try:
-        from database import users_collection
+        import database as db
         
-        await users_collection.update_one(
+        await db.users_collection.update_one(
             {"id": user_id},
             {
                 "$set": {

@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 async def test_capital_allocator():
     """Test capital allocation system"""
     from engines.capital_allocator import capital_allocator
-    from database import bots_collection
+    import database as db
     
     # Create test bot
     test_bot = {
@@ -117,7 +117,7 @@ async def test_ai_model_router():
 async def test_self_learning_engine():
     """Test self-learning engine"""
     from engines.self_learning import self_learning_engine
-    from database import bots_collection, trades_collection
+    import database as db
     
     # Create test data
     test_bot_id = "test_learning_bot"
@@ -136,7 +136,7 @@ async def test_self_learning_engine():
         "win_count": 12
     }
     
-    await bots_collection.insert_one(test_bot)
+    await db.bots_collection.insert_one(test_bot)
     
     # Insert test trades
     for i in range(20):
@@ -150,7 +150,7 @@ async def test_self_learning_engine():
             "entry_price": 1000000,
             "amount": 0.001
         }
-        await trades_collection.insert_one(trade)
+        await db.trades_collection.insert_one(trade)
     
     # Test performance analysis
     analysis = await self_learning_engine.analyze_bot_performance(test_bot_id)
@@ -159,8 +159,8 @@ async def test_self_learning_engine():
     print(f"✅ Self-Learning: Analysis completed")
     
     # Cleanup
-    await bots_collection.delete_one({"id": test_bot_id})
-    await trades_collection.delete_many({"bot_id": test_bot_id})
+    await db.bots_collection.delete_one({"id": test_bot_id})
+    await db.trades_collection.delete_many({"bot_id": test_bot_id})
 
 # ============================================================================
 # PHASE 8 TESTS - Audit & Email

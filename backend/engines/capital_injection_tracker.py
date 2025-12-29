@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Dict
 import logging
 
-from database import bots_collection, db
+import database as db
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class CapitalInjectionTracker:
             await capital_injections_collection.insert_one(injection_doc)
             
             # Update bot's total_injections field
-            await bots_collection.update_one(
+            await db.bots_collection.update_one(
                 {"id": bot_id},
                 {
                     "$inc": {"total_injections": amount},
@@ -92,7 +92,7 @@ class CapitalInjectionTracker:
             }
         """
         try:
-            bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+            bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
             
             if not bot:
                 return {"error": "Bot not found"}
@@ -129,7 +129,7 @@ class CapitalInjectionTracker:
     async def calculate_user_real_profit(self, user_id: str) -> Dict:
         """Calculate total real profit for all user's bots"""
         try:
-            bots = await bots_collection.find(
+            bots = await db.bots_collection.find(
                 {"user_id": user_id},
                 {"_id": 0}
             ).to_list(1000)
@@ -171,7 +171,7 @@ class CapitalInjectionTracker:
                 query["bot_id"] = bot_id
             elif user_id:
                 # Get all bot IDs for user
-                bots = await bots_collection.find(
+                bots = await db.bots_collection.find(
                     {"user_id": user_id},
                     {"_id": 0, "id": 1}
                 ).to_list(1000)
@@ -197,7 +197,7 @@ class CapitalInjectionTracker:
         """
         try:
             # Set total_injections = 0 for all bots that don't have it
-            result = await bots_collection.update_many(
+            result = await db.bots_collection.update_many(
                 {"total_injections": {"$exists": False}},
                 {"$set": {"total_injections": 0}}
             )

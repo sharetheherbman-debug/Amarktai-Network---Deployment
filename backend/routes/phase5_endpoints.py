@@ -45,9 +45,9 @@ async def rebalance_capital(current_user: Dict = Depends(get_current_user)):
 async def get_optimal_allocation(bot_id: str, current_user: Dict = Depends(get_current_user)):
     """Get optimal capital allocation for a specific bot"""
     try:
-        from database import bots_collection
+        import database as db
         
-        bot = await bots_collection.find_one({"id": bot_id, "user_id": current_user['id']}, {"_id": 0})
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": current_user['id']}, {"_id": 0})
         
         if not bot:
             raise HTTPException(status_code=404, detail="Bot not found")
@@ -99,9 +99,9 @@ async def get_queue_status():
 async def get_circuit_breaker_status(bot_id: str, current_user: Dict = Depends(get_current_user)):
     """Get circuit breaker status for a bot"""
     try:
-        from database import bots_collection
+        import database as db
         
-        bot = await bots_collection.find_one({"id": bot_id, "user_id": current_user['id']}, {"_id": 0})
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": current_user['id']}, {"_id": 0})
         
         if not bot:
             raise HTTPException(status_code=404, detail="Bot not found")

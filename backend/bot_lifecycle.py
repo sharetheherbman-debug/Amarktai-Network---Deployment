@@ -7,7 +7,7 @@ Bot Lifecycle Management
 
 import asyncio
 from datetime import datetime, timezone, timedelta
-from database import bots_collection, trades_collection, system_modes_collection
+import database as db
 from logger_config import logger
 
 
@@ -25,7 +25,7 @@ class BotLifecycleManager:
         """Check all bots ready for promotion from paper to live"""
         try:
             # Get all user-created bots still in paper mode
-            paper_bots = await bots_collection.find({
+            paper_bots = await db.bots_collection.find({
                 "origin": "user",
                 "trading_mode": "paper",
                 "status": "active"
@@ -58,7 +58,7 @@ class BotLifecycleManager:
                 return False
             
             # 2. Check minimum trades
-            trades_count = await trades_collection.count_documents({
+            trades_count = await db.trades_collection.count_documents({
                 "bot_id": bot['id'],
                 "user_id": bot['user_id']
             })
@@ -67,7 +67,7 @@ class BotLifecycleManager:
                 return False
             
             # 3. Check win rate
-            trades = await trades_collection.find({
+            trades = await db.trades_collection.find({
                 "bot_id": bot['id']
             }, {"_id": 0}).to_list(1000)
             
@@ -118,7 +118,7 @@ class BotLifecycleManager:
         """Promote bot from paper to live trading - RESETS CAPITAL to initial amount"""
         try:
             # Check user's system mode
-            system_mode = await system_modes_collection.find_one(
+            system_mode = await db.system_modes_collection.find_one(
                 {"user_id": bot['user_id']},
                 {"_id": 0}
             )
@@ -136,7 +136,7 @@ class BotLifecycleManager:
                 # Live trading starts fresh with real funds
                 initial_capital = bot.get('initial_capital', 1000)
                 
-                await bots_collection.update_one(
+                await db.bots_collection.update_one(
                     {"id": bot['id']},
                     {
                         "$set": {
@@ -165,7 +165,7 @@ class BotLifecycleManager:
             if origin == "user":
                 paper_end_date = (datetime.now(timezone.utc) + timedelta(days=self.paper_period_days)).isoformat()
             
-            await bots_collection.update_one(
+            await db.bots_collection.update_one(
                 {"id": bot_id},
                 {
                     "$set": {

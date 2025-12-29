@@ -2,7 +2,7 @@
 Alerts Router - User alert management
 """
 from fastapi import APIRouter, Depends, HTTPException
-from database import alerts_collection
+import database as db
 from auth import get_current_user
 from datetime import datetime, timezone
 import logging
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api")
 async def get_alerts(limit: int = 200, user_id: str = Depends(get_current_user)):
     """Get user alerts"""
     try:
-        alerts = await alerts_collection.find(
+        alerts = await db.alerts_collection.find(
             {"user_id": user_id},
             {"_id": 0}
         ).sort("timestamp", -1).limit(limit).to_list(limit)
@@ -37,7 +37,7 @@ async def get_alerts(limit: int = 200, user_id: str = Depends(get_current_user))
 async def acknowledge_alert(alert_id: str, user_id: str = Depends(get_current_user)):
     """Acknowledge/dismiss an alert"""
     try:
-        result = await alerts_collection.update_one(
+        result = await db.alerts_collection.update_one(
             {"user_id": user_id, "id": alert_id},
             {"$set": {"dismissed": True, "dismissed_at": datetime.now(timezone.utc).isoformat()}}
         )
@@ -56,7 +56,7 @@ async def acknowledge_alert(alert_id: str, user_id: str = Depends(get_current_us
 async def clear_alerts(user_id: str = Depends(get_current_user)):
     """Clear all user alerts"""
     try:
-        result = await alerts_collection.delete_many({"user_id": user_id})
+        result = await db.alerts_collection.delete_many({"user_id": user_id})
         
         return {
             "message": f"Cleared {result.deleted_count} alerts",

@@ -49,7 +49,7 @@ class SelfHealingSystem:
     async def _check_database_connection(self):
         """Check and recover database connection"""
         try:
-            from database import db
+            import database as db
             
             # Test connection
             await db.command('ping')
@@ -65,8 +65,8 @@ class SelfHealingSystem:
     async def _recover_database(self):
         """Attempt to recover database connection"""
         try:
-            from database import init_db
-            await init_db()
+            import database as db
+            await db.init_db()
             logger.info("✅ Database connection recovered")
             return True
         except Exception as e:

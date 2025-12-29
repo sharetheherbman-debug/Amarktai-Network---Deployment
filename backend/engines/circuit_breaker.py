@@ -9,7 +9,7 @@ from typing import Dict, Tuple
 from datetime import datetime, timezone, timedelta
 import logging
 
-from database import bots_collection, alerts_collection, system_modes_collection, rogue_detections_collection
+import database as db
 from config import MAX_DRAWDOWN_PERCENT
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ class CircuitBreaker:
     async def _check_bot_drawdown_fallback(self, bot_id: str) -> Tuple[bool, str]:
         """Fallback to bot-based drawdown check"""
         try:
-            bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+            bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
             if not bot:
                 return False, "Bot not found"
             
@@ -138,7 +138,7 @@ class CircuitBreaker:
         try:
             one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
             
-            error_count = await alerts_collection.count_documents({
+            error_count = await db.alerts_collection.count_documents({
                 "user_id": user_id,
                 "bot_id": bot_id,
                 "severity": {"$in": ["error", "critical"]},
@@ -157,7 +157,7 @@ class CircuitBreaker:
     async def check_global_drawdown(self, user_id: str) -> Tuple[bool, str]:
         """Check if total system drawdown exceeds limit"""
         try:
-            bots = await bots_collection.find(
+            bots = await db.bots_collection.find(
                 {"user_id": user_id},
                 {"_id": 0}
             ).to_list(1000)
@@ -182,12 +182,12 @@ class CircuitBreaker:
     async def trigger_bot_quarantine(self, bot_id: str, reason: str):
         """QUARANTINE a bot due to circuit breaker (requires manual reset)"""
         try:
-            bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+            bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
             if not bot:
                 return
             
             # QUARANTINE bot (stricter than pause)
-            await bots_collection.update_one(
+            await db.bots_collection.update_one(
                 {"id": bot_id},
                 {"$set": {
                     "status": "quarantined",
@@ -198,7 +198,7 @@ class CircuitBreaker:
             )
             
             # Log to rogue detections
-            await rogue_detections_collection.insert_one({
+            await db.rogue_detections_collection.insert_one({
                 "user_id": bot['user_id'],
                 "bot_id": bot_id,
                 "bot_name": bot['name'],
@@ -209,7 +209,7 @@ class CircuitBreaker:
             })
             
             # Create critical alert
-            await alerts_collection.insert_one({
+            await db.alerts_collection.insert_one({
                 "user_id": bot['user_id'],
                 "type": "circuit_breaker",
                 "severity": "critical",
@@ -227,12 +227,12 @@ class CircuitBreaker:
     async def trigger_bot_pause(self, bot_id: str, reason: str):
         """Pause a bot due to circuit breaker"""
         try:
-            bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+            bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
             if not bot:
                 return
             
             # Pause bot
-            await bots_collection.update_one(
+            await db.bots_collection.update_one(
                 {"id": bot_id},
                 {"$set": {
                     "status": "paused",
@@ -242,7 +242,7 @@ class CircuitBreaker:
             )
             
             # Log to rogue detections
-            await rogue_detections_collection.insert_one({
+            await db.rogue_detections_collection.insert_one({
                 "user_id": bot['user_id'],
                 "bot_id": bot_id,
                 "bot_name": bot['name'],
@@ -253,7 +253,7 @@ class CircuitBreaker:
             })
             
             # Create alert
-            await alerts_collection.insert_one({
+            await db.alerts_collection.insert_one({
                 "user_id": bot['user_id'],
                 "type": "circuit_breaker",
                 "severity": "critical",
@@ -271,7 +271,7 @@ class CircuitBreaker:
         """Trigger system-wide emergency stop"""
         try:
             # Enable emergency stop
-            await system_modes_collection.update_one(
+            await db.system_modes_collection.update_one(
                 {"user_id": user_id},
                 {"$set": {
                     "emergencyStop": True,
@@ -282,7 +282,7 @@ class CircuitBreaker:
             )
             
             # Create critical alert
-            await alerts_collection.insert_one({
+            await db.alerts_collection.insert_one({
                 "user_id": user_id,
                 "type": "emergency_stop",
                 "severity": "critical",
@@ -307,7 +307,7 @@ class CircuitBreaker:
                 return
             
             # Check individual bots
-            bots = await bots_collection.find(
+            bots = await db.bots_collection.find(
                 {"user_id": user_id, "status": {"$in": ["active", "paused"]}},
                 {"_id": 0}
             ).to_list(1000)

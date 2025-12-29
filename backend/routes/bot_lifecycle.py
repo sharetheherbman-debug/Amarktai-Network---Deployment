@@ -9,7 +9,7 @@ from typing import Optional, Dict
 import logging
 
 from auth import get_current_user
-from database import bots_collection, trades_collection
+import database as db
 from websocket_manager import manager
 from realtime_events import rt_events
 
@@ -31,7 +31,7 @@ async def start_bot(bot_id: str, user_id: str = Depends(get_current_user)):
     """
     try:
         # Verify bot belongs to user
-        bot = await bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
         if not bot:
             raise HTTPException(status_code=404, detail="Bot not found")
         
@@ -46,7 +46,7 @@ async def start_bot(bot_id: str, user_id: str = Depends(get_current_user)):
         # Start the bot
         started_at = datetime.now(timezone.utc).isoformat()
         
-        await bots_collection.update_one(
+        await db.bots_collection.update_one(
             {"id": bot_id},
             {
                 "$set": {
@@ -65,7 +65,7 @@ async def start_bot(bot_id: str, user_id: str = Depends(get_current_user)):
         )
         
         # Get updated bot
-        updated_bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
         
         # Send real-time notification
         await rt_events.bot_resumed(user_id, updated_bot)
@@ -99,7 +99,7 @@ async def stop_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Depe
     """
     try:
         # Verify bot belongs to user
-        bot = await bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
         if not bot:
             raise HTTPException(status_code=404, detail="Bot not found")
         
@@ -117,7 +117,7 @@ async def stop_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Depe
         reason = data.get('reason', 'Manual stop by user')
         stopped_at = datetime.now(timezone.utc).isoformat()
         
-        await bots_collection.update_one(
+        await db.bots_collection.update_one(
             {"id": bot_id},
             {
                 "$set": {
@@ -129,7 +129,7 @@ async def stop_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Depe
         )
         
         # Get updated bot
-        updated_bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
         
         # Send real-time notification
         await manager.send_message(user_id, {
@@ -170,7 +170,7 @@ async def pause_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Dep
     """
     try:
         # Verify bot belongs to user
-        bot = await bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
         if not bot:
             raise HTTPException(status_code=404, detail="Bot not found")
         
@@ -188,7 +188,7 @@ async def pause_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Dep
         reason = data.get('reason', 'Manual pause by user')
         paused_at = datetime.now(timezone.utc).isoformat()
         
-        await bots_collection.update_one(
+        await db.bots_collection.update_one(
             {"id": bot_id},
             {
                 "$set": {
@@ -201,7 +201,7 @@ async def pause_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Dep
         )
         
         # Get updated bot
-        updated_bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
         
         # Send real-time notification
         await rt_events.bot_paused(user_id, updated_bot)
@@ -237,7 +237,7 @@ async def resume_bot(bot_id: str, user_id: str = Depends(get_current_user)):
     """
     try:
         # Verify bot belongs to user
-        bot = await bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
         if not bot:
             raise HTTPException(status_code=404, detail="Bot not found")
         
@@ -252,7 +252,7 @@ async def resume_bot(bot_id: str, user_id: str = Depends(get_current_user)):
         # Resume the bot
         resumed_at = datetime.now(timezone.utc).isoformat()
         
-        await bots_collection.update_one(
+        await db.bots_collection.update_one(
             {"id": bot_id},
             {
                 "$set": {
@@ -269,7 +269,7 @@ async def resume_bot(bot_id: str, user_id: str = Depends(get_current_user)):
         )
         
         # Get updated bot
-        updated_bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
         
         # Send real-time notification
         await rt_events.bot_resumed(user_id, updated_bot)
@@ -307,7 +307,7 @@ async def set_bot_cooldown(
     """
     try:
         # Verify bot belongs to user
-        bot = await bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
         if not bot:
             raise HTTPException(status_code=404, detail="Bot not found")
         
@@ -324,7 +324,7 @@ async def set_bot_cooldown(
             )
         
         # Update bot cooldown
-        await bots_collection.update_one(
+        await db.bots_collection.update_one(
             {"id": bot_id},
             {
                 "$set": {
@@ -335,7 +335,7 @@ async def set_bot_cooldown(
         )
         
         # Get updated bot
-        updated_bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
         
         logger.info(f"✅ Bot {bot['name']} cooldown set to {cooldown_minutes} minutes")
         
@@ -366,7 +366,7 @@ async def get_bot_detailed_status(bot_id: str, user_id: str = Depends(get_curren
     """
     try:
         # Verify bot belongs to user
-        bot = await bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
         if not bot:
             raise HTTPException(status_code=404, detail="Bot not found")
         
@@ -390,20 +390,20 @@ async def get_bot_detailed_status(bot_id: str, user_id: str = Depends(get_curren
                 can_trade_at = next_trade_allowed.isoformat()
         
         # Get recent trades (last 10)
-        recent_trades = await trades_collection.find(
+        recent_trades = await db.trades_collection.find(
             {"bot_id": bot_id},
             {"_id": 0}
         ).sort("timestamp", -1).limit(10).to_list(10)
         
         # Calculate daily stats
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        trades_today = await trades_collection.count_documents({
+        trades_today = await db.trades_collection.count_documents({
             "bot_id": bot_id,
             "timestamp": {"$gte": today_start.isoformat()}
         })
         
         # Calculate profit today
-        today_trades = await trades_collection.find(
+        today_trades = await db.trades_collection.find(
             {
                 "bot_id": bot_id,
                 "timestamp": {"$gte": today_start.isoformat()}
@@ -465,7 +465,7 @@ async def pause_all_bots(data: Optional[Dict] = None, user_id: str = Depends(get
         paused_at = datetime.now(timezone.utc).isoformat()
         
         # Pause all active bots
-        result = await bots_collection.update_many(
+        result = await db.bots_collection.update_many(
             {"user_id": user_id, "status": "active"},
             {
                 "$set": {
@@ -507,7 +507,7 @@ async def resume_all_bots(user_id: str = Depends(get_current_user)):
         resumed_at = datetime.now(timezone.utc).isoformat()
         
         # Resume all paused bots (only those paused by user, not system)
-        result = await bots_collection.update_many(
+        result = await db.bots_collection.update_many(
             {"user_id": user_id, "status": "paused", "paused_by_user": True},
             {
                 "$set": {

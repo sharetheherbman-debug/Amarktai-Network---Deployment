@@ -10,7 +10,7 @@ from typing import Dict, List
 from datetime import datetime, timezone
 import logging
 
-from database import bots_collection, autopilot_actions_collection
+import database as db
 from engines.wallet_manager import wallet_manager
 
 logger = logging.getLogger(__name__)
@@ -97,7 +97,7 @@ class CapitalAllocator:
         """Rebalance capital across all bots based on performance"""
         try:
             # Get all active bots
-            bots = await bots_collection.find(
+            bots = await db.bots_collection.find(
                 {"user_id": user_id, "status": "active"},
                 {"_id": 0}
             ).to_list(1000)
@@ -120,7 +120,7 @@ class CapitalAllocator:
                 
                 if diff_pct > 0.20:
                     # Update bot capital
-                    await bots_collection.update_one(
+                    await db.bots_collection.update_one(
                         {"id": bot['id']},
                         {"$set": {"current_capital": optimal}}
                     )
@@ -138,7 +138,7 @@ class CapitalAllocator:
             
             # Log rebalancing action
             if rebalanced:
-                await autopilot_actions_collection.insert_one({
+                await db.autopilot_actions_collection.insert_one({
                     "user_id": user_id,
                     "action_type": "capital_rebalance",
                     "bots_affected": len(rebalanced),
@@ -204,7 +204,7 @@ class CapitalAllocator:
     async def get_allocation_report(self, user_id: str) -> Dict:
         """Generate allocation report for all bots"""
         try:
-            bots = await bots_collection.find(
+            bots = await db.bots_collection.find(
                 {"user_id": user_id},
                 {"_id": 0}
             ).to_list(1000)

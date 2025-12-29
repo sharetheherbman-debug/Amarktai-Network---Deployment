@@ -3,7 +3,7 @@ System Health Monitor - Check all backend functions are working
 """
 import logging
 from datetime import datetime, timezone, timedelta
-from database import bots_collection, trades_collection, users_collection
+import database as db
 from trading_scheduler import trading_scheduler
 from rate_limiter import rate_limiter
 from risk_engine import risk_engine
@@ -82,19 +82,19 @@ class SystemHealth:
             }
             
             # 3. System Statistics
-            total_users = await users_collection.count_documents({})
-            total_bots = await bots_collection.count_documents({})
-            paper_bots = await bots_collection.count_documents({"trading_mode": "paper"})
-            live_bots = await bots_collection.count_documents({"trading_mode": "live"})
+            total_users = await db.users_collection.count_documents({})
+            total_bots = await db.bots_collection.count_documents({})
+            paper_bots = await db.bots_collection.count_documents({"trading_mode": "paper"})
+            live_bots = await db.bots_collection.count_documents({"trading_mode": "live"})
             
             # Trades in last 24 hours
             yesterday = datetime.now(timezone.utc) - timedelta(days=1)
-            trades_24h = await trades_collection.count_documents({
+            trades_24h = await db.trades_collection.count_documents({
                 "timestamp": {"$gte": yesterday.isoformat()}
             })
             
             # Total profit last 24h
-            trades = await trades_collection.find({
+            trades = await db.trades_collection.find({
                 "timestamp": {"$gte": yesterday.isoformat()}
             }, {"_id": 0, "profit_loss": 1}).to_list(10000)
             

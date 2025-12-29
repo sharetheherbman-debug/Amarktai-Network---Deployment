@@ -10,7 +10,7 @@ import logging
 
 from auth import get_current_user
 from engines.trade_budget_manager import trade_budget_manager
-from database import bots_collection
+import database as db
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ async def get_trade_limits(user_id: str = Depends(get_current_user)):
         exchange_reports = await trade_budget_manager.get_all_exchanges_budget_report()
         
         # Get user's active bots
-        user_bots = await bots_collection.find(
+        user_bots = await db.bots_collection.find(
             {"user_id": user_id, "status": "active"},
             {"_id": 0}
         ).to_list(1000)
@@ -84,7 +84,7 @@ async def get_exchange_limits(exchange: str, user_id: str = Depends(get_current_
         report = await trade_budget_manager.get_exchange_budget_report(exchange)
         
         # Get user's bots on this exchange
-        user_bots = await bots_collection.find(
+        user_bots = await db.bots_collection.find(
             {"user_id": user_id, "exchange": exchange, "status": "active"},
             {"_id": 0}
         ).to_list(100)
@@ -120,7 +120,7 @@ async def get_bot_limits(bot_id: str, user_id: str = Depends(get_current_user)):
     """Get detailed trade budget information for a specific bot"""
     try:
         # Verify bot belongs to user
-        bot = await bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
         if not bot:
             raise HTTPException(status_code=404, detail="Bot not found")
         
@@ -131,9 +131,9 @@ async def get_bot_limits(bot_id: str, user_id: str = Depends(get_current_user)):
         can_trade, reason = await trade_budget_manager.can_execute_trade(bot_id, exchange)
         
         # Get today's trade count
-        from database import trades_collection
+        import database as db
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        trades_today = await trades_collection.count_documents({
+        trades_today = await db.trades_collection.count_documents({
             "bot_id": bot_id,
             "timestamp": {"$gte": today_start.isoformat()}
         })

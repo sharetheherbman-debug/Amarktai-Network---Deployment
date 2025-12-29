@@ -5,7 +5,7 @@ Tracks bot performance and determines eligibility for live trading
 import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Tuple
-from database import bots_collection, trades_collection
+import database as db
 from logger_config import logger
 from config import (
     PAPER_TRAINING_DAYS, 
@@ -23,12 +23,12 @@ class PromotionEngine:
         """Calculate bot performance metrics"""
         try:
             # Get bot
-            bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+            bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
             if not bot:
                 return {"error": "Bot not found"}
             
             # Get all trades for this bot
-            trades = await trades_collection.find(
+            trades = await db.trades_collection.find(
                 {"bot_id": bot_id},
                 {"_id": 0}
             ).to_list(1000)
@@ -123,7 +123,7 @@ class PromotionEngine:
         """Get all bots eligible for live promotion"""
         try:
             # Get all paper trading bots
-            bots = await bots_collection.find({
+            bots = await db.bots_collection.find({
                 "user_id": user_id,
                 "trading_mode": "paper",
                 "status": "active"
@@ -151,8 +151,8 @@ class PromotionEngine:
         try:
             # Check system-wide live trading enabled flag
             if check_system_mode:
-                from database import system_modes_collection
-                system_modes = await system_modes_collection.find_one({})
+                import database as db
+                system_modes = await db.system_modes_collection.find_one({})
                 
                 if system_modes and not system_modes.get('liveTrading', False):
                     return {
@@ -175,7 +175,7 @@ class PromotionEngine:
                 }
             
             # Promote to live
-            result = await bots_collection.update_one(
+            result = await db.bots_collection.update_one(
                 {"id": bot_id},
                 {
                     "$set": {
@@ -187,7 +187,7 @@ class PromotionEngine:
             )
             
             if result.modified_count > 0:
-                bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+                bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
                 logger.info(f"🚀 Promoted bot {bot.get('name')} to LIVE trading")
                 
                 return {
@@ -231,7 +231,7 @@ class PromotionEngine:
             # 2. Get ONLY paper trades from last 7 days
             seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
             
-            paper_trades = await trades_collection.find({
+            paper_trades = await db.trades_collection.find({
                 "bot_id": bot_id,
                 "is_paper": True,
                 "timestamp": {"$gte": seven_days_ago}

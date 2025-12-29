@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 import logging
 import os
 
-from database import bots_collection, trades_collection, alerts_collection
+import database as db
 from engines.audit_logger import audit_logger
 
 logger = logging.getLogger(__name__)
@@ -53,13 +53,13 @@ class EmailReporter:
             yesterday_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
             
             # Get all bots
-            bots = await bots_collection.find(
+            bots = await db.bots_collection.find(
                 {"user_id": user_id},
                 {"_id": 0}
             ).to_list(1000)
             
             # Get yesterday's trades
-            trades = await trades_collection.find(
+            trades = await db.trades_collection.find(
                 {
                     "user_id": user_id,
                     "timestamp": {
@@ -71,7 +71,7 @@ class EmailReporter:
             ).to_list(10000)
             
             # Get active alerts
-            alerts = await alerts_collection.find(
+            alerts = await db.alerts_collection.find(
                 {
                     "user_id": user_id,
                     "dismissed": False

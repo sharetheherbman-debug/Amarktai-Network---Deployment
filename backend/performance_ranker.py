@@ -7,7 +7,7 @@ Bot Performance Ranking System
 
 import asyncio
 from datetime import datetime, timezone, timedelta
-from database import bots_collection, trades_collection
+import database as db
 from logger_config import logger
 import math
 
@@ -20,7 +20,7 @@ class PerformanceRanker:
     async def rank_bots(self, user_id: str) -> list:
         """Rank all user's bots by performance"""
         try:
-            bots = await bots_collection.find(
+            bots = await db.bots_collection.find(
                 {"user_id": user_id, "status": "active"},
                 {"_id": 0}
             ).to_list(1000)
@@ -57,7 +57,7 @@ class PerformanceRanker:
         """Calculate composite performance score"""
         try:
             # Get bot's trades
-            trades = await trades_collection.find(
+            trades = await db.trades_collection.find(
                 {"bot_id": bot['id']},
                 {"_id": 0}
             ).to_list(1000)

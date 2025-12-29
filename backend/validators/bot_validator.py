@@ -8,7 +8,7 @@ from typing import Dict, Tuple
 from datetime import datetime, timezone
 import logging
 
-from database import bots_collection, api_keys_collection
+import database as db
 from error_codes import ErrorCode, insufficient_funds_error
 from engines.wallet_manager import wallet_manager
 
@@ -65,7 +65,7 @@ class BotValidator:
                 details="Bot name is required"
             )
         
-        existing_bot = await bots_collection.find_one({
+        existing_bot = await db.bots_collection.find_one({
             "user_id": user_id,
             "name": name
         }, {"_id": 0})
@@ -77,7 +77,7 @@ class BotValidator:
             )
         
         # 4. Check exchange bot limit
-        exchange_bot_count = await bots_collection.count_documents({
+        exchange_bot_count = await db.bots_collection.count_documents({
             "user_id": user_id,
             "exchange": exchange
         })
@@ -92,7 +92,7 @@ class BotValidator:
             )
         
         # 5. Check total bot limit
-        total_bots = await bots_collection.count_documents({"user_id": user_id})
+        total_bots = await db.bots_collection.count_documents({"user_id": user_id})
         if total_bots >= self.max_bots_total:
             return False, {
                 "code": "TOTAL_BOT_LIMIT_REACHED",
@@ -106,7 +106,7 @@ class BotValidator:
         trading_mode = bot_data.get('trading_mode', 'paper').lower()
         
         if trading_mode == 'live':
-            api_key_doc = await api_keys_collection.find_one({
+            api_key_doc = await db.api_keys_collection.find_one({
                 "user_id": user_id,
                 "exchange": exchange
             }, {"_id": 0})

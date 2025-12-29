@@ -8,7 +8,7 @@ import asyncio
 import aiohttp
 from datetime import datetime, timezone
 from logger_config import logger
-from database import alerts_collection
+import database as db
 import random
 
 

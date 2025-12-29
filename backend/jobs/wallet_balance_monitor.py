@@ -7,7 +7,7 @@ import asyncio
 from datetime import datetime, timezone
 import logging
 
-from database import db, users_collection
+import database as db
 from engines.wallet_manager import wallet_manager
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ class WalletBalanceMonitor:
         """Update balances for all users"""
         try:
             # Get all active users
-            users = await users_collection.find(
+            users = await db.users_collection.find(
                 {"status": {"$ne": "blocked"}},
                 {"_id": 0, "id": 1}
             ).to_list(1000)

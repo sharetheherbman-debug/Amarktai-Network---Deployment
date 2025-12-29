@@ -11,7 +11,7 @@ from typing import List, Dict
 from datetime import datetime, timezone, timedelta
 import logging
 
-from database import bots_collection, alerts_collection
+import database as db
 from engines.promotion_engine import promotion_engine
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ class AutoPromotionManager:
             user_id = bot['user_id']
             
             # Promote to live
-            await bots_collection.update_one(
+            await db.bots_collection.update_one(
                 {"id": bot_id},
                 {"$set": {
                     "mode": "live",
@@ -66,7 +66,7 @@ class AutoPromotionManager:
             )
             
             # Create alert
-            await alerts_collection.insert_one({
+            await db.alerts_collection.insert_one({
                 "user_id": user_id,
                 "type": "auto_promotion",
                 "severity": "high",
@@ -96,7 +96,7 @@ class AutoPromotionManager:
             if user_id:
                 query["user_id"] = user_id
             
-            paper_bots = await bots_collection.find(query, {"_id": 0}).to_list(1000)
+            paper_bots = await db.bots_collection.find(query, {"_id": 0}).to_list(1000)
             
             promoted = []
             not_ready = []

@@ -14,7 +14,7 @@ import smtplib
 import os
 
 from auth import get_current_user, is_admin
-from database import bots_collection, trades_collection, users_collection, alerts_collection
+import database as db
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class DailyReportService:
         """
         try:
             # Get user info
-            user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+            user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
             if not user:
                 return None
             
@@ -68,7 +68,7 @@ class DailyReportService:
             yesterday_end = yesterday_start + timedelta(days=1)
             
             # Get all bots
-            bots_cursor = bots_collection.find({"user_id": user_id, "status": {"$ne": "deleted"}})
+            bots_cursor = db.bots_collection.find({"user_id": user_id, "status": {"$ne": "deleted"}})
             bots = await bots_cursor.to_list(1000)
             
             active_bots = [b for b in bots if b.get("status") == "active"]
@@ -77,7 +77,7 @@ class DailyReportService:
             
             # NEW: Get metrics from LEDGER (single source of truth)
             try:
-                from database import get_database
+                import database as db
                 from services.ledger_service import get_ledger_service
                 
                 db = await get_database()
@@ -117,7 +117,7 @@ class DailyReportService:
                 logger.warning(f"Ledger data unavailable, using bot-based calculation: {ledger_error}")
                 
                 # Get yesterday's trades (fallback)
-                trades_cursor = trades_collection.find({
+                trades_cursor = db.trades_collection.find({
                     "user_id": user_id,
                     "created_at": {
                         "$gte": yesterday_start.isoformat(),
@@ -145,7 +145,7 @@ class DailyReportService:
                 drawdown_percent = ((funded_capital - total_equity) / funded_capital * 100) if funded_capital > 0 else 0.0
             
             # Get alerts/errors from yesterday
-            alerts_cursor = alerts_collection.find({
+            alerts_cursor = db.alerts_collection.find({
                 "user_id": user_id,
                 "created_at": {
                     "$gte": yesterday_start.isoformat(),
@@ -381,7 +381,7 @@ class DailyReportService:
         """Send daily reports to all users"""
         try:
             # Get all users
-            users_cursor = users_collection.find({}, {"_id": 0})
+            users_cursor = db.users_collection.find({}, {"_id": 0})
             users = await users_cursor.to_list(10000)
             
             logger.info(f"📧 Sending daily reports to {len(users)} users...")
@@ -484,7 +484,7 @@ async def send_test_report(user_id: str = Depends(get_current_user)):
     """
     try:
         # Get user email
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -589,7 +589,7 @@ async def trigger_manual_reinvestment(
         
         # Get reinvestment service
         from services.daily_reinvestment import get_reinvestment_service
-        from database import get_database
+        import database as db
         
         db = await get_database()
         reinvest_service = get_reinvestment_service(db)
@@ -625,7 +625,7 @@ async def get_reinvestment_status(
         
         # Get reinvestment service
         from services.daily_reinvestment import get_reinvestment_service
-        from database import get_database
+        import database as db
         
         db = await get_database()
         reinvest_service = get_reinvestment_service(db)

@@ -5,11 +5,7 @@ Implements all critical AI commands for full system control
 
 import asyncio
 from datetime import datetime, timezone, timedelta
-from database import (
-    bots_collection, users_collection, system_modes_collection,
-    trades_collection, api_keys_collection, learning_logs_collection,
-    autopilot_actions_collection, rogue_detections_collection, alerts_collection
-)
+import database as db
 from engines.bot_manager import bot_manager
 from engines.trade_limiter import trade_limiter
 from logger_config import logger
@@ -27,10 +23,10 @@ class AIProductionHandler:
         """Get complete system state"""
         try:
             # Get user
-            user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+            user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
             
             # Get all bots
-            bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+            bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(100)
             active_bots = [b for b in bots if b.get('status') == 'active']
             
             # Calculate metrics
@@ -39,16 +35,16 @@ class AIProductionHandler:
             total_profit = total_capital - total_initial
             
             # Get modes
-            modes = await system_modes_collection.find_one({"user_id": user_id}, {"_id": 0}) or {}
+            modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0}) or {}
             
             # Get recent trades
-            trades = await trades_collection.find(
+            trades = await db.trades_collection.find(
                 {"user_id": user_id},
                 {"_id": 0}
             ).sort("timestamp", -1).limit(10).to_list(10)
             
             # Get API keys
-            api_keys = await api_keys_collection.find(
+            api_keys = await db.api_keys_collection.find(
                 {"user_id": user_id},
                 {"_id": 0, "provider": 1, "connected": 1}
             ).to_list(10)
@@ -111,7 +107,7 @@ class AIProductionHandler:
             # PAUSE BOT
             elif command == "pause_bot":
                 bot_name = params.get('name') or params.get('bot_name')
-                bot = await bots_collection.find_one({"user_id": user_id, "name": bot_name}, {"_id": 0})
+                bot = await db.bots_collection.find_one({"user_id": user_id, "name": bot_name}, {"_id": 0})
                 if bot:
                     result = await bot_manager.update_bot_status(user_id, bot['id'], 'paused')
                     if result['success']:
@@ -123,7 +119,7 @@ class AIProductionHandler:
             # RESUME BOT
             elif command == "resume_bot":
                 bot_name = params.get('name') or params.get('bot_name')
-                bot = await bots_collection.find_one({"user_id": user_id, "name": bot_name}, {"_id": 0})
+                bot = await db.bots_collection.find_one({"user_id": user_id, "name": bot_name}, {"_id": 0})
                 if bot:
                     result = await bot_manager.update_bot_status(user_id, bot['id'], 'active')
                     if result['success']:
@@ -134,7 +130,7 @@ class AIProductionHandler:
             
             # PAUSE ALL
             elif command == "pause_all":
-                result = await bots_collection.update_many(
+                result = await db.bots_collection.update_many(
                     {"user_id": user_id, "status": "active"},
                     {"$set": {"status": "paused"}}
                 )
@@ -144,7 +140,7 @@ class AIProductionHandler:
             
             # RESUME ALL
             elif command == "resume_all":
-                result = await bots_collection.update_many(
+                result = await db.bots_collection.update_many(
                     {"user_id": user_id, "status": "paused"},
                     {"$set": {"status": "active"}}
                 )
@@ -154,7 +150,7 @@ class AIProductionHandler:
             
             # DELETE ALL BOTS (complete removal, not pause)
             elif command == "delete_all_bots":
-                result = await bots_collection.delete_many({"user_id": user_id})
+                result = await db.bots_collection.delete_many({"user_id": user_id})
                 from websocket_manager import manager
                 await manager.send_message(user_id, {"type": "force_refresh"})
                 return {"success": True, "message": f"🗑️ Deleted {result.deleted_count} bots permanently"}
@@ -162,7 +158,7 @@ class AIProductionHandler:
             # TOGGLE AUTOPILOT
             elif command == "toggle_autopilot":
                 enabled = params.get('enabled', True)
-                await system_modes_collection.update_one(
+                await db.system_modes_collection.update_one(
                     {"user_id": user_id},
                     {"$set": {"autopilot": enabled}},
                     upsert=True
@@ -174,7 +170,7 @@ class AIProductionHandler:
             # TOGGLE PAPER TRADING
             elif command == "toggle_paper":
                 enabled = params.get('enabled', True)
-                await system_modes_collection.update_one(
+                await db.system_modes_collection.update_one(
                     {"user_id": user_id},
                     {"$set": {"paperTrading": enabled}},
                     upsert=True
@@ -186,7 +182,7 @@ class AIProductionHandler:
             # TOGGLE LIVE TRADING
             elif command == "toggle_live":
                 enabled = params.get('enabled', True)
-                await system_modes_collection.update_one(
+                await db.system_modes_collection.update_one(
                     {"user_id": user_id},
                     {"$set": {"liveTrading": enabled}},
                     upsert=True
@@ -198,12 +194,12 @@ class AIProductionHandler:
             # EMERGENCY STOP
             elif command == "emergency_stop":
                 # Pause all bots
-                await bots_collection.update_many(
+                await db.bots_collection.update_many(
                     {"user_id": user_id},
                     {"$set": {"status": "paused"}}
                 )
                 # Disable all modes
-                await system_modes_collection.update_one(
+                await db.system_modes_collection.update_one(
                     {"user_id": user_id},
                     {"$set": {
                         "emergencyStop": True,
@@ -219,7 +215,7 @@ class AIProductionHandler:
             
             # RESUME FROM EMERGENCY
             elif command == "resume_trading":
-                await system_modes_collection.update_one(
+                await db.system_modes_collection.update_one(
                     {"user_id": user_id},
                     {"$set": {
                         "emergencyStop": False,
@@ -263,7 +259,7 @@ class AIProductionHandler:
             # REBALANCE TO TOP 5
             elif command == "rebalance_profits":
                 # Get top 5 performers
-                bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+                bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(100)
                 sorted_bots = sorted(bots, key=lambda b: b.get('total_profit', 0), reverse=True)
                 top_5_ids = [b['id'] for b in sorted_bots[:5]]
                 
@@ -294,9 +290,9 @@ class AIProductionHandler:
                     return {"success": False, "message": "⚠️ DANGER: This resets EVERYTHING to zero. Say: 'reset system confirm yes'"}
                 
                 # Reset ALL bot data to initial state
-                bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+                bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(100)
                 for bot in bots:
-                    await bots_collection.update_one(
+                    await db.bots_collection.update_one(
                         {"id": bot['id']},
                         {"$set": {
                             "current_capital": bot.get('initial_capital', 1000),
@@ -314,17 +310,17 @@ class AIProductionHandler:
                     )
                 
                 # Delete ALL user data (trades, logs, EVERYTHING)
-                from database import learning_data_collection
-                await trades_collection.delete_many({"user_id": user_id})
-                await learning_logs_collection.delete_many({"user_id": user_id})
-                await learning_data_collection.delete_many({"user_id": user_id})
-                await autopilot_actions_collection.delete_many({"user_id": user_id})
-                await rogue_detections_collection.delete_many({"user_id": user_id})
-                await alerts_collection.delete_many({"user_id": user_id})
-                await chat_messages_collection.delete_many({"user_id": user_id})
+                import database as db
+                await db.trades_collection.delete_many({"user_id": user_id})
+                await db.learning_logs_collection.delete_many({"user_id": user_id})
+                await db.learning_data_collection.delete_many({"user_id": user_id})
+                await db.autopilot_actions_collection.delete_many({"user_id": user_id})
+                await db.rogue_detections_collection.delete_many({"user_id": user_id})
+                await db.alerts_collection.delete_many({"user_id": user_id})
+                await db.chat_messages_collection.delete_many({"user_id": user_id})
                 
                 # Delete capital injections history
-                from database import db
+                import database as db
                 await db.capital_injections.delete_many({"user_id": user_id})
                 
                 logger.info(f"🔄 COMPLETE RESET executed for user {user_id[:8]} - ALL data deleted")
@@ -333,7 +329,7 @@ class AIProductionHandler:
                 # await db.audit_logs.delete_many({"user_id": user_id})
                 
                 # Reset system modes (keep paper trading on)
-                await system_modes_collection.update_one(
+                await db.system_modes_collection.update_one(
                     {"user_id": user_id},
                     {"$set": {
                         "paperTrading": True,

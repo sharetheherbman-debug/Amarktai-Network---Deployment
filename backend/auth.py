@@ -60,8 +60,8 @@ async def verify_admin_password(password: str) -> bool:
 async def is_admin(user_id: str) -> bool:
     """Check if user has admin privileges - never crashes"""
     try:
-        from database import users_collection
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        import database as db
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         if not user:
             return False
         # Check if user has is_admin field set to True or role == 'admin'

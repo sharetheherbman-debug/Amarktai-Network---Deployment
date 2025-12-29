@@ -9,7 +9,7 @@ import asyncio
 import random
 from datetime import datetime, timezone
 from logger_config import logger
-from database import bots_collection
+import database as db
 from performance_ranker import performance_ranker
 
 
@@ -126,7 +126,7 @@ class BotDNAEvolution:
                 "generation": self.generation
             }
             
-            await bots_collection.update_one(
+            await db.bots_collection.update_one(
                 {"id": bot_id},
                 {
                     "$set": update_data,

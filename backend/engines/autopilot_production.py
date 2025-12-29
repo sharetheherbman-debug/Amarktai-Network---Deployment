@@ -7,7 +7,7 @@ Production Autopilot Engine - Complete Implementation
 """
 import asyncio
 from datetime import datetime, timezone
-from database import bots_collection, system_modes_collection, users_collection
+import database as db
 from engines.bot_manager import bot_manager
 from logger_config import logger
 from config import NEW_BOT_CAPITAL, MAX_TOTAL_BOTS, EXCHANGE_BOT_LIMITS
@@ -28,7 +28,7 @@ class ProductionAutopilot:
     async def calculate_total_profit(self, user_id: str) -> float:
         """Calculate total unreinvested profit across all bots"""
         try:
-            bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
+            bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
             total_profit = sum(bot.get('total_profit', 0) for bot in bots)
             return total_profit
         except Exception as e:
@@ -57,7 +57,7 @@ class ProductionAutopilot:
             total_to_reinvest = reinvest_chunks * REINVEST_THRESHOLD
             
             # Get current bots
-            bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
+            bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
             
             # Check if we can create new bots
             if len(bots) < MAX_TOTAL_BOTS:
@@ -97,7 +97,7 @@ class ProductionAutopilot:
                 if bots_created > 0:
                     # DON'T reset profit counter - new bots get fresh capital
                     # The capital used is tracked as their initial_capital
-                    # await bots_collection.update_many(
+                    # await db.bots_collection.update_many(
                     #     {"user_id": user_id},
                     #     {"$inc": {"total_profit": -total_to_reinvest}}
                     # )
@@ -133,7 +133,7 @@ class ProductionAutopilot:
                 
                 for bot in top_bots:
                     new_capital = bot.get('current_capital', 0) + reinvest_per_bot
-                    await bots_collection.update_one(
+                    await db.bots_collection.update_one(
                         {"id": bot['id']},
                         {"$set": {"current_capital": new_capital}}
                     )
@@ -147,7 +147,7 @@ class ProductionAutopilot:
                     )
                 
                 # DON'T reset profit counter - injections are tracked separately now
-                # await bots_collection.update_many(
+                # await db.bots_collection.update_many(
                 #     {"user_id": user_id},
                 #     {"$inc": {"total_profit": -total_to_reinvest}}
                 # )
@@ -197,7 +197,7 @@ class ProductionAutopilot:
                     }
             
             # Get all active bots
-            bots = await bots_collection.find(
+            bots = await db.bots_collection.find(
                 {"user_id": user_id, "status": "active"},
                 {"_id": 0}
             ).to_list(1000)
@@ -234,7 +234,7 @@ class ProductionAutopilot:
                     total_to_move += move_amount
                     
                     # Reduce bottom performer capital
-                    await bots_collection.update_one(
+                    await db.bots_collection.update_one(
                         {"id": bot['id']},
                         {"$inc": {"current_capital": -move_amount}}
                     )
@@ -249,7 +249,7 @@ class ProductionAutopilot:
             per_top_bot = total_to_move / len(top_performers)
             
             for bot in top_performers:
-                await bots_collection.update_one(
+                await db.bots_collection.update_one(
                     {"id": bot['id']},
                     {"$inc": {"current_capital": per_top_bot}}
                 )
@@ -287,7 +287,7 @@ class ProductionAutopilot:
         while self.is_running:
             try:
                 # Get all users with autopilot enabled
-                modes = await system_modes_collection.find(
+                modes = await db.system_modes_collection.find(
                     {"autopilot": True},
                     {"_id": 0}
                 ).to_list(1000)

@@ -6,7 +6,7 @@ Market Regime Detection
 
 import asyncio
 from datetime import datetime, timezone, timedelta
-from database import bots_collection
+import database as db
 from logger_config import logger
 import math
 
@@ -154,7 +154,7 @@ class MarketRegimeDetector:
                 adjustments['rationale'] = "Choppy market - wait for clarity"
             
             # Store regime insights in bot metadata
-            await bots_collection.update_one(
+            await db.bots_collection.update_one(
                 {"id": bot['id']},
                 {
                     "$set": {

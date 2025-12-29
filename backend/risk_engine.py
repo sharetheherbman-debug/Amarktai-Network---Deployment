@@ -2,7 +2,7 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 import logging
-from database import bots_collection, trades_collection
+import database as db
 from exchange_limits import get_exchange_limits
 
 logger = logging.getLogger(__name__)
@@ -17,12 +17,12 @@ class RiskEngine:
         """Comprehensive risk check before allowing trade"""
         
         # Get bot details
-        bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
         if not bot:
             return False, "Bot not found"
         
         # Get user's total equity
-        user_bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+        user_bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(100)
         total_equity = sum(b.get("current_capital", 0) for b in user_bots)
         
         if total_equity <= 0:
@@ -57,8 +57,8 @@ class RiskEngine:
         # In production, would need asset parameter passed in
         
         # Get all user's trades to calculate current exposure
-        from database import trades_collection
-        recent_open_trades = await trades_collection.find({
+        import database as db
+        recent_open_trades = await db.trades_collection.find({
             "user_id": user_id,
             "status": {"$in": ["open", "pending"]},  # Only open positions
             "timestamp": {"$gte": (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()}
@@ -107,7 +107,7 @@ class RiskEngine:
         
         # Calculate today's loss
         today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
-        trades_today = await trades_collection.find({
+        trades_today = await db.trades_collection.find({
             "user_id": user_id,
             "timestamp": {"$gte": today_start.isoformat()}
         }, {"_id": 0}).to_list(1000)

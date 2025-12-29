@@ -4,7 +4,7 @@ Detects and fixes rogue bots and system issues automatically
 """
 import asyncio
 from datetime import datetime, timezone, timedelta
-from database import bots_collection, trades_collection
+import database as db
 from logger_config import logger
 from config import MAX_HOURLY_LOSS_PERCENT, MAX_DRAWDOWN_PERCENT
 
@@ -27,7 +27,7 @@ class SelfHealingSystem:
             one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
             
             # Get trades in last hour
-            recent_trades = await trades_collection.find({
+            recent_trades = await db.trades_collection.find({
                 "bot_id": bot_id,
                 "timestamp": {"$gte": one_hour_ago}
             }, {"_id": 0}).to_list(1000)
@@ -119,7 +119,7 @@ class SelfHealingSystem:
             bot_name = bot.get('name', 'Unknown')
             
             # Pause the bot
-            await bots_collection.update_one(
+            await db.bots_collection.update_one(
                 {"id": bot_id},
                 {"$set": {
                     "status": "paused",
@@ -150,7 +150,7 @@ class SelfHealingSystem:
     async def scan_all_bots(self):
         """Scan all active bots for issues"""
         try:
-            bots = await bots_collection.find({"status": "active"}, {"_id": 0}).to_list(1000)
+            bots = await db.bots_collection.find({"status": "active"}, {"_id": 0}).to_list(1000)
             
             rogue_count = 0
             

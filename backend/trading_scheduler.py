@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from paper_trading_engine import paper_engine
 from engines.trading_engine_live import live_trading_engine
 from engines.trade_staggerer import trade_staggerer
-from database import bots_collection, trades_collection, system_modes_collection
+import database as db
 from websocket_manager import manager
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class TradingScheduler:
         """Execute trades using staggered queue - CONTINUOUS OPERATION"""
         try:
             # Get all active bots
-            active_bots = await bots_collection.find(
+            active_bots = await db.bots_collection.find(
                 {"status": "active"},
                 {"_id": 0}
             ).to_list(1000)
@@ -40,7 +40,7 @@ class TradingScheduler:
             for bot in active_bots:
                 user_id = bot['user_id']
                 if user_id not in users_with_trading:
-                    modes = await system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
+                    modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
                     
                     # Trading enabled if autopilot is ON
                     if modes and modes.get('autopilot'):
@@ -85,7 +85,7 @@ class TradingScheduler:
                         result = await paper_engine.run_trading_cycle(
                             bot['id'],
                             bot,
-                            {'bots': bots_collection, 'trades': trades_collection}
+                            {'bots': db.bots_collection, 'trades': db.trades_collection}
                         )
                     else:
                         # LIVE TRADING - Use live_trading_engine
@@ -154,10 +154,10 @@ class TradingScheduler:
             
             # Calculate amount
             # For live trading, we need to get real price first
-            from database import api_keys_collection
+            import database as db
             
             # Check if user has API keys for this exchange
-            api_key_doc = await api_keys_collection.find_one({
+            api_key_doc = await db.api_keys_collection.find_one({
                 "user_id": bot['user_id'],
                 "exchange": exchange
             }, {"_id": 0})
@@ -167,7 +167,7 @@ class TradingScheduler:
                 return await paper_engine.run_trading_cycle(
                     bot['id'],
                     bot,
-                    {'bots': bots_collection, 'trades': trades_collection}
+                    {'bots': db.bots_collection, 'trades': db.trades_collection}
                 )
             
             # Execute trade via live engine
@@ -201,13 +201,13 @@ class TradingScheduler:
                 "exchange": exchange
             }
             
-            await trades_collection.insert_one(trade_doc)
+            await db.trades_collection.insert_one(trade_doc)
             
             # Update bot stats
             new_capital = capital + trade_result.get('net_profit', 0)
             is_win = trade_result.get('net_profit', 0) > 0
             
-            await bots_collection.update_one(
+            await db.bots_collection.update_one(
                 {"id": bot['id']},
                 {
                     "$set": {

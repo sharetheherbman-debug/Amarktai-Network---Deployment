@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 import logging
 
-from database import db
+import database as db
 from engines.wallet_manager import wallet_manager
 from engines.ai_model_router import ai_model_router
 

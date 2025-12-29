@@ -15,7 +15,7 @@ import logging
 import os
 
 from auth import get_current_user, is_admin
-from database import bots_collection, fills_ledger, system_modes_collection, alerts_collection
+import database as db
 
 router = APIRouter(prefix="/api/limits", tags=["Limits"])
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ async def get_limits_usage(
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         
         # Get today's fills from ledger
-        from database import get_database
+        import database as db
         from services.ledger_service import get_ledger_service
         
         db = await get_database()
@@ -97,7 +97,7 @@ async def get_limits_usage(
         user_usage_pct = (user_fills_today / max_user_trades * 100) if max_user_trades > 0 else 0
         
         # Bot-level usage
-        bots = await bots_collection.find(
+        bots = await db.bots_collection.find(
             {"user_id": user_id, "status": {"$ne": "deleted"}},
             {"_id": 0}
         ).to_list(1000)
@@ -160,7 +160,7 @@ async def get_quarantined_bots(user_id: str = Depends(get_current_user)):
     Quarantined bots require manual reset
     """
     try:
-        quarantined = await bots_collection.find(
+        quarantined = await db.bots_collection.find(
             {"user_id": user_id, "status": "quarantined"},
             {"_id": 0}
         ).to_list(1000)
@@ -190,7 +190,7 @@ async def reset_quarantined_bot(
     """
     try:
         # Verify bot belongs to user
-        bot = await bots_collection.find_one(
+        bot = await db.bots_collection.find_one(
             {"id": bot_id, "user_id": user_id},
             {"_id": 0}
         )
@@ -205,7 +205,7 @@ async def reset_quarantined_bot(
             }
         
         # Reset to paused (not active - requires explicit resume)
-        await bots_collection.update_one(
+        await db.bots_collection.update_one(
             {"id": bot_id},
             {
                 "$set": {
@@ -223,7 +223,7 @@ async def reset_quarantined_bot(
         )
         
         # Create alert
-        await alerts_collection.insert_one({
+        await db.alerts_collection.insert_one({
             "user_id": user_id,
             "bot_id": bot_id,
             "type": "quarantine_reset",
@@ -261,7 +261,7 @@ async def check_circuit_breaker(
     """
     try:
         from engines.circuit_breaker import circuit_breaker
-        from database import get_database
+        import database as db
         from services.ledger_service import get_ledger_service
         
         db = await get_database()
@@ -319,14 +319,14 @@ async def get_limits_health(user_id: str = Depends(get_current_user)):
         usage_response = await get_limits_usage(user_id)
         
         # Count quarantined bots
-        quarantined_count = await bots_collection.count_documents({
+        quarantined_count = await db.bots_collection.count_documents({
             "user_id": user_id,
             "status": "quarantined"
         })
         
         # Count recent breaches
         one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-        recent_breaches = await alerts_collection.count_documents({
+        recent_breaches = await db.alerts_collection.count_documents({
             "user_id": user_id,
             "type": "circuit_breaker",
             "timestamp": {"$gte": one_hour_ago}

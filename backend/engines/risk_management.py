@@ -4,7 +4,7 @@ Critical safety features for live trading
 """
 import asyncio
 from datetime import datetime, timezone
-from database import bots_collection, trades_collection
+import database as db
 from logger_config import logger
 from typing import Optional, Dict
 
@@ -133,7 +133,7 @@ class RiskManagement:
             True if successful
         """
         try:
-            bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+            bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
             if not bot:
                 return False
             
@@ -151,7 +151,7 @@ class RiskManagement:
             new_capital = bot.get('current_capital', 0) + pnl_amount
             new_total_profit = bot.get('total_profit', 0) + pnl_amount
             
-            await bots_collection.update_one(
+            await db.bots_collection.update_one(
                 {"id": bot_id},
                 {
                     "$set": {
@@ -184,7 +184,7 @@ class RiskManagement:
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
-            await trades_collection.insert_one(trade)
+            await db.trades_collection.insert_one(trade)
             
             # Send real-time notification
             try:
@@ -218,7 +218,7 @@ class RiskManagement:
                 
                 # Check each active position
                 for bot_id in list(self.active_positions.keys()):
-                    bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+                    bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
                     if not bot or bot.get('status') != 'active':
                         await self.close_position(bot_id)
                         continue

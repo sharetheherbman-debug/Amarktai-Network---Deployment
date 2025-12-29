@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import bcrypt
 
 from auth import get_current_user
-from database import users_collection, bots_collection, trades_collection
+import database as db
 from engines.audit_logger import audit_logger
 
 logger = logging.getLogger(__name__)
@@ -27,24 +27,24 @@ async def verify_admin(current_user: Dict = Depends(get_current_user)):
 async def get_all_users(admin_user: Dict = Depends(verify_admin)):
     """Get all users with stats"""
     try:
-        users = await users_collection.find({}, {"_id": 0, "password": 0}).to_list(1000)
+        users = await db.users_collection.find({}, {"_id": 0, "password": 0}).to_list(1000)
         
         # Enrich with stats
         for user in users:
             user_id = user['id']
             
             # Count bots
-            bot_count = await bots_collection.count_documents({"user_id": user_id})
-            active_bots = await bots_collection.count_documents({
+            bot_count = await db.bots_collection.count_documents({"user_id": user_id})
+            active_bots = await db.bots_collection.count_documents({
                 "user_id": user_id,
                 "status": "active"
             })
             
             # Count trades
-            trade_count = await trades_collection.count_documents({"user_id": user_id})
+            trade_count = await db.trades_collection.count_documents({"user_id": user_id})
             
             # Get total profit
-            bots = await bots_collection.find(
+            bots = await db.bots_collection.find(
                 {"user_id": user_id},
                 {"_id": 0, "total_profit": 1}
             ).to_list(1000)
@@ -70,19 +70,19 @@ async def get_all_users(admin_user: Dict = Depends(verify_admin)):
 async def get_user_details(user_id: str, admin_user: Dict = Depends(verify_admin)):
     """Get detailed user information"""
     try:
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0, "password": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0, "password": 0})
         
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
         # Get bots
-        bots = await bots_collection.find(
+        bots = await db.bots_collection.find(
             {"user_id": user_id},
             {"_id": 0}
         ).to_list(1000)
         
         # Get recent trades
-        recent_trades = await trades_collection.find(
+        recent_trades = await db.trades_collection.find(
             {"user_id": user_id},
             {"_id": 0}
         ).sort("timestamp", -1).limit(50).to_list(50)
@@ -117,7 +117,7 @@ async def block_user(
     """Block a user"""
     try:
         # Update user status
-        result = await users_collection.update_one(
+        result = await db.users_collection.update_one(
             {"id": user_id},
             {
                 "$set": {
@@ -133,7 +133,7 @@ async def block_user(
             raise HTTPException(status_code=404, detail="User not found")
         
         # Pause all user's bots
-        await bots_collection.update_many(
+        await db.bots_collection.update_many(
             {"user_id": user_id},
             {"$set": {"status": "paused"}}
         )
@@ -165,7 +165,7 @@ async def block_user(
 async def unblock_user(user_id: str, admin_user: Dict = Depends(verify_admin)):
     """Unblock a user"""
     try:
-        result = await users_collection.update_one(
+        result = await db.users_collection.update_one(
             {"id": user_id},
             {
                 "$set": {
@@ -209,7 +209,7 @@ async def reset_user_password(
         # Hash new password
         hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
         
-        result = await users_collection.update_one(
+        result = await db.users_collection.update_one(
             {"id": user_id},
             {
                 "$set": {
@@ -260,13 +260,13 @@ async def delete_user(
             }
         
         # Delete all user's bots
-        bots_result = await bots_collection.delete_many({"user_id": user_id})
+        bots_result = await db.bots_collection.delete_many({"user_id": user_id})
         
         # Delete all user's trades
-        trades_result = await trades_collection.delete_many({"user_id": user_id})
+        trades_result = await db.trades_collection.delete_many({"user_id": user_id})
         
         # Delete user
-        user_result = await users_collection.delete_one({"id": user_id})
+        user_result = await db.users_collection.delete_one({"id": user_id})
         
         if user_result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="User not found")
@@ -301,19 +301,19 @@ async def delete_user(
 async def get_system_stats(admin_user: Dict = Depends(verify_admin)):
     """Get overall system statistics"""
     try:
-        total_users = await users_collection.count_documents({})
-        active_users = await users_collection.count_documents({"status": "active"})
-        blocked_users = await users_collection.count_documents({"status": "blocked"})
+        total_users = await db.users_collection.count_documents({})
+        active_users = await db.users_collection.count_documents({"status": "active"})
+        blocked_users = await db.users_collection.count_documents({"status": "blocked"})
         
-        total_bots = await bots_collection.count_documents({})
-        active_bots = await bots_collection.count_documents({"status": "active"})
-        live_bots = await bots_collection.count_documents({"mode": "live"})
+        total_bots = await db.bots_collection.count_documents({})
+        active_bots = await db.bots_collection.count_documents({"status": "active"})
+        live_bots = await db.bots_collection.count_documents({"mode": "live"})
         
-        total_trades = await trades_collection.count_documents({})
-        live_trades = await trades_collection.count_documents({"is_paper": False})
+        total_trades = await db.trades_collection.count_documents({})
+        live_trades = await db.trades_collection.count_documents({"is_paper": False})
         
         # Calculate total profit across all users
-        all_bots = await bots_collection.find(
+        all_bots = await db.bots_collection.find(
             {},
             {"_id": 0, "total_profit": 1}
         ).to_list(10000)

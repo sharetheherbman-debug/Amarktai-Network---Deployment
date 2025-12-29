@@ -3,7 +3,7 @@ Trade Limiter - Enforces per-exchange trade limits and cooldowns
 """
 import asyncio
 from datetime import datetime, timezone, timedelta
-from database import bots_collection
+import database as db
 from config import EXCHANGE_TRADE_LIMITS, MAX_TRADES_PER_USER_PER_DAY
 from logger_config import logger
 import random
@@ -17,7 +17,7 @@ class TradeLimiter:
     async def can_trade(self, bot_id: str) -> tuple[bool, str]:
         """Check if bot is allowed to trade now"""
         try:
-            bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+            bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
             
             if not bot:
                 return False, "Bot not found"
@@ -61,7 +61,7 @@ class TradeLimiter:
     async def record_trade(self, bot_id: str) -> bool:
         """Record that a trade was executed"""
         try:
-            result = await bots_collection.update_one(
+            result = await db.bots_collection.update_one(
                 {"id": bot_id},
                 {
                     "$set": {"last_trade_time": datetime.now(timezone.utc).isoformat()},
@@ -81,7 +81,7 @@ class TradeLimiter:
     async def get_bot_trade_status(self, bot_id: str) -> dict:
         """Get current trade status for a bot"""
         try:
-            bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+            bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
             
             if not bot:
                 return {"error": "Bot not found"}

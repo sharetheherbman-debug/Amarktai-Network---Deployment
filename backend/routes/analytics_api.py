@@ -9,7 +9,7 @@ from typing import Optional, List, Dict
 import logging
 
 from auth import get_current_user
-from database import trades_collection, bots_collection
+import database as db
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ async def get_pnl_timeseries(
         start_time = now - range_map.get(range, timedelta(days=7))
         
         # Get all trades in range
-        trades = await trades_collection.find(
+        trades = await db.trades_collection.find(
             {
                 "user_id": user_id,
                 "timestamp": {"$gte": start_time.isoformat()}
@@ -152,7 +152,7 @@ async def get_capital_breakdown(user_id: str = Depends(get_current_user)):
     """
     try:
         # Get all user bots
-        bots = await bots_collection.find(
+        bots = await db.bots_collection.find(
             {"user_id": user_id},
             {"_id": 0}
         ).to_list(1000)
@@ -222,7 +222,7 @@ async def get_performance_summary(
             start_time = datetime(2020, 1, 1, tzinfo=timezone.utc)
         
         # Get trades in period
-        trades = await trades_collection.find(
+        trades = await db.trades_collection.find(
             {
                 "user_id": user_id,
                 "timestamp": {"$gte": start_time.isoformat()}

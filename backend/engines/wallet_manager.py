@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import logging
 
-from database import bots_collection, api_keys_collection
+import database as db
 from ccxt_service import CCXTService
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ class WalletManager:
         """Get balance from Luno (master wallet)"""
         try:
             # Get Luno API keys
-            luno_key = await api_keys_collection.find_one({
+            luno_key = await db.api_keys_collection.find_one({
                 "user_id": user_id,
                 "exchange": "luno"
             }, {"_id": 0})
@@ -90,7 +90,7 @@ class WalletManager:
         """Get balances from all configured exchanges"""
         balances = {}
         
-        api_keys = await api_keys_collection.find(
+        api_keys = await db.api_keys_collection.find(
             {"user_id": user_id},
             {"_id": 0}
         ).to_list(100)
@@ -173,7 +173,7 @@ class WalletManager:
         """Get current allocation status across all exchanges"""
         try:
             # Get bots per exchange
-            bots = await bots_collection.find(
+            bots = await db.bots_collection.find(
                 {"user_id": user_id},
                 {"_id": 0, "exchange": 1, "current_capital": 1}
             ).to_list(1000)
@@ -203,7 +203,7 @@ class WalletManager:
         """Rebalance funds to top 5 performing bots"""
         try:
             # Get all bots
-            bots = await bots_collection.find(
+            bots = await db.bots_collection.find(
                 {"user_id": user_id},
                 {"_id": 0}
             ).to_list(1000)
@@ -221,7 +221,7 @@ class WalletManager:
             per_bot_allocation = total_profit / 5
             
             for bot_id in top_performers[:5]:
-                await bots_collection.update_one(
+                await db.bots_collection.update_one(
                     {"id": bot_id},
                     {"$inc": {"current_capital": per_bot_allocation}}
                 )

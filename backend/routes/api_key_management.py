@@ -12,7 +12,7 @@ import base64
 import hashlib
 
 from auth import get_current_user
-from database import api_keys_collection, users_collection
+import database as db
 from models import APIKeyCreate
 
 logger = logging.getLogger(__name__)
@@ -228,7 +228,7 @@ async def save_api_key(
         encrypted_secret = encrypt_api_key(api_secret) if api_secret else None
         
         # Check if key already exists
-        existing = await api_keys_collection.find_one({
+        existing = await db.api_keys_collection.find_one({
             "user_id": user_id,
             "provider": provider
         })
@@ -249,7 +249,7 @@ async def save_api_key(
         if existing:
             # Update existing key
             key_data["updated_at"] = timestamp
-            await api_keys_collection.update_one(
+            await db.api_keys_collection.update_one(
                 {"user_id": user_id, "provider": provider},
                 {"$set": key_data}
             )
@@ -257,7 +257,7 @@ async def save_api_key(
         else:
             # Create new key
             key_data["created_at"] = timestamp
-            await api_keys_collection.insert_one(key_data)
+            await db.api_keys_collection.insert_one(key_data)
             message = f"Saved {provider.upper()} API key"
         
         logger.info(f"✅ {message} for user {user_id[:8]}")
@@ -292,7 +292,7 @@ async def list_api_keys(user_id: str = Depends(get_current_user)):
         List of saved keys with masked values
     """
     try:
-        keys_cursor = api_keys_collection.find(
+        keys_cursor = db.api_keys_collection.find(
             {"user_id": user_id},
             {"_id": 0, "api_key_encrypted": 0, "api_secret_encrypted": 0}
         )
@@ -324,7 +324,7 @@ async def delete_api_key(
         Deletion confirmation
     """
     try:
-        result = await api_keys_collection.delete_one({
+        result = await db.api_keys_collection.delete_one({
             "user_id": user_id,
             "provider": provider
         })
@@ -359,7 +359,7 @@ async def get_decrypted_key(user_id: str, provider: str) -> Optional[Dict]:
         Dict with decrypted api_key and api_secret, or None
     """
     try:
-        key_doc = await api_keys_collection.find_one({
+        key_doc = await db.api_keys_collection.find_one({
             "user_id": user_id,
             "provider": provider
         })

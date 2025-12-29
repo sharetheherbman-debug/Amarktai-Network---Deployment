@@ -13,7 +13,7 @@ import io
 import base64
 
 from auth import get_current_user
-from database import users_collection
+import database as db
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ async def enroll_2fa(user_id: str = Depends(get_current_user)):
     """
     try:
         # Check if user exists
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -69,7 +69,7 @@ async def enroll_2fa(user_id: str = Depends(get_current_user)):
         qr_code_base64 = base64.b64encode(buffer.getvalue()).decode()
         
         # Store secret temporarily (not enabled yet)
-        await users_collection.update_one(
+        await db.users_collection.update_one(
             {"id": user_id},
             {
                 "$set": {
@@ -116,7 +116,7 @@ async def verify_2fa_enrollment(
             raise HTTPException(status_code=400, detail="Code is required")
         
         # Get user
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -131,7 +131,7 @@ async def verify_2fa_enrollment(
         
         if is_valid:
             # Enable 2FA
-            await users_collection.update_one(
+            await db.users_collection.update_one(
                 {"id": user_id},
                 {
                     "$set": {
@@ -183,7 +183,7 @@ async def disable_2fa(
             raise HTTPException(status_code=400, detail="Code and password are required")
         
         # Get user
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -210,7 +210,7 @@ async def disable_2fa(
             }
         
         # Disable 2FA
-        await users_collection.update_one(
+        await db.users_collection.update_one(
             {"id": user_id},
             {
                 "$set": {
@@ -242,7 +242,7 @@ async def disable_2fa(
 async def get_2fa_status(user_id: str = Depends(get_current_user)):
     """Get 2FA status for current user"""
     try:
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -278,7 +278,7 @@ async def validate_2fa_code(
             raise HTTPException(status_code=400, detail="Code is required")
         
         # Get user
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
