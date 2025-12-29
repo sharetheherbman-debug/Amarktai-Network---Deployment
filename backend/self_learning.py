@@ -19,7 +19,7 @@ class SelfLearningSystem:
     def __init__(self):
         self.db = None
         
-    async def db.init_db(self):
+    async def init_db(self):
         """Initialize database connection"""
         import database as db
         self.db = db

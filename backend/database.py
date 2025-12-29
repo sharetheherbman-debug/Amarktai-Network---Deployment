@@ -71,11 +71,14 @@ learning_logs_collection = None
 
 # Audit & Tracking Collections
 audit_log_collection = None
+audit_logs_collection = None  # Backward compatibility alias
+audit_logs = None  # Backward compatibility alias
 autopilot_actions_collection = None
 rogue_detections_collection = None
 
 # Financial Tracking Collections
 wallets_collection = None
+wallet_balances_collection = None
 ledger_collection = None
 profits_collection = None
 
@@ -166,8 +169,8 @@ def setup_collections():
     global users_collection, api_keys_collection, bots_collection, trades_collection
     global alerts_collection, chat_messages_collection, system_modes_collection
     global learning_data_collection, learning_logs_collection
-    global audit_log_collection, autopilot_actions_collection, rogue_detections_collection
-    global wallets_collection, ledger_collection, profits_collection
+    global audit_log_collection, audit_logs_collection, audit_logs, autopilot_actions_collection, rogue_detections_collection
+    global wallets_collection, wallet_balances_collection, ledger_collection, profits_collection
     global orders_collection, positions_collection, balance_snapshots_collection, performance_metrics_collection
     
     if db is None:
@@ -189,11 +192,14 @@ def setup_collections():
     
     # Audit & Tracking Collections
     audit_log_collection = db.audit_log
+    audit_logs_collection = audit_log_collection  # Backward compatibility alias
+    audit_logs = audit_log_collection  # Backward compatibility alias
     autopilot_actions_collection = db.autopilot_actions
     rogue_detections_collection = db.rogue_detections
     
     # Financial Tracking Collections
     wallets_collection = db.wallets
+    wallet_balances_collection = db.wallet_balances
     ledger_collection = db.ledger
     profits_collection = db.profits
     
