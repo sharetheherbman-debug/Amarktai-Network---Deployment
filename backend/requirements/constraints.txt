@@ -1,26 +1,42 @@
-# Constraints - Version pins to prevent dependency conflicts
-# These constraints are applied across all requirement files
+# This file contains version constraints for all dependencies
+# Format: package>=min_version,<max_version
 
-# NumPy constraint (scipy requires <2.3)
-numpy>=1.26.0,<2.3
+# Core dependencies
+fastapi>=0.104.0,<0.105.0
+uvicorn>=0.24.0,<0.25.0
+pydantic>=2.5.0,<3.0.0
+python-jose>=3.3.0,<4.0.0
+passlib>=1.7.4,<2.0.0
+python-multipart>=0.0.6,<0.1.0
+bcrypt>=4.1.0,<5.0.0
 
-# Transformers ecosystem constraints
-huggingface_hub>=0.23.2,<1.0
-tokenizers>=0.20,<0.21
+# Database
+sqlalchemy>=2.0.0,<3.0.0
+alembic>=1.13.0,<2.0.0
+psycopg2-binary>=2.9.9,<3.0.0
 
-# Packaging constraint (langchain-core requires <25)
-packaging>=23.2,<25
+# HTTP & Async
+httpx>=0.25.0,<0.26.0
+aiofiles>=23.2.0,<24.0.0
 
-# Protobuf constraint (Google APIs vs cosmpy conflict)
-# Use >=3.19.5,<7.0 for Google AI stack
-# Use >=4.21.6,<5.0 for cosmpy (Fetch.ai agents)
-# Cannot use both simultaneously
-protobuf>=3.19.5,<7.0
+# Monitoring & Logging
+prometheus-client>=0.19.0,<0.20.0
+python-json-logger>=2.0.7,<3.0.0
 
-# Typing extensions (keep recent)
-typing_extensions>=4.15.0
+# uAgents Integration
+uagents>=0.12.0,<0.19.0
 
-# React/Frontend (if managing from backend)
-# react@18.2.0
-# react-dom@18.2.0
-# date-fns@^3.6.0 (for react-day-picker@8.10.1)
+# ECDSA constraint (required by uAgents <0.19.0, compatible with python-jose)
+ecdsa>=0.18.0,<0.19.0
+
+# Testing (dev only)
+pytest>=7.4.0,<8.0.0
+pytest-asyncio>=0.21.0,<0.22.0
+pytest-cov>=4.1.0,<5.0.0
+httpx>=0.25.0,<0.26.0  # For testing
+
+# Code Quality (dev only)
+black>=23.12.0,<24.0.0
+flake8>=6.1.0,<7.0.0
+mypy>=1.7.0,<2.0.0
+isort>=5.13.0,<6.0.0
