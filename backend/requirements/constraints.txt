@@ -20,9 +20,6 @@ protobuf>=3.19.5,<7.0
 # Typing extensions (keep recent)
 typing_extensions>=4.15.0
 
-# ECDSA constraint (required by uAgents <0.19.0, compatible with python-jose)
-ecdsa>=0.18.0,<0.19.0
-
 # React/Frontend (if managing from backend)
 # react@18.2.0
 # react-dom@18.2.0
