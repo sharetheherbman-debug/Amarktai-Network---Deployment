@@ -167,6 +167,38 @@ Checks:
 - ✅ OpenAPI routes
 - ✅ No errors in logs
 
+## Production Boot Verification
+
+After deployment, verify the backend boots correctly:
+
+```bash
+# 1. Test database module directly
+cd /var/amarktai/app/backend
+source /var/amarktai/venv/bin/activate
+python tools/selftest_boot.py
+
+# 2. Test health endpoint
+curl http://127.0.0.1:8000/api/health/ping
+
+# Expected response:
+# {"status":"healthy","db":"connected","timestamp":"2025-12-30T06:00:00.000000Z"}
+```
+
+### Common Issues
+
+**AttributeError: module 'database' has no attribute 'wallet_balances'**
+- Fix: Ensure `database.py` has wallet_balances and capital_injections aliases defined
+- Run: `python tools/selftest_boot.py` to verify
+
+**Health endpoint returns 503**
+- If DB is connected but health returns 503, check optional services are not blocking
+- Only database connectivity should affect health status
+
+**Systemd restart loop**
+- Check logs: `journalctl -u amarktai-backend -n 50`
+- Look for ImportError or AttributeError
+- Run selftest to identify missing attributes
+
 ### Step 7: Frontend Setup (Optional)
 
 ```bash

@@ -1,461 +1,294 @@
 """
-Database module for Amarktai Network.
-Handles all database operations including user management, wallets, transactions, and capital injections.
+Database module for Amarktai Network - MongoDB/Motor Implementation
+Handles all database operations and provides stable collection API
 """
 
-import sqlite3
-import hashlib
-import secrets
-from datetime import datetime
-from typing import Optional, Dict, List, Tuple, Any
+import os
+import logging
+from motor.motor_asyncio import AsyncIOMotorClient
+from typing import Optional
 
-class Database:
-    """Database handler for Amarktai Network operations."""
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# MongoDB Client and Database (Lazy Initialization)
+# ============================================================================
+client: Optional[AsyncIOMotorClient] = None
+db = None
+
+# ============================================================================
+# Collection Globals - Initialized by setup_collections()
+# ============================================================================
+# Core collections
+users_collection = None
+bots_collection = None
+trades_collection = None
+api_keys_collection = None
+alerts_collection = None
+sessions_collection = None
+system_config_collection = None
+
+# Lifecycle and monitoring
+bot_lifecycle_collection = None
+bot_metrics_collection = None
+system_metrics_collection = None
+
+# Advanced features
+risk_profiles_collection = None
+market_regimes_collection = None
+learning_data_collection = None
+audit_logs_collection = None
+notifications_collection = None
+reports_collection = None
+promotion_requests_collection = None
+
+# Financial tracking collections
+wallet_balances_collection = None
+capital_injections_collection = None
+
+# Aliases for backward compatibility
+wallet_balances = None  # Alias for wallet_balances_collection
+capital_injections = None  # Alias for capital_injections_collection
+
+
+# ============================================================================
+# Database Connection Functions
+# ============================================================================
+
+async def connect():
+    """
+    Connect to MongoDB and initialize all collections
+    This is the main entry point for database initialization
+    """
+    global client, db
     
-    def __init__(self, db_path: str = "amarktai.db"):
-        """Initialize database connection and create tables if they don't exist."""
-        self.db_path = db_path
-        self.init_db()
+    mongo_url = os.getenv('MONGO_URL', 'mongodb://localhost:27017')
+    db_name = os.getenv('DB_NAME', 'amarktai_trading')
     
-    def get_connection(self) -> sqlite3.Connection:
-        """Get a database connection."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+    logger.info(f"🔌 Connecting to MongoDB at {mongo_url}")
     
-    def init_db(self):
-        """Initialize database tables."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+    try:
+        client = AsyncIOMotorClient(mongo_url)
+        db = client[db_name]
         
-        # Users table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                email TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_login TIMESTAMP,
-                is_active BOOLEAN DEFAULT 1
-            )
-        """)
+        # Test connection
+        await client.admin.command('ping')
+        logger.info(f"✅ MongoDB connection successful - database: {db_name}")
         
-        # Wallets table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS wallets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                wallet_address TEXT UNIQUE NOT NULL,
-                balance REAL DEFAULT 0.0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (id)
-            )
-        """)
+        # Setup all collections
+        await setup_collections()
         
-        # Transactions table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                from_wallet TEXT NOT NULL,
-                to_wallet TEXT NOT NULL,
-                amount REAL NOT NULL,
-                transaction_type TEXT NOT NULL,
-                status TEXT DEFAULT 'pending',
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                notes TEXT
-            )
-        """)
+        # Initialize database (create indexes)
+        await init_db()
         
-        # Capital injections table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS capital_injections (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                wallet_address TEXT NOT NULL,
-                amount REAL NOT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                source TEXT DEFAULT 'system',
-                notes TEXT,
-                FOREIGN KEY (wallet_address) REFERENCES wallets (wallet_address)
-            )
-        """)
+        logger.info("✅ All collections and indexes initialized")
         
-        conn.commit()
-        conn.close()
+    except Exception as e:
+        logger.error(f"❌ MongoDB connection failed: {e}")
+        raise
+
+
+async def connect_db():
+    """Alias for connect() - for backward compatibility"""
+    await connect()
+
+
+async def close_db():
+    """Close MongoDB connection cleanly"""
+    global client
     
-    # User Management Methods
-    def create_user(self, username: str, email: str, password: str) -> Tuple[bool, str]:
-        """Create a new user account."""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            # Hash password
-            password_hash = hashlib.sha256(password.encode()).hexdigest()
-            
-            cursor.execute(
-                "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
-                (username, email, password_hash)
-            )
-            
-            user_id = cursor.lastrowid
-            
-            # Create wallet for user
-            wallet_address = self._generate_wallet_address()
-            cursor.execute(
-                "INSERT INTO wallets (user_id, wallet_address, balance) VALUES (?, ?, ?)",
-                (user_id, wallet_address, 0.0)
-            )
-            
-            conn.commit()
-            conn.close()
-            
-            return True, wallet_address
-        except sqlite3.IntegrityError as e:
-            return False, str(e)
-        except Exception as e:
-            return False, str(e)
+    if client:
+        logger.info("🔌 Closing MongoDB connection...")
+        client.close()
+        client = None
+        logger.info("✅ MongoDB connection closed")
+
+
+def get_database():
+    """Get the database instance"""
+    return db
+
+
+# ============================================================================
+# Collection Setup
+# ============================================================================
+
+async def setup_collections():
+    """
+    Initialize all collection globals
+    Must be called after database connection is established
+    """
+    global users_collection, bots_collection, trades_collection
+    global api_keys_collection, alerts_collection, sessions_collection
+    global system_config_collection, bot_lifecycle_collection
+    global bot_metrics_collection, system_metrics_collection
+    global risk_profiles_collection, market_regimes_collection
+    global learning_data_collection, audit_logs_collection
+    global notifications_collection, reports_collection
+    global promotion_requests_collection
+    global wallet_balances_collection, capital_injections_collection
+    global wallet_balances, capital_injections
     
-    def authenticate_user(self, username: str, password: str) -> Optional[Dict]:
-        """Authenticate user credentials."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        password_hash = hashlib.sha256(password.encode()).hexdigest()
-        
-        cursor.execute(
-            "SELECT * FROM users WHERE username = ? AND password_hash = ? AND is_active = 1",
-            (username, password_hash)
-        )
-        
-        user = cursor.fetchone()
-        
-        if user:
-            # Update last login
-            cursor.execute(
-                "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?",
-                (user['id'],)
-            )
-            conn.commit()
-            
-            # Get wallet info
-            cursor.execute(
-                "SELECT wallet_address, balance FROM wallets WHERE user_id = ?",
-                (user['id'],)
-            )
-            wallet = cursor.fetchone()
-            
-            conn.close()
-            
-            return {
-                'id': user['id'],
-                'username': user['username'],
-                'email': user['email'],
-                'wallet_address': wallet['wallet_address'] if wallet else None,
-                'balance': wallet['balance'] if wallet else 0.0
-            }
-        
-        conn.close()
-        return None
+    if db is None:
+        logger.warning("⚠️ Database not connected, cannot setup collections")
+        return
     
-    def get_user_by_id(self, user_id: int) -> Optional[Dict]:
-        """Get user information by ID."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-        user = cursor.fetchone()
-        
-        if user:
-            cursor.execute(
-                "SELECT wallet_address, balance FROM wallets WHERE user_id = ?",
-                (user_id,)
-            )
-            wallet = cursor.fetchone()
-            
-            conn.close()
-            
-            return {
-                'id': user['id'],
-                'username': user['username'],
-                'email': user['email'],
-                'created_at': user['created_at'],
-                'last_login': user['last_login'],
-                'wallet_address': wallet['wallet_address'] if wallet else None,
-                'balance': wallet['balance'] if wallet else 0.0
-            }
-        
-        conn.close()
-        return None
+    # Core collections
+    users_collection = db.users
+    bots_collection = db.bots
+    trades_collection = db.trades
+    api_keys_collection = db.api_keys
+    alerts_collection = db.alerts
+    sessions_collection = db.sessions
+    system_config_collection = db.system_config
     
-    # Wallet Management Methods
-    def get_wallet_balance(self, wallet_address: str) -> float:
-        """Get balance for a wallet address."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            "SELECT balance FROM wallets WHERE wallet_address = ?",
-            (wallet_address,)
-        )
-        
-        result = cursor.fetchone()
-        conn.close()
-        
-        return result['balance'] if result else 0.0
+    # Lifecycle and monitoring
+    bot_lifecycle_collection = db.bot_lifecycle
+    bot_metrics_collection = db.bot_metrics
+    system_metrics_collection = db.system_metrics
     
-    def get_all_wallet_balances(self) -> List[Dict]:
-        """Get all wallet balances."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT w.wallet_address, w.balance, u.username, u.email
-            FROM wallets w
-            JOIN users u ON w.user_id = u.id
-            ORDER BY w.balance DESC
-        """)
-        
-        results = cursor.fetchall()
-        conn.close()
-        
-        return [dict(row) for row in results]
+    # Advanced features
+    risk_profiles_collection = db.risk_profiles
+    market_regimes_collection = db.market_regimes
+    learning_data_collection = db.learning_data
+    audit_logs_collection = db.audit_logs
+    notifications_collection = db.notifications
+    reports_collection = db.reports
+    promotion_requests_collection = db.promotion_requests
     
-    # Alias for get_all_wallet_balances
-    def wallet_balances(self) -> List[Dict]:
-        """Alias for get_all_wallet_balances."""
-        return self.get_all_wallet_balances()
+    # Financial tracking
+    wallet_balances_collection = db.wallet_balances
+    capital_injections_collection = db.capital_injections
     
-    def update_wallet_balance(self, wallet_address: str, new_balance: float) -> bool:
-        """Update wallet balance."""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute(
-                "UPDATE wallets SET balance = ? WHERE wallet_address = ?",
-                (new_balance, wallet_address)
-            )
-            
-            conn.commit()
-            conn.close()
-            return True
-        except Exception:
-            return False
+    # Aliases for backward compatibility
+    wallet_balances = wallet_balances_collection
+    capital_injections = capital_injections_collection
     
-    def transfer_funds(self, from_wallet: str, to_wallet: str, amount: float) -> Tuple[bool, str]:
-        """Transfer funds between wallets."""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            # Check sender balance
-            cursor.execute(
-                "SELECT balance FROM wallets WHERE wallet_address = ?",
-                (from_wallet,)
-            )
-            sender = cursor.fetchone()
-            
-            if not sender:
-                conn.close()
-                return False, "Sender wallet not found"
-            
-            if sender['balance'] < amount:
-                conn.close()
-                return False, "Insufficient balance"
-            
-            # Check recipient exists
-            cursor.execute(
-                "SELECT balance FROM wallets WHERE wallet_address = ?",
-                (to_wallet,)
-            )
-            recipient = cursor.fetchone()
-            
-            if not recipient:
-                conn.close()
-                return False, "Recipient wallet not found"
-            
-            # Perform transfer
-            cursor.execute(
-                "UPDATE wallets SET balance = balance - ? WHERE wallet_address = ?",
-                (amount, from_wallet)
-            )
-            
-            cursor.execute(
-                "UPDATE wallets SET balance = balance + ? WHERE wallet_address = ?",
-                (amount, to_wallet)
-            )
-            
-            # Record transaction
-            cursor.execute(
-                """INSERT INTO transactions 
-                   (from_wallet, to_wallet, amount, transaction_type, status) 
-                   VALUES (?, ?, ?, ?, ?)""",
-                (from_wallet, to_wallet, amount, 'transfer', 'completed')
-            )
-            
-            conn.commit()
-            conn.close()
-            
-            return True, "Transfer successful"
-        except Exception as e:
-            return False, str(e)
+    logger.info("✅ All collection references initialized")
+
+
+# ============================================================================
+# Database Initialization (Indexes)
+# ============================================================================
+
+async def init_db():
+    """
+    Create database indexes for optimal performance
+    Safe to call multiple times - MongoDB handles duplicate index creation
+    """
+    if db is None:
+        logger.warning("⚠️ Database not connected, cannot create indexes")
+        return
     
-    # Transaction Methods
-    def get_transaction_history(self, wallet_address: str, limit: int = 50) -> List[Dict]:
-        """Get transaction history for a wallet."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+    try:
+        logger.info("📊 Creating database indexes...")
         
-        cursor.execute(
-            """SELECT * FROM transactions 
-               WHERE from_wallet = ? OR to_wallet = ?
-               ORDER BY timestamp DESC
-               LIMIT ?""",
-            (wallet_address, wallet_address, limit)
-        )
+        # User indexes
+        if users_collection is not None:
+            await users_collection.create_index("id", unique=True)
+            await users_collection.create_index("email", unique=True)
         
-        results = cursor.fetchall()
-        conn.close()
+        # Bot indexes
+        if bots_collection is not None:
+            await bots_collection.create_index("id", unique=True)
+            await bots_collection.create_index("user_id")
+            await bots_collection.create_index([("user_id", 1), ("status", 1)])
         
-        return [dict(row) for row in results]
-    
-    def get_all_transactions(self, limit: int = 100) -> List[Dict]:
-        """Get all transactions."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        # Trade indexes
+        if trades_collection is not None:
+            await trades_collection.create_index("id", unique=True)
+            await trades_collection.create_index("bot_id")
+            await trades_collection.create_index("user_id")
+            await trades_collection.create_index("timestamp")
+            await trades_collection.create_index([("bot_id", 1), ("timestamp", -1)])
         
-        cursor.execute(
-            "SELECT * FROM transactions ORDER BY timestamp DESC LIMIT ?",
-            (limit,)
-        )
+        # API key indexes
+        if api_keys_collection is not None:
+            await api_keys_collection.create_index("id", unique=True)
+            await api_keys_collection.create_index("user_id")
         
-        results = cursor.fetchall()
-        conn.close()
+        # Alert indexes
+        if alerts_collection is not None:
+            await alerts_collection.create_index("user_id")
+            await alerts_collection.create_index("timestamp")
         
-        return [dict(row) for row in results]
-    
-    # Capital Injection Methods
-    def add_capital_injection(self, wallet_address: str, amount: float, source: str = "system", notes: str = "") -> Tuple[bool, str]:
-        """Add capital injection to a wallet."""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            # Check if wallet exists
-            cursor.execute(
-                "SELECT balance FROM wallets WHERE wallet_address = ?",
-                (wallet_address,)
-            )
-            wallet = cursor.fetchone()
-            
-            if not wallet:
-                conn.close()
-                return False, "Wallet not found"
-            
-            # Update wallet balance
-            cursor.execute(
-                "UPDATE wallets SET balance = balance + ? WHERE wallet_address = ?",
-                (amount, wallet_address)
-            )
-            
-            # Record capital injection
-            cursor.execute(
-                """INSERT INTO capital_injections 
-                   (wallet_address, amount, source, notes) 
-                   VALUES (?, ?, ?, ?)""",
-                (wallet_address, amount, source, notes)
-            )
-            
-            # Record as transaction
-            cursor.execute(
-                """INSERT INTO transactions 
-                   (from_wallet, to_wallet, amount, transaction_type, status, notes) 
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                ('system', wallet_address, amount, 'capital_injection', 'completed', notes)
-            )
-            
-            conn.commit()
-            conn.close()
-            
-            return True, "Capital injection successful"
-        except Exception as e:
-            return False, str(e)
-    
-    def get_capital_injections(self, wallet_address: Optional[str] = None, limit: int = 50) -> List[Dict]:
-        """Get capital injection history."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        # Session indexes
+        if sessions_collection is not None:
+            await sessions_collection.create_index("user_id")
+            await sessions_collection.create_index("created_at", expireAfterSeconds=86400)  # 24 hours
         
-        if wallet_address:
-            cursor.execute(
-                """SELECT * FROM capital_injections 
-                   WHERE wallet_address = ?
-                   ORDER BY timestamp DESC
-                   LIMIT ?""",
-                (wallet_address, limit)
-            )
-        else:
-            cursor.execute(
-                "SELECT * FROM capital_injections ORDER BY timestamp DESC LIMIT ?",
-                (limit,)
-            )
+        # Bot lifecycle indexes
+        if bot_lifecycle_collection is not None:
+            await bot_lifecycle_collection.create_index("bot_id")
+            await bot_lifecycle_collection.create_index("user_id")
+            await bot_lifecycle_collection.create_index("timestamp")
         
-        results = cursor.fetchall()
-        conn.close()
+        # Metrics indexes
+        if bot_metrics_collection is not None:
+            await bot_metrics_collection.create_index("bot_id")
+            await bot_metrics_collection.create_index("timestamp")
         
-        return [dict(row) for row in results]
-    
-    def get_all_capital_injections(self, limit: int = 100) -> List[Dict]:
-        """Get all capital injections."""
-        return self.get_capital_injections(wallet_address=None, limit=limit)
-    
-    # Alias for get_all_capital_injections
-    def capital_injections(self, limit: int = 100) -> List[Dict]:
-        """Alias for get_all_capital_injections."""
-        return self.get_all_capital_injections(limit=limit)
-    
-    # Utility Methods
-    def _generate_wallet_address(self) -> str:
-        """Generate a unique wallet address."""
-        return "AMKT" + secrets.token_hex(16).upper()
-    
-    def get_system_stats(self) -> Dict:
-        """Get system-wide statistics."""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        if system_metrics_collection is not None:
+            await system_metrics_collection.create_index("timestamp")
         
-        # Total users
-        cursor.execute("SELECT COUNT(*) as count FROM users WHERE is_active = 1")
-        total_users = cursor.fetchone()['count']
+        # Audit log indexes
+        if audit_logs_collection is not None:
+            await audit_logs_collection.create_index("user_id")
+            await audit_logs_collection.create_index("action")
+            await audit_logs_collection.create_index("timestamp")
         
-        # Total wallets
-        cursor.execute("SELECT COUNT(*) as count FROM wallets")
-        total_wallets = cursor.fetchone()['count']
+        # Notification indexes
+        if notifications_collection is not None:
+            await notifications_collection.create_index("user_id")
+            await notifications_collection.create_index("timestamp")
+            await notifications_collection.create_index([("user_id", 1), ("read", 1)])
         
-        # Total balance in system
-        cursor.execute("SELECT SUM(balance) as total FROM wallets")
-        total_balance = cursor.fetchone()['total'] or 0.0
+        # Financial tracking indexes
+        if wallet_balances_collection is not None:
+            await wallet_balances_collection.create_index("user_id")
+            await wallet_balances_collection.create_index("timestamp")
         
-        # Total transactions
-        cursor.execute("SELECT COUNT(*) as count FROM transactions")
-        total_transactions = cursor.fetchone()['count']
+        if capital_injections_collection is not None:
+            await capital_injections_collection.create_index("bot_id")
+            await capital_injections_collection.create_index("user_id")
+            await capital_injections_collection.create_index("timestamp")
         
-        # Total capital injections
-        cursor.execute("SELECT COUNT(*) as count, SUM(amount) as total FROM capital_injections")
-        injection_stats = cursor.fetchone()
+        logger.info("✅ Database indexes created successfully")
         
-        conn.close()
-        
+    except Exception as e:
+        logger.error(f"❌ Error creating indexes: {e}")
+        # Don't raise - indexes are optional for basic functionality
+
+
+# ============================================================================
+# Utility Functions
+# ============================================================================
+
+def is_connected() -> bool:
+    """Check if database is connected"""
+    return client is not None and db is not None
+
+
+async def health_check() -> dict:
+    """
+    Perform a health check on the database connection
+    Returns dict with status information
+    """
+    if not is_connected():
         return {
-            'total_users': total_users,
-            'total_wallets': total_wallets,
-            'total_balance': total_balance,
-            'total_transactions': total_transactions,
-            'total_capital_injections': injection_stats['count'] or 0,
-            'total_capital_injected': injection_stats['total'] or 0.0
+            "status": "disconnected",
+            "error": "Database client not initialized"
         }
     
-    def close(self):
-        """Close database connection."""
-        pass  # Connections are closed after each operation
+    try:
+        # Ping the database
+        await client.admin.command('ping')
+        return {
+            "status": "connected",
+            "database": db.name
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
+        }
