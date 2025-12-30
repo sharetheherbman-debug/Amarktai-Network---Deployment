@@ -1,279 +1,119 @@
-"""
-Database module - Normalized contract for MongoDB access.
-
-This module provides a stable, consistent interface to MongoDB collections
-and connection management. All imports should use:
-    import database
-    
-    # Then access collections via:
-    database.users_collection
-    database.bots_collection
-    # etc.
-
-Exported globals:
-- client: AsyncIOMotorClient instance (None until connect() called)
-- db: Database instance (None until connect() called)
-- All collection handles (users_collection, bots_collection, etc.)
-
-Exported functions:
-- get_database(): Returns the database instance
-- async connect(): Initialize database connection (idempotent)
-- async connect_db(): Alias for connect()
-- async close_db(): Clean shutdown of database client
-- setup_collections(): Initialize all collection globals
-"""
-
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import DuplicateKeyError
 import os
 from dotenv import load_dotenv
-from pathlib import Path
-import logging
 
-logger = logging.getLogger(__name__)
+load_dotenv()
 
-ROOT_DIR = Path(__file__).parent
+# MongoDB connection string from environment variable
+MONGO_URI = os.getenv("MONGO_URI")
 
-# Load environment variables from `.env` if present.
-load_dotenv(ROOT_DIR / '.env')
-
-# Determine Mongo connection URI.  Prefer `MONGO_URI` (documented in .env.example) and
-# fall back to the legacy `MONGO_URL` used in older deployments.  Default to a local
-# instance if neither is provided to ensure the application boots in development.
-mongo_url = os.environ.get('MONGO_URI') or os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
-
-# Determine the database name.  Prefer `MONGO_DB_NAME` (documented in .env.example) and
-# fall back to the legacy `DB_NAME`.  Default to `amarktai_trading` if neither is set.
-db_name = os.environ.get('MONGO_DB_NAME') or os.environ.get('DB_NAME', 'amarktai_trading')
-
-# Global database client and database handle (initialized lazily by connect())
+# Global database and collection variables - initialized to None
 client = None
 db = None
-_connected = False
 
-# =============================================================================
-# COLLECTION GLOBALS
-# All collections used anywhere in the codebase MUST be defined here.
-# Initialize to None, then call setup_collections() to assign actual collection handles.
-# =============================================================================
-
-# Core Collections
+# Collection globals
 users_collection = None
-api_keys_collection = None
-bots_collection = None
-trades_collection = None
-alerts_collection = None
-chat_messages_collection = None
-system_modes_collection = None
-
-# Learning & Data Collections
-learning_data_collection = None
-learning_logs_collection = None
-
-# Audit & Tracking Collections
-audit_log_collection = None
-audit_logs_collection = None  # Backward compatibility alias
-audit_logs = None  # Backward compatibility alias
-autopilot_actions_collection = None
-rogue_detections_collection = None
-
-# Financial Tracking Collections
 wallets_collection = None
+transactions_collection = None
+validators_collection = None
+stake_pools_collection = None
+blocks_collection = None
 wallet_balances_collection = None
-ledger_collection = None
-profits_collection = None
+capital_injections_collection = None
 
-# Additional collections that may be used in routes or engines
-# (Add any missing collections here to prevent ImportErrors)
-orders_collection = None
-positions_collection = None
-balance_snapshots_collection = None
-performance_metrics_collection = None
-
-# =============================================================================
-# PUBLIC API FUNCTIONS
-# =============================================================================
-
-def get_database():
-    """
-    Get the database instance.
-    
-    Returns:
-        Database: The MongoDB database handle (may be None if not connected)
-    """
-    return db
-
-
-async def connect():
-    """
-    Initialize database connection (idempotent).
-    
-    This function can be called multiple times safely.
-    It will set up the client, database handle, and all collection globals.
-    """
-    global client, db, _connected
-    
-    if _connected and client is not None:
-        logger.info("✅ Database already connected")
-        return
-    
-    try:
-        # Create client and database handle
-        client = AsyncIOMotorClient(mongo_url)
-        db = client[db_name]
-        
-        # Test connection
-        await client.admin.command('ping')
-        _connected = True
-        logger.info(f"✅ Database connected: {db_name} at {mongo_url[:30]}...")
-        
-        # Setup collections
-        setup_collections()
-        
-    except Exception as e:
-        logger.error(f"❌ Database connection failed: {e}")
-        client = None
-        db = None
-        _connected = False
-        raise
+# Aliases for backward compatibility
+wallet_balances = None
+capital_injections = None
 
 
 async def connect_db():
-    """
-    Alias for connect() - for backwards compatibility.
-    """
-    await connect()
+    """Connect to MongoDB and initialize database"""
+    global client, db
+    
+    if not MONGO_URI:
+        raise ValueError("MONGO_URI environment variable is not set")
+    
+    client = AsyncIOMotorClient(MONGO_URI)
+    db = client.amarktai_network
+    print("Connected to MongoDB successfully")
+
+
+async def setup_collections():
+    """Initialize all collections and create indexes"""
+    global users_collection, wallets_collection, transactions_collection
+    global validators_collection, stake_pools_collection, blocks_collection
+    global wallet_balances_collection, capital_injections_collection
+    global wallet_balances, capital_injections
+    
+    if db is None:
+        raise RuntimeError("Database not connected. Call connect_db() first.")
+    
+    # Initialize collections
+    users_collection = db.users
+    wallets_collection = db.wallets
+    transactions_collection = db.transactions
+    validators_collection = db.validators
+    stake_pools_collection = db.stake_pools
+    blocks_collection = db.blocks
+    wallet_balances_collection = db.wallet_balances
+    capital_injections_collection = db.capital_injections
+    
+    # Set up aliases for backward compatibility
+    wallet_balances = wallet_balances_collection
+    capital_injections = capital_injections_collection
+    
+    # Create indexes for users collection
+    await users_collection.create_index("username", unique=True)
+    await users_collection.create_index("email", unique=True)
+    
+    # Create indexes for wallets collection
+    await wallets_collection.create_index("user_id")
+    await wallets_collection.create_index("address", unique=True)
+    
+    # Create indexes for transactions collection
+    await transactions_collection.create_index("from_address")
+    await transactions_collection.create_index("to_address")
+    await transactions_collection.create_index("timestamp")
+    await transactions_collection.create_index("block_number")
+    
+    # Create indexes for validators collection
+    await validators_collection.create_index("address", unique=True)
+    await validators_collection.create_index("stake")
+    
+    # Create indexes for stake_pools collection
+    await stake_pools_collection.create_index("pool_id", unique=True)
+    await stake_pools_collection.create_index("validator_address")
+    
+    # Create indexes for blocks collection
+    await blocks_collection.create_index("block_number", unique=True)
+    await blocks_collection.create_index("timestamp")
+    await blocks_collection.create_index("validator_address")
+    
+    # Create indexes for wallet_balances collection
+    await wallet_balances_collection.create_index("wallet_address", unique=True)
+    await wallet_balances_collection.create_index("balance")
+    await wallet_balances_collection.create_index("last_updated")
+    
+    # Create indexes for capital_injections collection
+    await capital_injections_collection.create_index("injection_id", unique=True)
+    await capital_injections_collection.create_index("wallet_address")
+    await capital_injections_collection.create_index("timestamp")
+    await capital_injections_collection.create_index("amount")
+    
+    print("Collections initialized and indexes created successfully")
 
 
 async def close_db():
-    """
-    Close database connection cleanly.
+    """Close MongoDB connection"""
+    global client
     
-    This function should be called during application shutdown to
-    ensure all connections are properly closed.
-    """
-    try:
-        if client:
-            client.close()
-            logger.info("✅ Database connection closed")
-    except Exception as e:
-        logger.warning(f"⚠️  Error closing database: {e}")
+    if client:
+        client.close()
+        print("MongoDB connection closed")
 
-
-def setup_collections():
-    """
-    Initialize all collection globals.
-    
-    This function assigns actual collection handles to all global collection variables.
-    Call this after database is connected.
-    """
-    global users_collection, api_keys_collection, bots_collection, trades_collection
-    global alerts_collection, chat_messages_collection, system_modes_collection
-    global learning_data_collection, learning_logs_collection
-    global audit_log_collection, audit_logs_collection, audit_logs, autopilot_actions_collection, rogue_detections_collection
-    global wallets_collection, wallet_balances_collection, ledger_collection, profits_collection
-    global orders_collection, positions_collection, balance_snapshots_collection, performance_metrics_collection
-    
-    if db is None:
-        logger.warning("⚠️  Cannot setup collections - database not connected")
-        return
-    
-    # Core Collections
-    users_collection = db.users
-    api_keys_collection = db.api_keys
-    bots_collection = db.bots
-    trades_collection = db.trades
-    alerts_collection = db.alerts
-    chat_messages_collection = db.chat_messages
-    system_modes_collection = db.system_modes
-    
-    # Learning & Data Collections
-    learning_data_collection = db.learning_data
-    learning_logs_collection = db.learning_logs
-    
-    # Audit & Tracking Collections
-    audit_log_collection = db.audit_log
-    audit_logs_collection = audit_log_collection  # Backward compatibility alias
-    audit_logs = audit_log_collection  # Backward compatibility alias
-    autopilot_actions_collection = db.autopilot_actions
-    rogue_detections_collection = db.rogue_detections
-    
-    # Financial Tracking Collections
-    wallets_collection = db.wallets
-    wallet_balances_collection = db.wallet_balances
-    ledger_collection = db.ledger
-    profits_collection = db.profits
-    
-    # Additional collections
-    orders_collection = db.orders
-    positions_collection = db.positions
-    balance_snapshots_collection = db.balance_snapshots
-    performance_metrics_collection = db.performance_metrics
-    
-    logger.info("✅ All collection globals initialized")
-
-
-# DO NOT call setup_collections() at import time - it will be called by connect()
-
-
-# =============================================================================
-# DATABASE INITIALIZATION (Indexes)
-# =============================================================================
 
 async def init_db():
-    """Initialize database indexes"""
-    try:
-        # User indexes
-        await users_collection.create_index("email", unique=True)
-        await users_collection.create_index("id", unique=True)
-        
-        # API Keys indexes
-        await api_keys_collection.create_index(["user_id", "provider"])
-        
-        # Bots indexes
-        await bots_collection.create_index("user_id")
-        await bots_collection.create_index("id", unique=True)
-        await bots_collection.create_index("created_at")
-        await bots_collection.create_index([("user_id", 1), ("mode", 1)])  # For promotion queries
-        
-        # Trades indexes
-        await trades_collection.create_index("bot_id")
-        await trades_collection.create_index("user_id")
-        await trades_collection.create_index("timestamp")
-        
-        # Learning data indexes
-        await learning_data_collection.create_index("user_id")
-        await learning_data_collection.create_index("date")
-        
-        # Alerts indexes
-        await alerts_collection.create_index("user_id")
-        await alerts_collection.create_index("timestamp")
-        
-        # Audit log indexes
-        await audit_log_collection.create_index("user_id")
-        await audit_log_collection.create_index("timestamp")
-        
-        # Chat messages indexes
-        await chat_messages_collection.create_index("user_id")
-        await chat_messages_collection.create_index("timestamp")
-        
-        # System modes indexes
-        await system_modes_collection.create_index("user_id", unique=True)
-        
-        # Phase 2 indexes
-        await learning_logs_collection.create_index("user_id")
-        await learning_logs_collection.create_index("timestamp")
-        await learning_logs_collection.create_index("bot_id")
-        
-        await autopilot_actions_collection.create_index("user_id")
-        await autopilot_actions_collection.create_index("timestamp")
-        await autopilot_actions_collection.create_index("action_type")
-        
-        await rogue_detections_collection.create_index("user_id")
-        await rogue_detections_collection.create_index("bot_id")
-        await rogue_detections_collection.create_index("timestamp")
-        
-        logger.info("✅ Database indexes created")
-        
-    except Exception as e:
-        logger.error(f"❌ Error creating indexes: {e}")
-        # Don't raise - indexes are nice to have but not critical for startup
+    """Initialize database connection and setup collections"""
+    await connect_db()
+    await setup_collections()
