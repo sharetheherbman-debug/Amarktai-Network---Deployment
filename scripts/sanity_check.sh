@@ -18,7 +18,27 @@ python -m compileall backend -q
 
 # 3. Test database module imports
 echo "[3/4] Testing database module..."
-python -c "import sys; sys.path.insert(0, 'backend'); import database; assert hasattr(database, 'wallet_balances'); assert hasattr(database, 'capital_injections'); assert hasattr(database, 'audit_logs'); assert hasattr(database, 'orders_collection'); assert hasattr(database, 'positions_collection'); print('✅ Database module OK')"
+python << 'EOF'
+import sys
+sys.path.insert(0, 'backend')
+import database
+
+# Check required attributes
+required_attrs = [
+    'wallet_balances',
+    'capital_injections',
+    'audit_logs',
+    'orders_collection',
+    'positions_collection',
+    'balance_snapshots_collection',
+    'performance_metrics_collection'
+]
+
+for attr in required_attrs:
+    assert hasattr(database, attr), f"Missing attribute: {attr}"
+
+print('✅ Database module OK')
+EOF
 
 # 4. Optional: Run pytest if tests exist
 if [ -d "backend/tests" ]; then
