@@ -28,6 +28,10 @@ alerts_collection = None
 sessions_collection = None
 system_config_collection = None
 
+# System modes and chat
+system_modes_collection = None
+chat_messages_collection = None
+
 # Lifecycle and monitoring
 bot_lifecycle_collection = None
 bot_metrics_collection = None
@@ -37,14 +41,22 @@ system_metrics_collection = None
 risk_profiles_collection = None
 market_regimes_collection = None
 learning_data_collection = None
+learning_logs_collection = None
 audit_logs_collection = None
 notifications_collection = None
 reports_collection = None
 promotion_requests_collection = None
 
+# Autopilot and detection
+autopilot_actions_collection = None
+rogue_detections_collection = None
+
 # Financial tracking collections
 wallet_balances_collection = None
 capital_injections_collection = None
+wallets_collection = None
+ledger_collection = None
+profits_collection = None
 
 # Aliases for backward compatibility
 wallet_balances = None  # Alias for wallet_balances_collection
@@ -120,13 +132,14 @@ async def setup_collections():
     """
     global users_collection, bots_collection, trades_collection
     global api_keys_collection, alerts_collection, sessions_collection
-    global system_config_collection, bot_lifecycle_collection
-    global bot_metrics_collection, system_metrics_collection
+    global system_config_collection, system_modes_collection, chat_messages_collection
+    global bot_lifecycle_collection, bot_metrics_collection, system_metrics_collection
     global risk_profiles_collection, market_regimes_collection
-    global learning_data_collection, audit_logs_collection
-    global notifications_collection, reports_collection
-    global promotion_requests_collection
+    global learning_data_collection, learning_logs_collection, audit_logs_collection
+    global notifications_collection, reports_collection, promotion_requests_collection
+    global autopilot_actions_collection, rogue_detections_collection
     global wallet_balances_collection, capital_injections_collection
+    global wallets_collection, ledger_collection, profits_collection
     global wallet_balances, capital_injections
     
     if db is None:
@@ -142,6 +155,10 @@ async def setup_collections():
     sessions_collection = db.sessions
     system_config_collection = db.system_config
     
+    # System modes and chat
+    system_modes_collection = db.system_modes
+    chat_messages_collection = db.chat_messages
+    
     # Lifecycle and monitoring
     bot_lifecycle_collection = db.bot_lifecycle
     bot_metrics_collection = db.bot_metrics
@@ -151,14 +168,22 @@ async def setup_collections():
     risk_profiles_collection = db.risk_profiles
     market_regimes_collection = db.market_regimes
     learning_data_collection = db.learning_data
+    learning_logs_collection = db.learning_logs
     audit_logs_collection = db.audit_logs
     notifications_collection = db.notifications
     reports_collection = db.reports
     promotion_requests_collection = db.promotion_requests
     
+    # Autopilot and detection
+    autopilot_actions_collection = db.autopilot_actions
+    rogue_detections_collection = db.rogue_detections
+    
     # Financial tracking
     wallet_balances_collection = db.wallet_balances
     capital_injections_collection = db.capital_injections
+    wallets_collection = db.wallets
+    ledger_collection = db.ledger
+    profits_collection = db.profits
     
     # Aliases for backward compatibility
     wallet_balances = wallet_balances_collection
