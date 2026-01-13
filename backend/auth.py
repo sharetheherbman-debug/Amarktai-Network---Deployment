@@ -61,9 +61,21 @@ async def is_admin(user_id: str) -> bool:
     """Check if user has admin privileges - never crashes"""
     try:
         import database as db
+        from bson import ObjectId
+        
+        # Try by id field first
         user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
+        
+        # Fallback to ObjectId if not found
+        if not user:
+            try:
+                user = await db.users_collection.find_one({"_id": ObjectId(user_id)})
+            except Exception:
+                pass  # Invalid ObjectId format
+        
         if not user:
             return False
+        
         # Check if user has is_admin field set to True or role == 'admin'
         return user.get('is_admin', False) or user.get('role', '') == 'admin'
     except Exception as e:
