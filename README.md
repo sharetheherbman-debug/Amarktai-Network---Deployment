@@ -823,8 +823,8 @@ See [Ledger Documentation](#ledger-first-accounting) section below for details.
 ### Core
 - `GET /api/health/ping` - Simple health check
 - `GET /api/health/indicators` - Comprehensive health
-- `POST /api/auth/register` - User registration
-- `POST /api/auth/login` - User login
+- `POST /api/auth/register` - User registration (email normalized to lowercase)
+- `POST /api/auth/login` - User login (email case-insensitive)
 
 ### Bots
 - `GET /api/bots` - List all bots
@@ -846,28 +846,52 @@ See [Ledger Documentation](#ledger-first-accounting) section below for details.
 - `GET /api/analytics/pnl_timeseries` - PnL timeseries (5m-1d intervals)
 - `GET /api/analytics/capital_breakdown` - Funded vs realized vs unrealized
 - `GET /api/analytics/performance_summary` - Win rate, profit factor
+- `GET /api/analytics/exchange-comparison` - **NEW**: Per-exchange ROI and performance
+
+### Intelligence Dashboard (NEW)
+- `GET /api/whale-flow/summary` - Whale activity summary (alias to /api/advanced/whale/summary)
+- `GET /api/whale-flow/{coin}` - Whale signal for specific coin
+- `GET /api/decision-trace/latest?limit=50` - **NEW**: Latest AI decision events (REST fallback for WebSocket)
+- `GET /api/metrics/summary` - **NEW**: Structured metrics summary for dashboard (JSON format)
+- `GET /api/metrics` - Prometheus metrics (text format)
+- `WS /ws/decisions` - WebSocket for real-time decision traces
 
 ### Trading
 - `GET /api/trades/recent` - Recent trades
 - `GET /api/analytics/profit-history` - Profit history
 - `GET /api/prices/live` - Live crypto prices
 
-### API Keys (Encrypted Storage)
-- `POST /api/keys/test` - Test API key before saving
-- `POST /api/keys/save` - Save encrypted API key
-- `GET /api/keys/list` - List saved keys (masked)
-- `DELETE /api/keys/{provider}` - Delete API key
+### API Keys (Encrypted at Rest) - Canonical
+- **Canonical endpoints** (use these):
+  - `GET /api/api-keys` - List all API keys (masked, never returns plaintext)
+  - `POST /api/api-keys` - Save encrypted API key
+  - `DELETE /api/api-keys/{provider}` - Delete API key
+  - `POST /api/api-keys/{provider}/test` - Test API key before saving
+- **Legacy endpoints** (still work, call canonical internally):
+  - `POST /api/keys/test` - Test API key before saving
+  - `POST /api/keys/save` - Save encrypted API key
+  - `GET /api/keys/list` - List saved keys (masked)
+  - `DELETE /api/keys/{provider}` - Delete API key
+
+### Wallet Hub
+- `GET /api/wallet/balances` - Wallet balances (returns safe empty state if not configured)
+- `GET /api/wallet/requirements` - Capital requirements per exchange
 
 ### Reports
 - `POST /api/reports/daily/send-test` - Send test daily report
 - `POST /api/reports/daily/send-all` - Send reports to all users (admin)
 - `GET /api/reports/daily/config` - Get SMTP configuration
 
+### Real-time Events (SSE)
+- `GET /api/realtime/events` - Server-Sent Events stream
+  - Emits: `heartbeat`, `overview_update`, `performance_update`, `whale_update`, `bot_update`
+  - Headers: `Cache-Control: no-cache`, `Connection: keep-alive`
+  - Auto-reconnect with backoff on client side
+
 ### System
 - `GET /api/system/mode` - Get trading modes
 - `PUT /api/system/mode` - Update trading modes
 - `WS /api/ws` - WebSocket connection
-- `GET /api/realtime/events` - SSE stream
 
 Full API reference in [DEPLOYMENT.md](DEPLOYMENT.md).
 
@@ -1175,6 +1199,121 @@ POST /api/reports/daily/send-test
 # Admin: Send to all users
 POST /api/reports/daily/send-all
 ```
+
+## 📖 Tonight's Paper Trading Runbook
+
+**Status**: ✅ Dashboard fully functional for safe paper trading and learning
+
+### Pre-Flight Checklist
+
+```bash
+# 1. Ensure backend is running
+systemctl status amarktai-backend
+
+# 2. Run smoke test
+bash scripts/smoke_dashboard.sh
+
+# Expected: All tests PASS
+
+# 3. Check API health
+curl http://127.0.0.1:8000/api/health/ping
+# Expected: {"status":"healthy", ...}
+```
+
+### Dashboard Navigation (Tonight's Updates)
+
+1. **🚀 Welcome** - AI chat and command center
+2. **🔑 Exchange Keys** - Configure Luno/Binance/KuCoin API keys
+3. **🤖 Bot Management** - Create and monitor trading bots
+4. **🎮 System Mode** - Enable paper trading (live disabled)
+5. **📈 Profit Graphs** - View PnL timeseries
+6. **🧠 Intelligence** - **NEW**: Combined dashboard with tabs:
+   - 🐋 Whale Flow - Large transaction monitoring
+   - 🎬 Decision Trace - AI decision logs
+   - 📊 Metrics - System metrics summary
+7. **💰 Wallet Hub** - Balance monitoring (safe empty state)
+8. **🔐 AI/Service Keys** - OpenAI, Flock.io, Fetch wallet keys
+
+### Real-Time Status Indicators
+
+Dashboard header shows:
+- **API**: Connection to backend API
+- **SSE**: Server-Sent Events (real-time updates)
+- **WS**: WebSocket (chat and notifications)
+- **RTT**: Round-trip time for WebSocket
+
+### Paper Trading Tonight
+
+**Safe Operations** (enabled):
+- ✅ Create bots in paper mode
+- ✅ Monitor simulated trades
+- ✅ Test strategies with virtual capital
+- ✅ View real-time market data
+- ✅ Track performance metrics
+- ✅ Use AI chat for commands
+- ✅ Configure exchange API keys (optional, for live later)
+
+**Disabled Operations** (safety):
+- ❌ Live trading (requires 7-day paper training)
+- ❌ Real money at risk
+- ❌ Automatic bot promotion to live
+
+### Key Safety Features Active
+
+1. **Per-user isolation** - Your data is never shared
+2. **Encrypted API keys** - Keys encrypted at rest, never displayed
+3. **Email normalization** - Login works with any case
+4. **Safe empty states** - Dashboard never crashes on missing data
+5. **SSE auto-reconnect** - Real-time updates resume automatically
+
+### Learning Objectives Tonight
+
+1. **Familiarize with dashboard** - Explore all sections
+2. **Configure exchange keys** (optional) - For future live trading
+3. **Create test bots** - Start with 1-2 bots in paper mode
+4. **Monitor Intelligence** - Watch Whale Flow, Decision Trace
+5. **Review metrics** - Understand system performance
+6. **Test AI chat** - Try commands like "status of bot X", "show portfolio"
+
+### Troubleshooting
+
+#### Dashboard not loading
+```bash
+# Check backend logs
+journalctl -u amarktai-backend -n 50
+
+# Restart if needed
+sudo systemctl restart amarktai-backend
+```
+
+#### SSE disconnected
+- **Expected**: Auto-reconnect within 5-10 seconds
+- If persists: Check ENABLE_REALTIME=true in .env
+
+#### Wallet Hub shows errors
+- **Expected**: Safe empty state if no wallet configured
+- No action needed for paper trading
+
+#### Intelligence tabs not loading
+```bash
+# Test endpoints manually
+curl -H "Authorization: Bearer YOUR_TOKEN" http://127.0.0.1:8000/api/whale-flow/summary
+curl -H "Authorization: Bearer YOUR_TOKEN" http://127.0.0.1:8000/api/decision-trace/latest
+curl -H "Authorization: Bearer YOUR_TOKEN" http://127.0.0.1:8000/api/metrics/summary
+```
+
+### Live Trading Gating (Not Tonight)
+
+Live trading requires:
+- [ ] 7-day paper trading minimum
+- [ ] Win rate ≥ 52%
+- [ ] Profit ≥ 3%
+- [ ] At least 25 trades
+- [ ] Exchange API keys configured
+- [ ] Manual promotion via `/api/bots/{id}/promote`
+- [ ] Explicit confirmation in UI
+
+**Status for tonight**: ❌ Live trading disabled by design
 
 ## 🔒 Paper vs Live Trading Gates
 
