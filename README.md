@@ -2,6 +2,84 @@
 
 **Production-grade, plug-and-play deployment** for Ubuntu 24.04 with systemd + nginx. Clean installation with Python 3.12, Node 20, and **modular dependencies**.
 
+---
+
+## 🚀 Install in 5 Minutes (Ubuntu 24.04)
+
+### Prerequisites
+- Ubuntu 24.04 LTS
+- Root or sudo access
+- 2GB RAM minimum
+
+### Step 1: Install MongoDB (Docker)
+```bash
+sudo apt install -y docker.io
+sudo systemctl enable --now docker
+sudo docker run -d --name amarktai-mongo --restart always \
+  -p 127.0.0.1:27017:27017 \
+  -v /var/amarktai/mongodb:/data/db mongo:7
+```
+
+### Step 2: Clone and Install
+```bash
+sudo mkdir -p /var/amarktai
+cd /var/amarktai
+sudo git clone https://github.com/amarktainetwork-blip/Amarktai-Network---Deployment.git app
+cd app
+python3.12 -m venv /var/amarktai/venv
+source /var/amarktai/venv/bin/activate
+pip install --upgrade pip
+pip install -r backend/requirements/base.txt
+```
+
+### Step 3: Configure
+```bash
+cp backend/.env.example backend/.env
+# Edit .env with your values:
+# JWT_SECRET=$(openssl rand -hex 32)
+# ADMIN_PASSWORD=$(openssl rand -base64 24)
+# MONGO_URL=mongodb://127.0.0.1:27017
+nano backend/.env
+```
+
+### Step 4: Run Sanity Check
+```bash
+bash scripts/sanity_check.sh
+```
+
+### Step 5: Start Service
+```bash
+sudo bash tools/systemd_install.sh
+sudo systemctl status amarktai-api
+```
+
+### Step 6: Verify
+```bash
+curl http://127.0.0.1:8000/api/health/ping
+# Expected: {"status":"healthy","db":"connected","timestamp":"..."}
+```
+
+### Optional: Setup Nginx Reverse Proxy
+```bash
+sudo apt install -y nginx
+sudo tee /etc/nginx/sites-available/amarktai > /dev/null <<'EOF'
+server {
+    listen 80;
+    server_name your-domain.com;
+    
+    location /api {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+EOF
+sudo ln -s /etc/nginx/sites-available/amarktai /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+---
+
 ## 🎯 New: Modular Requirements System
 
 Dependencies are now split into optional modules for faster, conflict-free installations:

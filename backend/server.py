@@ -781,7 +781,7 @@ async def health_check():
     """Production health check endpoint"""
     try:
         # Check database connectivity
-        await db.command('ping')
+        await db.client.admin.command('ping')
         db_status = "connected"
     except Exception as e:
         db_status = f"error: {str(e)}"
@@ -806,21 +806,7 @@ async def health_check():
         "version": "3.0.0"
     }
 
-@api_router.get("/health/ping")
-async def health_ping():
-    """Lightweight health check - verifies DB connectivity"""
-    try:
-        # Test DB connection
-        await db.command("ping")
-        return {
-            "status": "healthy",
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=503, 
-            detail=f"Database unreachable: {str(e)}"
-        )
+# Note: /health/ping endpoint is handled by routes/health.py router
 
 # ============================================================================
 # SYSTEM MODE CONTROLS - NOW FUNCTIONAL
