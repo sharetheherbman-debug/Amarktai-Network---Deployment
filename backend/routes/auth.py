@@ -35,20 +35,6 @@ async def register(request: Request, user: User):
     return {"token": token, "user": {k: v for k, v in user_dict.items() if k != "password_hash"}}
 
 
-    existing = await db.users_collection.find_one({"email": user.email}, {"_id": 0})
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    user_dict = user.model_dump()
-    user_dict['password_hash'] = get_password_hash(user_dict['password_hash'])
-    user_dict['created_at'] = datetime.now(timezone.utc).isoformat()
-    
-    await db.users_collection.insert_one(user_dict)
-    
-    user_dict["id"] = (user_dict.get("id") or str(user_dict.get("_id") or ""))
-    user_dict.pop("_id", None)
-    token = create_access_token({"user_id": user_dict["id"]})
-    return {"token": token, "user": {k: v for k, v in user_dict.items() if k != 'password_hash'}}
 
 
 @router.post("/auth/login")
