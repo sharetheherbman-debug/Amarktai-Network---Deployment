@@ -42,6 +42,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [activeSection, setActiveSection] = useState('welcome');
+  const [intelligenceTab, setIntelligenceTab] = useState('whale-flow'); // Tab state for Intelligence section
   // Admin panel state - Hidden by default, shown only after password
   const [showAdmin, setShowAdmin] = useState(() => {
     // Check sessionStorage only (more temporary)
@@ -93,6 +94,7 @@ export default function Dashboard() {
     ws: 'Disconnected'
   });
   const [wsRtt, setWsRtt] = useState('—');
+  const [sseLastUpdate, setSseLastUpdate] = useState(null); // Track SSE last update time
   const [platformFilter, setPlatformFilter] = useState('all');
   const [editingBotId, setEditingBotId] = useState(null);
   const [editingBotName, setEditingBotName] = useState('');
@@ -3185,6 +3187,71 @@ export default function Dashboard() {
     );
   };
 
+  // Combined Intelligence section with tabs
+  const renderIntelligence = () => {
+    return (
+      <section className="section active">
+        <div className="card">
+          <h2>🧠 Intelligence Dashboard</h2>
+          
+          {/* Intelligence Tabs */}
+          <div style={{display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '10px'}}>
+            <button 
+              onClick={() => setIntelligenceTab('whale-flow')}
+              style={{
+                padding: '8px 16px',
+                background: intelligenceTab === 'whale-flow' ? 'rgba(74, 144, 226, 0.3)' : 'transparent',
+                border: '1px solid ' + (intelligenceTab === 'whale-flow' ? '#4a90e2' : 'rgba(255,255,255,0.2)'),
+                borderRadius: '6px',
+                color: '#fff',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: intelligenceTab === 'whale-flow' ? 'bold' : 'normal'
+              }}
+            >
+              🐋 Whale Flow
+            </button>
+            <button 
+              onClick={() => setIntelligenceTab('decision-trace')}
+              style={{
+                padding: '8px 16px',
+                background: intelligenceTab === 'decision-trace' ? 'rgba(74, 144, 226, 0.3)' : 'transparent',
+                border: '1px solid ' + (intelligenceTab === 'decision-trace' ? '#4a90e2' : 'rgba(255,255,255,0.2)'),
+                borderRadius: '6px',
+                color: '#fff',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: intelligenceTab === 'decision-trace' ? 'bold' : 'normal'
+              }}
+            >
+              🎬 Decision Trace
+            </button>
+            <button 
+              onClick={() => setIntelligenceTab('metrics')}
+              style={{
+                padding: '8px 16px',
+                background: intelligenceTab === 'metrics' ? 'rgba(74, 144, 226, 0.3)' : 'transparent',
+                border: '1px solid ' + (intelligenceTab === 'metrics' ? '#4a90e2' : 'rgba(255,255,255,0.2)'),
+                borderRadius: '6px',
+                color: '#fff',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: intelligenceTab === 'metrics' ? 'bold' : 'normal'
+              }}
+            >
+              📊 Metrics
+            </button>
+          </div>
+
+          {/* Tab Content */}
+          {intelligenceTab === 'whale-flow' && <WhaleFlowHeatmap />}
+          {intelligenceTab === 'decision-trace' && <DecisionTrace />}
+          {intelligenceTab === 'metrics' && <PrometheusMetrics />}
+        </div>
+      </section>
+    );
+  };
+
   const renderAPIKeys = () => {
     return (
       <section className="section active">
@@ -3317,18 +3384,16 @@ export default function Dashboard() {
           />
           <nav className="nav" key={`nav-${showAdmin}`}>
             <a href="#" className={activeSection === 'welcome' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('welcome'); }}>🚀 Welcome</a>
-            <a href="#" className={activeSection === 'api' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('api'); }}>🔑 API Setup</a>
+            <a href="#" className={activeSection === 'api' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('api'); }}>🔑 Exchange Keys</a>
             <a href="#" className={activeSection === 'bots' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('bots'); }}>🤖 Bot Management</a>
             <a href="#" className={activeSection === 'system' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('system'); }}>🎮 System Mode</a>
             <a href="#" className={activeSection === 'graphs' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('graphs'); }}>📈 Profit Graphs</a>
+            <a href="#" className={activeSection === 'intelligence' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('intelligence'); }}>🧠 Intelligence</a>
             <a href="#" className={activeSection === 'trades' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('trades'); }}>📊 Live Trades</a>
             <a href="#" className={activeSection === 'countdown' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('countdown'); }}>⏱️ Countdown</a>
             <a href="#" className={activeSection === 'wallet' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('wallet'); }}>💰 Wallet Hub</a>
             <a href="#" className={activeSection === 'flokx' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('flokx'); }}>🔔 Flokx Alerts</a>
-            <a href="#" className={activeSection === 'decision-trace' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('decision-trace'); }}>🎬 Decision Trace</a>
-            <a href="#" className={activeSection === 'whale-flow' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('whale-flow'); }}>🐋 Whale Flow</a>
-            <a href="#" className={activeSection === 'metrics' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('metrics'); }}>📊 Metrics</a>
-            <a href="#" className={activeSection === 'api-keys' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('api-keys'); }}>🔑 API Keys</a>
+            <a href="#" className={activeSection === 'api-keys' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('api-keys'); }}>🔐 AI/Service Keys</a>
             <a href="#" className={activeSection === 'profile' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('profile'); }}>👤 Profile</a>
             {showAdmin && (
               <a href="#" className={activeSection === 'admin' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('admin'); }}>🔧 Admin</a>
@@ -3390,6 +3455,7 @@ export default function Dashboard() {
         {activeSection === 'bots' && renderBots()}
         {activeSection === 'system' && renderSystemMode()}
         {activeSection === 'graphs' && renderProfitGraphs()}
+        {activeSection === 'intelligence' && renderIntelligence()}
         {activeSection === 'trades' && renderLiveTradeFeed()}
         {activeSection === 'countdown' && renderCountdown()}
         {activeSection === 'wallet' && renderWalletHub()}
