@@ -98,6 +98,7 @@ export default function Dashboard() {
   const [platformFilter, setPlatformFilter] = useState('all');
   const [editingBotId, setEditingBotId] = useState(null);
   const [editingBotName, setEditingBotName] = useState('');
+  const [metricsExpanded, setMetricsExpanded] = useState(false); // State for metrics submenu
   const [botSetup, setBotSetup] = useState({
     count: 10,
     capital_per_bot: 1000,
@@ -3390,12 +3391,59 @@ export default function Dashboard() {
             <a href="#" className={activeSection === 'api' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('api'); }}>🔑 API Setup</a>
             <a href="#" className={activeSection === 'bots' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('bots'); }}>🤖 Bot Management</a>
             <a href="#" className={activeSection === 'system' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('system'); }}>🎮 System Mode</a>
-            <a href="#" className={activeSection === 'graphs' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('graphs'); }}>📈 Profit Graphs</a>
-            <a href="#" className={activeSection === 'intelligence' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('intelligence'); }}>🧠 Intelligence</a>
+            <a href="#" className={activeSection === 'graphs' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('graphs'); }}>📈 Profit & Performance</a>
             <a href="#" className={activeSection === 'trades' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('trades'); }}>📊 Live Trades</a>
+            
+            {/* Metrics Section with Submenu */}
+            <div style={{position: 'relative'}}>
+              <a 
+                href="#" 
+                className={['flokx', 'decision-trace', 'whale-flow', 'metrics-panel'].includes(activeSection) ? 'active' : ''}
+                onClick={(e) => { e.preventDefault(); setMetricsExpanded(!metricsExpanded); }}
+                style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}
+              >
+                📊 Metrics {metricsExpanded ? '▼' : '▶'}
+              </a>
+              {metricsExpanded && (
+                <div style={{paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px'}}>
+                  <a 
+                    href="#" 
+                    className={activeSection === 'flokx' ? 'active' : ''}
+                    onClick={(e) => { e.preventDefault(); showSection('flokx'); }}
+                    style={{fontSize: '0.9em', padding: '6px 12px'}}
+                  >
+                    🔔 Flokx Alerts
+                  </a>
+                  <a 
+                    href="#" 
+                    className={activeSection === 'decision-trace' ? 'active' : ''}
+                    onClick={(e) => { e.preventDefault(); showSection('decision-trace'); }}
+                    style={{fontSize: '0.9em', padding: '6px 12px'}}
+                  >
+                    🎬 Decision Trace
+                  </a>
+                  <a 
+                    href="#" 
+                    className={activeSection === 'whale-flow' ? 'active' : ''}
+                    onClick={(e) => { e.preventDefault(); showSection('whale-flow'); }}
+                    style={{fontSize: '0.9em', padding: '6px 12px'}}
+                  >
+                    🐋 Whale Flow
+                  </a>
+                  <a 
+                    href="#" 
+                    className={activeSection === 'metrics-panel' ? 'active' : ''}
+                    onClick={(e) => { e.preventDefault(); showSection('metrics-panel'); }}
+                    style={{fontSize: '0.9em', padding: '6px 12px'}}
+                  >
+                    📊 System Metrics
+                  </a>
+                </div>
+              )}
+            </div>
+            
             <a href="#" className={activeSection === 'countdown' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('countdown'); }}>⏱️ Countdown</a>
             <a href="#" className={activeSection === 'wallet' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('wallet'); }}>💰 Wallet Hub</a>
-            <a href="#" className={activeSection === 'flokx' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('flokx'); }}>🔔 Flokx Alerts</a>
             <a href="#" className={activeSection === 'profile' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('profile'); }}>👤 Profile</a>
             {showAdmin && (
               <a href="#" className={activeSection === 'admin' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('admin'); }}>🔧 Admin</a>
@@ -3457,14 +3505,13 @@ export default function Dashboard() {
         {activeSection === 'bots' && renderBots()}
         {activeSection === 'system' && renderSystemMode()}
         {activeSection === 'graphs' && renderProfitGraphs()}
-        {activeSection === 'intelligence' && renderIntelligence()}
         {activeSection === 'trades' && renderLiveTradeFeed()}
         {activeSection === 'countdown' && renderCountdown()}
         {activeSection === 'wallet' && renderWalletHub()}
         {activeSection === 'flokx' && renderFlokxAlerts()}
         {activeSection === 'decision-trace' && renderDecisionTrace()}
         {activeSection === 'whale-flow' && renderWhaleFlow()}
-        {activeSection === 'metrics' && renderMetrics()}
+        {activeSection === 'metrics-panel' && renderMetrics()}
         {activeSection === 'profile' && renderProfile()}
         {activeSection === 'admin' && showAdmin && renderAdmin()}
       </main>
