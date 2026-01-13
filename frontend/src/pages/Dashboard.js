@@ -98,6 +98,7 @@ export default function Dashboard() {
   const [platformFilter, setPlatformFilter] = useState('all');
   const [editingBotId, setEditingBotId] = useState(null);
   const [editingBotName, setEditingBotName] = useState('');
+  const [metricsExpanded, setMetricsExpanded] = useState(false); // State for metrics submenu
   const [botSetup, setBotSetup] = useState({
     count: 10,
     capital_per_bot: 1000,
@@ -1637,7 +1638,10 @@ export default function Dashboard() {
     return (
       <section className="section active">
         <div className="card">
-          <h2>API Setup</h2>
+          <h2>🔑 API Setup - All Integration Keys</h2>
+          <p style={{color: 'var(--muted)', marginBottom: '20px', fontSize: '0.9rem'}}>
+            Configure all API keys and credentials for exchanges, AI services, and integrations. All keys are encrypted and stored securely per-user.
+          </p>
           <div className="api-accordion">
             {providers.map(provider => {
               const status = getApiStatus(provider);
@@ -2710,91 +2714,148 @@ export default function Dashboard() {
     </section>
   );
 
-  const renderLiveTradeFeed = () => (
-    <section className="section active">
-      <div className="card">
-        <h2>📊 Live Trade Feed</h2>
-        <p style={{color: 'var(--muted)', marginBottom: '20px', fontSize: '0.9rem'}}>
-          Real-time stream of all trades being executed
-        </p>
-        
-        <div style={{background: 'var(--panel)', borderRadius: '8px', padding: '16px', maxHeight: '600px', overflowY: 'auto'}}>
-          {recentTrades.length === 0 ? (
-            <div style={{textAlign: 'center', padding: '40px', color: 'var(--muted)'}}>
-              <p>📭 No trades yet. Trades will appear here in real-time.</p>
-            </div>
-          ) : (
-            <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
-              {recentTrades.map((trade, idx) => {
-                const isWin = trade.is_profitable || trade.profit_loss > 0;
-                const profitColor = isWin ? 'var(--success)' : 'var(--error)';
-                const profitIcon = isWin ? '🟢' : '🔴';
-                
-                return (
-                  <div key={idx} style={{
-                    background: 'var(--bg)',
-                    border: '1px solid ' + (isWin ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'),
-                    borderRadius: '8px',
-                    padding: '12px 16px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    gap: '12px'
-                  }}>
-                    <div style={{flex: '1 1 200px'}}>
-                      <div style={{fontWeight: 600, color: 'var(--text)', marginBottom: '4px'}}>
-                        🤖 {trade.bot_name || 'Bot'}
-                      </div>
-                      <div style={{fontSize: '0.85rem', color: 'var(--muted)'}}>
-                        {trade.symbol} • {trade.exchange?.toUpperCase()}
-                      </div>
+  const renderLiveTradeFeed = () => {
+    // Group trades by exchange
+    const tradesByExchange = {
+      luno: recentTrades.filter(t => t.exchange?.toLowerCase() === 'luno'),
+      binance: recentTrades.filter(t => t.exchange?.toLowerCase() === 'binance'),
+      kucoin: recentTrades.filter(t => t.exchange?.toLowerCase() === 'kucoin')
+    };
+
+    // Calculate stats per exchange
+    const getExchangeStats = (trades) => {
+      if (trades.length === 0) return { count: 0, winRate: 0, profit: 0 };
+      const wins = trades.filter(t => t.is_profitable || t.profit_loss > 0).length;
+      const profit = trades.reduce((sum, t) => sum + (t.profit_loss || 0), 0);
+      return {
+        count: trades.length,
+        winRate: ((wins / trades.length) * 100).toFixed(1),
+        profit: profit.toFixed(2)
+      };
+    };
+
+    return (
+      <section className="section active">
+        <div className="card">
+          <h2>📊 Live Trades - Platform Comparison</h2>
+          <p style={{color: 'var(--muted)', marginBottom: '20px', fontSize: '0.9rem'}}>
+            Real-time trade feed grouped by exchange (Luno, Binance, KuCoin)
+          </p>
+          
+          {/* Platform Comparison Cards */}
+          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '20px'}}>
+            {['luno', 'binance', 'kucoin'].map(exchange => {
+              const stats = getExchangeStats(tradesByExchange[exchange]);
+              const hasData = stats.count > 0;
+              
+              return (
+                <div key={exchange} style={{
+                  background: 'var(--glass)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '12px',
+                  padding: '20px',
+                  transition: 'all 0.3s'
+                }}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px'}}>
+                    <h3 style={{margin: 0, textTransform: 'uppercase', fontSize: '1.1rem', color: 'var(--accent)'}}>
+                      {exchange === 'luno' && '🟡'} {exchange === 'binance' && '🟠'} {exchange === 'kucoin' && '🟢'} {exchange}
+                    </h3>
+                    <span style={{
+                      padding: '4px 12px',
+                      background: hasData ? 'rgba(16, 185, 129, 0.2)' : 'rgba(139, 139, 139, 0.2)',
+                      color: hasData ? '#10b981' : '#8b8b8b',
+                      borderRadius: '12px',
+                      fontSize: '0.75rem',
+                      fontWeight: 600
+                    }}>
+                      {hasData ? 'ACTIVE' : 'NO DATA'}
+                    </span>
+                  </div>
+                  
+                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px'}}>
+                    <div style={{textAlign: 'center'}}>
+                      <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>TRADES</div>
+                      <div style={{fontSize: '1.4rem', fontWeight: 700, color: 'var(--text)'}}>{stats.count}</div>
                     </div>
-                    
-                    <div style={{flex: '0 0 auto', textAlign: 'center'}}>
-                      <div style={{fontSize: '1.1rem', fontWeight: 700, color: profitColor}}>
-                        {profitIcon} {isWin ? 'WIN' : 'LOSS'}
-                      </div>
-                      <div style={{fontSize: '0.9rem', color: profitColor, fontWeight: 600}}>
-                        R{trade.profit_loss?.toFixed(2) || '0.00'}
-                      </div>
+                    <div style={{textAlign: 'center'}}>
+                      <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>WIN RATE</div>
+                      <div style={{fontSize: '1.4rem', fontWeight: 700, color: hasData ? 'var(--success)' : 'var(--muted)'}}>{stats.winRate}%</div>
                     </div>
-                    
-                    <div style={{flex: '0 0 auto', textAlign: 'right', fontSize: '0.8rem', color: 'var(--muted)'}}>
-                      {new Date(trade.timestamp).toLocaleTimeString()}
+                    <div style={{textAlign: 'center'}}>
+                      <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>PROFIT</div>
+                      <div style={{fontSize: '1.2rem', fontWeight: 700, color: parseFloat(stats.profit) >= 0 ? 'var(--success)' : 'var(--error)'}}>
+                        R{stats.profit}
+                      </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        
-        <div style={{marginTop: '16px', padding: '12px', background: 'var(--glass)', borderRadius: '6px', border: '1px solid var(--line)'}}>
-          <div style={{display: 'flex', justifyContent: 'space-around', textAlign: 'center'}}>
-            <div>
-              <div style={{fontSize: '0.8rem', color: 'var(--muted)'}}>Total Trades</div>
-              <div style={{fontSize: '1.2rem', fontWeight: 700, color: 'var(--text)'}}>{recentTrades.length}</div>
-            </div>
-            <div>
-              <div style={{fontSize: '0.8rem', color: 'var(--muted)'}}>Win Rate</div>
-              <div style={{fontSize: '1.2rem', fontWeight: 700, color: 'var(--success)'}}>
-                {recentTrades.length > 0 
-                  ? `${((recentTrades.filter(t => t.is_profitable || t.profit_loss > 0).length / recentTrades.length) * 100).toFixed(1)}%`
-                  : '0%'}
+                  
+                  {!hasData && (
+                    <div style={{marginTop: '12px', padding: '8px', background: 'rgba(139, 139, 139, 0.1)', borderRadius: '6px', textAlign: 'center', fontSize: '0.8rem', color: 'var(--muted)'}}>
+                      No trades yet for this platform
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Recent Trades List */}
+          <h3 style={{marginTop: '24px', marginBottom: '12px'}}>Recent Trade Feed</h3>
+          <div style={{background: 'var(--panel)', borderRadius: '8px', padding: '16px', maxHeight: '400px', overflowY: 'auto'}}>
+            {recentTrades.length === 0 ? (
+              <div style={{textAlign: 'center', padding: '40px', color: 'var(--muted)'}}>
+                <p>📭 No trades yet. Trades will appear here in real-time.</p>
               </div>
-            </div>
-            <div>
-              <div style={{fontSize: '0.8rem', color: 'var(--muted)'}}>Total P/L</div>
-              <div style={{fontSize: '1.2rem', fontWeight: 700, color: 'var(--accent)'}}>
-                R{recentTrades.reduce((sum, t) => sum + (t.profit_loss || 0), 0).toFixed(2)}
+            ) : (
+              <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
+                {recentTrades.slice(0, 20).map((trade, idx) => {
+                  const isWin = trade.is_profitable || trade.profit_loss > 0;
+                  const profitColor = isWin ? 'var(--success)' : 'var(--error)';
+                  const profitIcon = isWin ? '🟢' : '🔴';
+                  
+                  return (
+                    <div key={idx} style={{
+                      background: 'var(--bg)',
+                      border: '1px solid ' + (isWin ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'),
+                      borderRadius: '8px',
+                      padding: '12px 16px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '12px'
+                    }}>
+                      <div style={{flex: '1 1 200px'}}>
+                        <div style={{fontWeight: 600, color: 'var(--text)', marginBottom: '4px'}}>
+                          🤖 {trade.bot_name || 'Bot'}
+                        </div>
+                        <div style={{fontSize: '0.85rem', color: 'var(--muted)'}}>
+                          {trade.symbol} • {trade.exchange?.toUpperCase()}
+                        </div>
+                      </div>
+                      
+                      <div style={{flex: '0 0 auto', textAlign: 'center'}}>
+                        <div style={{fontSize: '1.1rem', fontWeight: 700, color: profitColor}}>
+                          {profitIcon} {isWin ? 'WIN' : 'LOSS'}
+                        </div>
+                        <div style={{fontSize: '0.9rem', color: profitColor, fontWeight: 600}}>
+                          R{trade.profit_loss?.toFixed(2) || '0.00'}
+                        </div>
+                      </div>
+                      
+                      <div style={{flex: '0 0 auto', textAlign: 'right', fontSize: '0.8rem', color: 'var(--muted)'}}>
+                        {new Date(trade.timestamp).toLocaleTimeString()}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
+            )}
           </div>
         </div>
-      </div>
-    </section>
-  );
+      </section>
+    );
+  };
 
   const renderProfitGraphs = () => {
     
@@ -3384,16 +3445,62 @@ export default function Dashboard() {
           />
           <nav className="nav" key={`nav-${showAdmin}`}>
             <a href="#" className={activeSection === 'welcome' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('welcome'); }}>🚀 Welcome</a>
-            <a href="#" className={activeSection === 'api' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('api'); }}>🔑 Exchange Keys</a>
+            <a href="#" className={activeSection === 'api' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('api'); }}>🔑 API Setup</a>
             <a href="#" className={activeSection === 'bots' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('bots'); }}>🤖 Bot Management</a>
             <a href="#" className={activeSection === 'system' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('system'); }}>🎮 System Mode</a>
-            <a href="#" className={activeSection === 'graphs' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('graphs'); }}>📈 Profit Graphs</a>
-            <a href="#" className={activeSection === 'intelligence' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('intelligence'); }}>🧠 Intelligence</a>
+            <a href="#" className={activeSection === 'graphs' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('graphs'); }}>📈 Profit & Performance</a>
             <a href="#" className={activeSection === 'trades' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('trades'); }}>📊 Live Trades</a>
+            
+            {/* Metrics Section with Submenu */}
+            <div style={{position: 'relative'}}>
+              <a 
+                href="#" 
+                className={['flokx', 'decision-trace', 'whale-flow', 'metrics-panel'].includes(activeSection) ? 'active' : ''}
+                onClick={(e) => { e.preventDefault(); setMetricsExpanded(!metricsExpanded); }}
+                style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}
+              >
+                📊 Metrics {metricsExpanded ? '▼' : '▶'}
+              </a>
+              {metricsExpanded && (
+                <div style={{paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px'}}>
+                  <a 
+                    href="#" 
+                    className={activeSection === 'flokx' ? 'active' : ''}
+                    onClick={(e) => { e.preventDefault(); showSection('flokx'); }}
+                    style={{fontSize: '0.9em', padding: '6px 12px'}}
+                  >
+                    🔔 Flokx Alerts
+                  </a>
+                  <a 
+                    href="#" 
+                    className={activeSection === 'decision-trace' ? 'active' : ''}
+                    onClick={(e) => { e.preventDefault(); showSection('decision-trace'); }}
+                    style={{fontSize: '0.9em', padding: '6px 12px'}}
+                  >
+                    🎬 Decision Trace
+                  </a>
+                  <a 
+                    href="#" 
+                    className={activeSection === 'whale-flow' ? 'active' : ''}
+                    onClick={(e) => { e.preventDefault(); showSection('whale-flow'); }}
+                    style={{fontSize: '0.9em', padding: '6px 12px'}}
+                  >
+                    🐋 Whale Flow
+                  </a>
+                  <a 
+                    href="#" 
+                    className={activeSection === 'metrics-panel' ? 'active' : ''}
+                    onClick={(e) => { e.preventDefault(); showSection('metrics-panel'); }}
+                    style={{fontSize: '0.9em', padding: '6px 12px'}}
+                  >
+                    📊 System Metrics
+                  </a>
+                </div>
+              )}
+            </div>
+            
             <a href="#" className={activeSection === 'countdown' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('countdown'); }}>⏱️ Countdown</a>
             <a href="#" className={activeSection === 'wallet' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('wallet'); }}>💰 Wallet Hub</a>
-            <a href="#" className={activeSection === 'flokx' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('flokx'); }}>🔔 Flokx Alerts</a>
-            <a href="#" className={activeSection === 'api-keys' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('api-keys'); }}>🔐 AI/Service Keys</a>
             <a href="#" className={activeSection === 'profile' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('profile'); }}>👤 Profile</a>
             {showAdmin && (
               <a href="#" className={activeSection === 'admin' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('admin'); }}>🔧 Admin</a>
@@ -3455,15 +3562,13 @@ export default function Dashboard() {
         {activeSection === 'bots' && renderBots()}
         {activeSection === 'system' && renderSystemMode()}
         {activeSection === 'graphs' && renderProfitGraphs()}
-        {activeSection === 'intelligence' && renderIntelligence()}
         {activeSection === 'trades' && renderLiveTradeFeed()}
         {activeSection === 'countdown' && renderCountdown()}
         {activeSection === 'wallet' && renderWalletHub()}
         {activeSection === 'flokx' && renderFlokxAlerts()}
         {activeSection === 'decision-trace' && renderDecisionTrace()}
         {activeSection === 'whale-flow' && renderWhaleFlow()}
-        {activeSection === 'metrics' && renderMetrics()}
-        {activeSection === 'api-keys' && renderAPIKeys()}
+        {activeSection === 'metrics-panel' && renderMetrics()}
         {activeSection === 'profile' && renderProfile()}
         {activeSection === 'admin' && showAdmin && renderAdmin()}
       </main>

@@ -46,6 +46,7 @@ audit_logs_collection = None
 notifications_collection = None
 reports_collection = None
 promotion_requests_collection = None
+decisions_collection = None  # AI trading decisions and reasoning
 
 # Autopilot and detection
 autopilot_actions_collection = None
@@ -181,6 +182,7 @@ async def setup_collections():
     notifications_collection = db.notifications
     reports_collection = db.reports
     promotion_requests_collection = db.promotion_requests
+    decisions_collection = db.decisions  # AI trading decisions
     
     # Autopilot and detection
     autopilot_actions_collection = db.autopilot_actions

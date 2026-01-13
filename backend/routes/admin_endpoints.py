@@ -12,26 +12,54 @@ import bcrypt
 from auth import get_current_user
 import database as db
 from engines.audit_logger import audit_logger
+from json_utils import serialize_doc, serialize_list
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["Admin Dashboard"])
 
-async def verify_admin(current_user: Dict = Depends(get_current_user)):
-    """Verify user is admin"""
-    if current_user.get('role') != 'admin':
+async def verify_admin(current_user_id: str = Depends(get_current_user)):
+    """Verify user is admin - fixed to use user_id string from get_current_user"""
+    from bson import ObjectId
+    from bson.errors import InvalidId
+    
+    # Query user by id field first
+    user = await db.users_collection.find_one({"id": current_user_id}, {"_id": 0})
+    
+    # Fallback to ObjectId if not found and format is valid (24 hex characters)
+    if not user and len(current_user_id) == 24 and all(c in '0123456789abcdefABCDEF' for c in current_user_id):
+        try:
+            user = await db.users_collection.find_one({"_id": ObjectId(current_user_id)})
+        except InvalidId:
+            pass  # Invalid ObjectId despite format check
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check if user is admin
+    is_admin = user.get('is_admin', False) or user.get('role') == 'admin'
+    
+    if not is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
-    return current_user
+    
+    return current_user_id  # Return user_id string for consistency
 
 @router.get("/users")
-async def get_all_users(admin_user: Dict = Depends(verify_admin)):
-    """Get all users with stats"""
+async def get_all_users(admin_user_id: str = Depends(verify_admin)):
+    """Get all users with stats - properly serialized"""
     try:
-        users = await db.users_collection.find({}, {"_id": 0, "password": 0}).to_list(1000)
+        users = await db.users_collection.find({}, {"password_hash": 0}).to_list(1000)
         
-        # Enrich with stats
+        # Serialize and enrich with stats
+        serialized_users = []
         for user in users:
-            user_id = user['id']
+            # Serialize the user document
+            user_data = serialize_doc(user)
+            user_id = user_data.get('id') or str(user.get('_id'))
+            user_data['id'] = user_id  # Ensure id field exists
+            
+            # Remove _id if present
+            user_data.pop('_id', None)
             
             # Count bots
             bot_count = await db.bots_collection.count_documents({"user_id": user_id})
@@ -50,16 +78,18 @@ async def get_all_users(admin_user: Dict = Depends(verify_admin)):
             ).to_list(1000)
             total_profit = sum(b.get('total_profit', 0) for b in bots)
             
-            user['stats'] = {
+            user_data['stats'] = {
                 "total_bots": bot_count,
                 "active_bots": active_bots,
                 "total_trades": trade_count,
                 "total_profit": round(total_profit, 2)
             }
+            
+            serialized_users.append(user_data)
         
         return {
-            "users": users,
-            "total_count": len(users)
+            "users": serialized_users,
+            "total_count": len(serialized_users)
         }
         
     except Exception as e:
@@ -67,7 +97,7 @@ async def get_all_users(admin_user: Dict = Depends(verify_admin)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/users/{user_id}")
-async def get_user_details(user_id: str, admin_user: Dict = Depends(verify_admin)):
+async def get_user_details(user_id: str, admin_user_id: str = Depends(verify_admin)):
     """Get detailed user information"""
     try:
         user = await db.users_collection.find_one({"id": user_id}, {"_id": 0, "password": 0})
@@ -112,7 +142,7 @@ async def get_user_details(user_id: str, admin_user: Dict = Depends(verify_admin
 async def block_user(
     user_id: str,
     reason: str,
-    admin_user: Dict = Depends(verify_admin)
+    admin_user_id: str = Depends(verify_admin)
 ):
     """Block a user"""
     try:
@@ -162,7 +192,7 @@ async def block_user(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/users/{user_id}/unblock")
-async def unblock_user(user_id: str, admin_user: Dict = Depends(verify_admin)):
+async def unblock_user(user_id: str, admin_user_id: str = Depends(verify_admin)):
     """Unblock a user"""
     try:
         result = await db.users_collection.update_one(
@@ -202,7 +232,7 @@ async def unblock_user(user_id: str, admin_user: Dict = Depends(verify_admin)):
 async def reset_user_password(
     user_id: str,
     new_password: str,
-    admin_user: Dict = Depends(verify_admin)
+    admin_user_id: str = Depends(verify_admin)
 ):
     """Reset user password (admin action)"""
     try:
@@ -249,7 +279,7 @@ async def reset_user_password(
 async def delete_user(
     user_id: str,
     confirm: bool,
-    admin_user: Dict = Depends(verify_admin)
+    admin_user_id: str = Depends(verify_admin)
 ):
     """Delete user and all their data (dangerous!)"""
     try:
@@ -298,7 +328,7 @@ async def delete_user(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/stats")
-async def get_system_stats(admin_user: Dict = Depends(verify_admin)):
+async def get_system_stats(admin_user_id: str = Depends(verify_admin)):
     """Get overall system statistics"""
     try:
         total_users = await db.users_collection.count_documents({})
@@ -344,4 +374,41 @@ async def get_system_stats(admin_user: Dict = Depends(verify_admin)):
         
     except Exception as e:
         logger.error(f"Get system stats error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/audit/events")
+async def get_audit_events(
+    limit: int = 100,
+    user_id: Optional[str] = None,
+    event_type: Optional[str] = None,
+    admin_user_id: str = Depends(verify_admin)
+):
+    """Get audit trail events for admin monitoring"""
+    try:
+        # Build query
+        query = {}
+        if user_id:
+            query["user_id"] = user_id
+        if event_type:
+            query["event_type"] = event_type
+        
+        # Get events from audit logs collection
+        events = await db.audit_logs_collection.find(query).sort("timestamp", -1).limit(limit).to_list(limit)
+        
+        # Serialize events
+        serialized_events = serialize_list(events, exclude_fields=['_id'])
+        
+        return {
+            "events": serialized_events,
+            "total": len(serialized_events),
+            "filters": {
+                "user_id": user_id,
+                "event_type": event_type,
+                "limit": limit
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Get audit events error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
