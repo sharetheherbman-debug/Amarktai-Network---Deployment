@@ -12,6 +12,7 @@ import bcrypt
 from auth import get_current_user
 import database as db
 from engines.audit_logger import audit_logger
+from json_utils import serialize_doc, serialize_list
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +46,20 @@ async def verify_admin(current_user_id: str = Depends(get_current_user)):
 
 @router.get("/users")
 async def get_all_users(admin_user_id: str = Depends(verify_admin)):
-    """Get all users with stats"""
+    """Get all users with stats - properly serialized"""
     try:
-        users = await db.users_collection.find({}, {"_id": 0, "password": 0}).to_list(1000)
+        users = await db.users_collection.find({}, {"password_hash": 0}).to_list(1000)
         
-        # Enrich with stats
+        # Serialize and enrich with stats
+        serialized_users = []
         for user in users:
-            user_id = user['id']
+            # Serialize the user document
+            user_data = serialize_doc(user)
+            user_id = user_data.get('id') or str(user.get('_id'))
+            user_data['id'] = user_id  # Ensure id field exists
+            
+            # Remove _id if present
+            user_data.pop('_id', None)
             
             # Count bots
             bot_count = await db.bots_collection.count_documents({"user_id": user_id})
@@ -70,16 +78,18 @@ async def get_all_users(admin_user_id: str = Depends(verify_admin)):
             ).to_list(1000)
             total_profit = sum(b.get('total_profit', 0) for b in bots)
             
-            user['stats'] = {
+            user_data['stats'] = {
                 "total_bots": bot_count,
                 "active_bots": active_bots,
                 "total_trades": trade_count,
                 "total_profit": round(total_profit, 2)
             }
+            
+            serialized_users.append(user_data)
         
         return {
-            "users": users,
-            "total_count": len(users)
+            "users": serialized_users,
+            "total_count": len(serialized_users)
         }
         
     except Exception as e:
@@ -364,4 +374,41 @@ async def get_system_stats(admin_user_id: str = Depends(verify_admin)):
         
     except Exception as e:
         logger.error(f"Get system stats error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/audit/events")
+async def get_audit_events(
+    limit: int = 100,
+    user_id: Optional[str] = None,
+    event_type: Optional[str] = None,
+    admin_user_id: str = Depends(verify_admin)
+):
+    """Get audit trail events for admin monitoring"""
+    try:
+        # Build query
+        query = {}
+        if user_id:
+            query["user_id"] = user_id
+        if event_type:
+            query["event_type"] = event_type
+        
+        # Get events from audit logs collection
+        events = await db.audit_logs_collection.find(query).sort("timestamp", -1).limit(limit).to_list(limit)
+        
+        # Serialize events
+        serialized_events = serialize_list(events, exclude_fields=['_id'])
+        
+        return {
+            "events": serialized_events,
+            "total": len(serialized_events),
+            "filters": {
+                "user_id": user_id,
+                "event_type": event_type,
+                "limit": limit
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Get audit events error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
