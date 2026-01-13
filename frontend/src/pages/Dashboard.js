@@ -1637,7 +1637,10 @@ export default function Dashboard() {
     return (
       <section className="section active">
         <div className="card">
-          <h2>API Setup</h2>
+          <h2>🔑 API Setup - All Integration Keys</h2>
+          <p style={{color: 'var(--muted)', marginBottom: '20px', fontSize: '0.9rem'}}>
+            Configure all API keys and credentials for exchanges, AI services, and integrations. All keys are encrypted and stored securely per-user.
+          </p>
           <div className="api-accordion">
             {providers.map(provider => {
               const status = getApiStatus(provider);
@@ -3384,7 +3387,7 @@ export default function Dashboard() {
           />
           <nav className="nav" key={`nav-${showAdmin}`}>
             <a href="#" className={activeSection === 'welcome' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('welcome'); }}>🚀 Welcome</a>
-            <a href="#" className={activeSection === 'api' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('api'); }}>🔑 Exchange Keys</a>
+            <a href="#" className={activeSection === 'api' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('api'); }}>🔑 API Setup</a>
             <a href="#" className={activeSection === 'bots' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('bots'); }}>🤖 Bot Management</a>
             <a href="#" className={activeSection === 'system' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('system'); }}>🎮 System Mode</a>
             <a href="#" className={activeSection === 'graphs' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('graphs'); }}>📈 Profit Graphs</a>
@@ -3393,7 +3396,6 @@ export default function Dashboard() {
             <a href="#" className={activeSection === 'countdown' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('countdown'); }}>⏱️ Countdown</a>
             <a href="#" className={activeSection === 'wallet' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('wallet'); }}>💰 Wallet Hub</a>
             <a href="#" className={activeSection === 'flokx' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('flokx'); }}>🔔 Flokx Alerts</a>
-            <a href="#" className={activeSection === 'api-keys' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('api-keys'); }}>🔐 AI/Service Keys</a>
             <a href="#" className={activeSection === 'profile' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('profile'); }}>👤 Profile</a>
             {showAdmin && (
               <a href="#" className={activeSection === 'admin' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('admin'); }}>🔧 Admin</a>
@@ -3463,7 +3465,6 @@ export default function Dashboard() {
         {activeSection === 'decision-trace' && renderDecisionTrace()}
         {activeSection === 'whale-flow' && renderWhaleFlow()}
         {activeSection === 'metrics' && renderMetrics()}
-        {activeSection === 'api-keys' && renderAPIKeys()}
         {activeSection === 'profile' && renderProfile()}
         {activeSection === 'admin' && showAdmin && renderAdmin()}
       </main>

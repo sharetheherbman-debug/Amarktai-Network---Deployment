@@ -17,14 +17,33 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["Admin Dashboard"])
 
-async def verify_admin(current_user: Dict = Depends(get_current_user)):
-    """Verify user is admin"""
-    if current_user.get('role') != 'admin':
+async def verify_admin(current_user_id: str = Depends(get_current_user)):
+    """Verify user is admin - fixed to use user_id string from get_current_user"""
+    from bson import ObjectId
+    
+    # Query user by id field first
+    user = await db.users_collection.find_one({"id": current_user_id}, {"_id": 0})
+    
+    # Fallback to ObjectId if not found
+    if not user:
+        try:
+            user = await db.users_collection.find_one({"_id": ObjectId(current_user_id)})
+        except Exception:
+            pass  # Invalid ObjectId
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check if user is admin
+    is_admin = user.get('is_admin', False) or user.get('role') == 'admin'
+    
+    if not is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
-    return current_user
+    
+    return current_user_id  # Return user_id string for consistency
 
 @router.get("/users")
-async def get_all_users(admin_user: Dict = Depends(verify_admin)):
+async def get_all_users(admin_user_id: str = Depends(verify_admin)):
     """Get all users with stats"""
     try:
         users = await db.users_collection.find({}, {"_id": 0, "password": 0}).to_list(1000)
@@ -67,7 +86,7 @@ async def get_all_users(admin_user: Dict = Depends(verify_admin)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/users/{user_id}")
-async def get_user_details(user_id: str, admin_user: Dict = Depends(verify_admin)):
+async def get_user_details(user_id: str, admin_user_id: str = Depends(verify_admin)):
     """Get detailed user information"""
     try:
         user = await db.users_collection.find_one({"id": user_id}, {"_id": 0, "password": 0})
@@ -112,7 +131,7 @@ async def get_user_details(user_id: str, admin_user: Dict = Depends(verify_admin
 async def block_user(
     user_id: str,
     reason: str,
-    admin_user: Dict = Depends(verify_admin)
+    admin_user_id: str = Depends(verify_admin)
 ):
     """Block a user"""
     try:
@@ -162,7 +181,7 @@ async def block_user(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/users/{user_id}/unblock")
-async def unblock_user(user_id: str, admin_user: Dict = Depends(verify_admin)):
+async def unblock_user(user_id: str, admin_user_id: str = Depends(verify_admin)):
     """Unblock a user"""
     try:
         result = await db.users_collection.update_one(
@@ -202,7 +221,7 @@ async def unblock_user(user_id: str, admin_user: Dict = Depends(verify_admin)):
 async def reset_user_password(
     user_id: str,
     new_password: str,
-    admin_user: Dict = Depends(verify_admin)
+    admin_user_id: str = Depends(verify_admin)
 ):
     """Reset user password (admin action)"""
     try:
@@ -249,7 +268,7 @@ async def reset_user_password(
 async def delete_user(
     user_id: str,
     confirm: bool,
-    admin_user: Dict = Depends(verify_admin)
+    admin_user_id: str = Depends(verify_admin)
 ):
     """Delete user and all their data (dangerous!)"""
     try:
@@ -298,7 +317,7 @@ async def delete_user(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/stats")
-async def get_system_stats(admin_user: Dict = Depends(verify_admin)):
+async def get_system_stats(admin_user_id: str = Depends(verify_admin)):
     """Get overall system statistics"""
     try:
         total_users = await db.users_collection.count_documents({})
