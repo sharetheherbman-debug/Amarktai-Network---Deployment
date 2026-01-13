@@ -89,3 +89,7 @@ android-sdk/
 *.env
 *.env.*
 !.env.example
+
+# Local patch backups
+.bak.*
+*.bak.*

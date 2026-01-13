@@ -1,4 +1,5 @@
-from fastapi import HTTPException, Depends, APIRouter
+from fastapi import HTTPException, Depends, APIRouter, Request
+import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 import logging
@@ -12,7 +13,28 @@ router = APIRouter()
 
 
 @router.post("/auth/register")
-async def register(user: User):
+async def register(request: Request, user: User):
+    expected = (os.getenv("INVITE_CODE") or "").strip()
+    provided = (request.headers.get("X-Invite-Code") or "").strip()
+    if expected and provided != expected:
+        raise HTTPException(status_code=403, detail="Invalid invite code")
+
+    existing = await db.users_collection.find_one({"email": user.email}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    user_dict = user.model_dump()
+    user_dict["password_hash"] = get_password_hash(user_dict["password_hash"])
+    user_dict["created_at"] = datetime.now(timezone.utc).isoformat()
+
+    res = await db.users_collection.insert_one(user_dict)
+    user_dict["id"] = user_dict.get("id") or str(res.inserted_id)
+    user_dict.pop("_id", None)
+
+    token = create_access_token({"user_id": user_dict["id"]})
+    return {"token": token, "user": {k: v for k, v in user_dict.items() if k != "password_hash"}}
+
+
     existing = await db.users_collection.find_one({"email": user.email}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -23,7 +45,9 @@ async def register(user: User):
     
     await db.users_collection.insert_one(user_dict)
     
-    token = create_access_token({"user_id": user.id})
+    user_dict["id"] = (user_dict.get("id") or str(user_dict.get("_id") or ""))
+    user_dict.pop("_id", None)
+    token = create_access_token({"user_id": user_dict["id"]})
     return {"token": token, "user": {k: v for k, v in user_dict.items() if k != 'password_hash'}}
 
 
