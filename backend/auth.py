@@ -62,16 +62,17 @@ async def is_admin(user_id: str) -> bool:
     try:
         import database as db
         from bson import ObjectId
+        from bson.errors import InvalidId
         
         # Try by id field first
         user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         
-        # Fallback to ObjectId if not found
-        if not user:
+        # Fallback to ObjectId if not found and format is valid (24 hex characters)
+        if not user and len(user_id) == 24 and all(c in '0123456789abcdefABCDEF' for c in user_id):
             try:
                 user = await db.users_collection.find_one({"_id": ObjectId(user_id)})
-            except Exception:
-                pass  # Invalid ObjectId format
+            except InvalidId:
+                pass  # Invalid ObjectId despite format check
         
         if not user:
             return False

@@ -59,22 +59,25 @@ async def login(credentials: UserLogin):
 async def get_current_user_profile(user_id: str = Depends(get_current_user)):
     """Get current user profile - tries both 'id' field and MongoDB '_id' ObjectId"""
     from bson import ObjectId
+    from bson.errors import InvalidId
     
     # First try with string id field (preferred)
     user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
     
     # If not found, try with ObjectId (fallback for older users)
     if not user:
-        try:
-            user = await db.users_collection.find_one({"_id": ObjectId(user_id)})
-            if user:
-                # Remove _id and use id field going forward
-                user.pop("_id", None)
-                # Ensure id field exists for future queries
-                if "id" not in user:
-                    user["id"] = user_id
-        except Exception:
-            pass  # Invalid ObjectId format, user truly doesn't exist
+        # Validate ObjectId format before querying (24 hex characters)
+        if len(user_id) == 24 and all(c in '0123456789abcdefABCDEF' for c in user_id):
+            try:
+                user = await db.users_collection.find_one({"_id": ObjectId(user_id)})
+                if user:
+                    # Remove _id and use id field going forward
+                    user.pop("_id", None)
+                    # Ensure id field exists for future queries
+                    if "id" not in user:
+                        user["id"] = user_id
+            except InvalidId:
+                pass  # Invalid ObjectId despite format check
     
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

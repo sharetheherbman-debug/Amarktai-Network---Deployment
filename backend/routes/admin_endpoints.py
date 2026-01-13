@@ -20,16 +20,17 @@ router = APIRouter(prefix="/api/admin", tags=["Admin Dashboard"])
 async def verify_admin(current_user_id: str = Depends(get_current_user)):
     """Verify user is admin - fixed to use user_id string from get_current_user"""
     from bson import ObjectId
+    from bson.errors import InvalidId
     
     # Query user by id field first
     user = await db.users_collection.find_one({"id": current_user_id}, {"_id": 0})
     
-    # Fallback to ObjectId if not found
-    if not user:
+    # Fallback to ObjectId if not found and format is valid (24 hex characters)
+    if not user and len(current_user_id) == 24 and all(c in '0123456789abcdefABCDEF' for c in current_user_id):
         try:
             user = await db.users_collection.find_one({"_id": ObjectId(current_user_id)})
-        except Exception:
-            pass  # Invalid ObjectId
+        except InvalidId:
+            pass  # Invalid ObjectId despite format check
     
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
