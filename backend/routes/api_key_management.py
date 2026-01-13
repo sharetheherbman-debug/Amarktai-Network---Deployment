@@ -376,3 +376,8 @@ async def get_decrypted_key(user_id: str, provider: str) -> Optional[Dict]:
     except Exception as e:
         logger.error(f"Get decrypted key error: {e}")
         return None
+
+
+# Note: These legacy routes remain for backwards compatibility
+# Frontend should migrate to canonical /api/api-keys/* endpoints
+# All logic is duplicated here to maintain compatibility

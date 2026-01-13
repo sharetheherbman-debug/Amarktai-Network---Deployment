@@ -19,11 +19,15 @@ async def register(request: Request, user: User):
     if expected and provided != expected:
         raise HTTPException(status_code=403, detail="Invalid invite code")
 
-    existing = await db.users_collection.find_one({"email": user.email}, {"_id": 0})
+    # Normalize email to lowercase for consistency
+    normalized_email = user.email.lower().strip()
+    
+    existing = await db.users_collection.find_one({"email": normalized_email}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
     user_dict = user.model_dump()
+    user_dict["email"] = normalized_email  # Store normalized email
     user_dict["password_hash"] = get_password_hash(user_dict["password_hash"])
     user_dict["created_at"] = datetime.now(timezone.utc).isoformat()
 
@@ -39,7 +43,10 @@ async def register(request: Request, user: User):
 
 @router.post("/auth/login")
 async def login(credentials: UserLogin):
-    user = await db.users_collection.find_one({"email": credentials.email}, {"_id": 0})
+    # Normalize email to lowercase for consistency
+    normalized_email = credentials.email.lower().strip()
+    
+    user = await db.users_collection.find_one({"email": normalized_email}, {"_id": 0})
     
     if not user or not verify_password(credentials.password, user['password_hash']):
         raise HTTPException(status_code=401, detail="Invalid email or password")
