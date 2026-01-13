@@ -273,3 +273,94 @@ async def get_performance_summary(
     except Exception as e:
         logger.error(f"Get performance summary error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/exchange-comparison")
+async def get_exchange_comparison(
+    period: str = Query("30d", regex="^(7d|30d|90d|all)$"),
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Get performance comparison across exchanges (Luno, Binance, KuCoin)
+    Shows ROI, trade count, win rate per exchange
+    """
+    try:
+        # Calculate time range
+        now = datetime.now(timezone.utc)
+        range_map = {
+            "7d": timedelta(days=7),
+            "30d": timedelta(days=30),
+            "90d": timedelta(days=90),
+            "all": timedelta(days=3650)
+        }
+        start_time = now - range_map.get(period, timedelta(days=30))
+        
+        # Get all trades in range
+        trades = await db.trades_collection.find(
+            {
+                "user_id": user_id,
+                "timestamp": {"$gte": start_time.isoformat()}
+            },
+            {"_id": 0}
+        ).to_list(10000)
+        
+        # Group by exchange
+        exchange_data = {}
+        supported_exchanges = ["luno", "binance", "kucoin"]
+        
+        for exchange in supported_exchanges:
+            exchange_trades = [t for t in trades if t.get('exchange', '').lower() == exchange]
+            
+            if not exchange_trades:
+                exchange_data[exchange] = {
+                    "exchange": exchange,
+                    "trades": 0,
+                    "pnl": 0,
+                    "roi_pct": 0,
+                    "win_rate_pct": 0,
+                    "status": "inactive"
+                }
+                continue
+            
+            # Calculate metrics
+            total_trades = len(exchange_trades)
+            winning = len([t for t in exchange_trades if t.get('profit_loss', 0) > 0])
+            total_pnl = sum(t.get('profit_loss', 0) for t in exchange_trades)
+            
+            # Estimate initial capital (sum of trade sizes)
+            initial_capital = sum(abs(t.get('amount', 0) * t.get('price', 0)) for t in exchange_trades) / total_trades if total_trades > 0 else 1
+            roi_pct = (total_pnl / initial_capital * 100) if initial_capital > 0 else 0
+            win_rate = (winning / total_trades * 100) if total_trades > 0 else 0
+            
+            exchange_data[exchange] = {
+                "exchange": exchange,
+                "trades": total_trades,
+                "pnl": round(total_pnl, 2),
+                "roi_pct": round(roi_pct, 2),
+                "win_rate_pct": round(win_rate, 2),
+                "status": "active"
+            }
+        
+        # Sort by PnL descending
+        sorted_exchanges = sorted(
+            exchange_data.values(),
+            key=lambda x: x['pnl'],
+            reverse=True
+        )
+        
+        return {
+            "period": period,
+            "start_time": start_time.isoformat(),
+            "end_time": now.isoformat(),
+            "exchanges": sorted_exchanges,
+            "summary": {
+                "total_pnl": sum(e['pnl'] for e in sorted_exchanges),
+                "total_trades": sum(e['trades'] for e in sorted_exchanges),
+                "active_exchanges": len([e for e in sorted_exchanges if e['status'] == 'active'])
+            },
+            "timestamp": now.isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Get exchange comparison error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

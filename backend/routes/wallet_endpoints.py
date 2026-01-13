@@ -21,6 +21,24 @@ router = APIRouter(prefix="/api/wallet", tags=["Wallet Hub"])
 async def get_wallet_balances(user_id: str = Depends(get_current_user)):
     """Get all wallet balances for user"""
     try:
+        # Safe check for wallet collection initialization
+        if wallet_balances_collection is None:
+            logger.warning("wallet_balances_collection not initialized, returning empty state")
+            return {
+                "user_id": user_id,
+                "master_wallet": {
+                    "total_zar": 0,
+                    "btc_balance": 0,
+                    "eth_balance": 0,
+                    "xrp_balance": 0,
+                    "exchange": "luno",
+                    "status": "not_configured"
+                },
+                "exchanges": {},
+                "timestamp": None,
+                "last_updated": "never",
+                "note": "Wallet collection not initialized. Check database setup."
+            }
         
         # Get cached balances
         cached = await wallet_balances_collection.find_one(
@@ -79,12 +97,39 @@ async def get_wallet_balances(user_id: str = Depends(get_current_user)):
         import traceback
         logger.error(f"Get wallet balances error: {e}")
         logger.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return safe empty state instead of 500 error
+        return {
+            "user_id": user_id,
+            "master_wallet": {
+                "total_zar": 0,
+                "btc_balance": 0,
+                "eth_balance": 0,
+                "xrp_balance": 0,
+                "exchange": "luno",
+                "status": "error"
+            },
+            "exchanges": {},
+            "timestamp": None,
+            "last_updated": "error",
+            "error": str(e)
+        }
 
 @router.get("/requirements")
 async def get_capital_requirements(user_id: str = Depends(get_current_user)):
     """Get capital requirements per exchange based on active bots"""
     try:
+        # Safe check for collection initialization
+        if db.bots_collection is None:
+            logger.warning("bots_collection not initialized")
+            return {
+                "requirements": {},
+                "summary": {
+                    "total_required": 0,
+                    "total_available": 0,
+                    "overall_health": "unknown"
+                },
+                "note": "Collections not initialized"
+            }
         
         # Get all active bots
         bots = await db.bots_collection.find(
@@ -111,28 +156,31 @@ async def get_capital_requirements(user_id: str = Depends(get_current_user)):
             requirements[exchange]['required'] += capital
             requirements[exchange]['bots'] += 1
         
-        # Get actual balances
-        balances = await wallet_balances_collection.find_one(
-            {"user_id": user_id},
-            {"_id": 0}
-        )
-        
-        if balances:
-            for exchange, req in requirements.items():
-                exchange_balance = balances.get('exchanges', {}).get(exchange, {})
-                available = exchange_balance.get('zar_balance', 0)
-                req['available'] = available
-                req['surplus_deficit'] = available - req['required']
-                
-                # Determine health
-                if req['surplus_deficit'] >= 1000:
-                    req['health'] = 'healthy'
-                elif req['surplus_deficit'] >= 0:
-                    req['health'] = 'adequate'
-                elif req['surplus_deficit'] >= -500:
-                    req['health'] = 'warning'
-                else:
-                    req['health'] = 'critical'
+        # Get actual balances (safe check for collection)
+        if wallet_balances_collection is not None:
+            balances = await wallet_balances_collection.find_one(
+                {"user_id": user_id},
+                {"_id": 0}
+            )
+            
+            if balances:
+                for exchange, req in requirements.items():
+                    exchange_balance = balances.get('exchanges', {}).get(exchange, {})
+                    available = exchange_balance.get('zar_balance', 0)
+                    req['available'] = available
+                    req['surplus_deficit'] = available - req['required']
+                    
+                    # Determine health
+                    if req['surplus_deficit'] >= 1000:
+                        req['health'] = 'healthy'
+                    elif req['surplus_deficit'] >= 0:
+                        req['health'] = 'adequate'
+                    elif req['surplus_deficit'] >= -500:
+                        req['health'] = 'warning'
+                    else:
+                        req['health'] = 'critical'
+        else:
+            logger.warning("wallet_balances_collection not initialized")
         
         return {
             "user_id": user_id,
