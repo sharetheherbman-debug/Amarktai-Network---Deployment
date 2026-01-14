@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { useRealtimeEvent, useLastUpdate } from '../hooks/useRealtime';
+import { get } from '../lib/apiClient';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
 import './DecisionTrace.css';
@@ -7,7 +9,7 @@ import './DecisionTrace.css';
  * DecisionTrace Component
  * 
  * Provides a DVR-like replay interface for viewing agent reasoning steps
- * Consumes WebSocket stream of trading decisions with full provenance
+ * Consumes unified real-time stream of trading decisions with full provenance
  * Allows stepping through historical decisions and understanding AI logic
  */
 export default function DecisionTrace() {
@@ -16,64 +18,33 @@ export default function DecisionTrace() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [filter, setFilter] = useState('all'); // all, buy, sell, neutral
-  const [wsStatus, setWsStatus] = useState('disconnected');
-  const wsRef = useRef(null);
+  const [loading, setLoading] = useState(true);
   const playbackIntervalRef = useRef(null);
+  const lastUpdate = useLastUpdate('decisions');
 
-  // WebSocket connection for real-time decision streaming
+  // Load initial decisions
   useEffect(() => {
-    const connectWebSocket = () => {
-      try {
-        const wsUrl = process.env.REACT_APP_WS_URL || 'ws://localhost:8000';
-        const ws = new WebSocket(`${wsUrl}/ws/decisions`);
-        
-        ws.onopen = () => {
-          console.log('✅ DecisionTrace WebSocket connected');
-          setWsStatus('connected');
-        };
-        
-        ws.onmessage = (event) => {
-          try {
-            const decision = JSON.parse(event.data);
-            setDecisions(prev => {
-              const updated = [...prev, decision];
-              // Keep last 100 decisions
-              return updated.slice(-100);
-            });
-          } catch (err) {
-            console.error('Failed to parse decision:', err);
-          }
-        };
-        
-        ws.onerror = (error) => {
-          console.error('❌ WebSocket error:', error);
-          setWsStatus('error');
-        };
-        
-        ws.onclose = () => {
-          console.log('🔌 WebSocket closed, reconnecting...');
-          setWsStatus('disconnected');
-          // Reconnect after 3 seconds
-          setTimeout(connectWebSocket, 3000);
-        };
-        
-        wsRef.current = ws;
-      } catch (err) {
-        console.error('Failed to create WebSocket:', err);
-        setWsStatus('error');
-      }
-    };
-    
-    connectWebSocket();
-    
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-      if (playbackIntervalRef.current) {
-        clearInterval(playbackIntervalRef.current);
-      }
-    };
+    loadInitialDecisions();
+  }, []);
+
+  const loadInitialDecisions = async () => {
+    try {
+      const data = await get('/advanced/decisions/recent?limit=100');
+      setDecisions(data.decisions || []);
+      setLoading(false);
+    } catch (error) {
+      console.error('Failed to load decisions:', error);
+      setLoading(false);
+    }
+  };
+
+  // Subscribe to real-time decision updates
+  useRealtimeEvent('decisions', (decision) => {
+    setDecisions(prev => {
+      const updated = [decision, ...prev];
+      // Keep last 100 decisions
+      return updated.slice(0, 100);
+    });
   }, []);
 
   // DVR playback functionality
@@ -161,9 +132,16 @@ export default function DecisionTrace() {
             <h2 className="text-2xl font-bold">Decision Trace</h2>
             <p className="text-sm text-gray-500">AI Trading Decision Provenance</p>
           </div>
-          <Badge variant={wsStatus === 'connected' ? 'default' : 'destructive'}>
-            {wsStatus === 'connected' ? '🟢 Live' : '🔴 Disconnected'}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant={lastUpdate ? 'default' : 'destructive'}>
+              {lastUpdate ? '🟢 Live' : '🔴 Waiting'}
+            </Badge>
+            {lastUpdate && (
+              <span className="text-xs text-muted-foreground">
+                {new Date(lastUpdate).toLocaleTimeString()}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* DVR Controls */}
