@@ -536,3 +536,73 @@ async def resume_all_bots(user_id: str = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Resume all bots error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{bot_id}/trading-enabled")
+@router.post("/{bot_id}/trading-enabled")
+async def toggle_bot_trading(bot_id: str, data: Dict, user_id: str = Depends(get_current_user)):
+    """Enable or disable trading for a specific bot
+    
+    This allows users to toggle trading on/off without pausing the bot.
+    The bot remains active but won't execute trades when trading_enabled=False.
+    
+    Args:
+        bot_id: Bot ID to toggle
+        data: {"enabled": true/false}
+        user_id: Current user ID (from auth)
+        
+    Returns:
+        Updated bot status
+    """
+    try:
+        # Verify bot belongs to user
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        enabled = data.get('enabled', True)
+        
+        # Update trading_enabled flag
+        await db.bots_collection.update_one(
+            {"id": bot_id},
+            {
+                "$set": {
+                    "trading_enabled": enabled,
+                    "trading_enabled_updated_at": datetime.now(timezone.utc).isoformat(),
+                    "trading_enabled_by_user": True
+                }
+            }
+        )
+        
+        # Get updated bot
+        updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        
+        # Log audit trail
+        from engines.audit_logger import audit_logger
+        await audit_logger.log_action(
+            user_id=user_id,
+            action="bot_trading_toggled",
+            details={
+                "bot_id": bot_id,
+                "bot_name": bot.get('name'),
+                "enabled": enabled
+            }
+        )
+        
+        # Send real-time notification
+        await rt_events.force_refresh(user_id, f"Bot {bot.get('name')} trading {'enabled' if enabled else 'disabled'}")
+        
+        status_text = "enabled" if enabled else "disabled"
+        logger.info(f"✅ Bot {bot['name']} trading {status_text} by user {user_id[:8]}")
+        
+        return {
+            "success": True,
+            "message": f"Bot '{bot['name']}' trading {status_text}",
+            "bot": updated_bot
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Toggle bot trading error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
