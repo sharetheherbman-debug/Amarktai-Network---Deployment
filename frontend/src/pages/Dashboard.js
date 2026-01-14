@@ -2209,14 +2209,15 @@ export default function Dashboard() {
                         </small>
                       </div>
                       <div className="form-group">
-                        <label htmlFor="bot-exchange">Exchange</label>
-                        <select id="bot-exchange" name="bot-exchange">
+                        <label htmlFor="bot-exchange">Exchange Platform</label>
+                        <select id="bot-exchange" name="bot-exchange" defaultValue="luno">
                           <option value="luno">🇿🇦 Luno (ZAR)</option>
                           <option value="binance">🌍 Binance (USDT)</option>
                           <option value="kucoin">🌐 KuCoin (USDT)</option>
-                          <option value="kraken">🇺🇸 Kraken (USDT)</option>
-                          <option value="valr">🇿🇦 VALR (ZAR)</option>
                         </select>
+                        <small style={{color: 'var(--muted)', fontSize: '0.75rem', display: 'block', marginTop: '4px'}}>
+                          ⚠️ Only Luno, Binance, and KuCoin are currently supported
+                        </small>
                       </div>
                       <div className="form-group">
                         <label htmlFor="bot-risk">Risk Mode</label>
@@ -2268,25 +2269,11 @@ export default function Dashboard() {
           <div className="bot-right">
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px'}}>
               <h3>Running Bots ({bots.length})</h3>
-              <select 
-                value={platformFilter}
-                onChange={(e) => setPlatformFilter(e.target.value)}
-                style={{
-                  padding: '8px 16px',
-                  background: 'var(--panel)',
-                  border: '1px solid var(--line)',
-                  borderRadius: '6px',
-                  color: 'var(--text)',
-                  cursor: 'pointer'
-                }}
-              >
-                <option value="all">All Platforms</option>
-                <option value="luno">🇿🇦 Luno Only</option>
-                <option value="binance">🌍 Binance Only</option>
-                <option value="kucoin">🌐 KuCoin Only</option>
-                <option value="kraken">🇺🇸 Kraken Only</option>
-                <option value="valr">🇿🇦 VALR Only</option>
-              </select>
+              <PlatformSelector 
+                value={platformFilter} 
+                onChange={setPlatformFilter}
+                includeAll={true}
+              />
             </div>
             
             <div className="bot-list">
@@ -2981,7 +2968,9 @@ export default function Dashboard() {
     const tradesByExchange = {
       luno: recentTrades.filter(t => t.exchange?.toLowerCase() === 'luno'),
       binance: recentTrades.filter(t => t.exchange?.toLowerCase() === 'binance'),
-      kucoin: recentTrades.filter(t => t.exchange?.toLowerCase() === 'kucoin')
+      kucoin: recentTrades.filter(t => t.exchange?.toLowerCase() === 'kucoin'),
+      kraken: recentTrades.filter(t => t.exchange?.toLowerCase() === 'kraken'),
+      valr: recentTrades.filter(t => t.exchange?.toLowerCase() === 'valr')
     };
 
     // Calculate stats per exchange
@@ -2995,65 +2984,87 @@ export default function Dashboard() {
         profit: profit.toFixed(2)
       };
     };
+    
+    // Define all 5 platforms
+    const allPlatforms = [
+      { id: 'luno', name: 'Luno', icon: '🇿🇦', supported: true },
+      { id: 'binance', name: 'Binance', icon: '🟡', supported: true },
+      { id: 'kucoin', name: 'KuCoin', icon: '🟢', supported: true },
+      { id: 'kraken', name: 'Kraken', icon: '🟣', supported: false },
+      { id: 'valr', name: 'VALR', icon: '🔵', supported: false }
+    ];
 
     return (
       <section className="section active">
         <div className="card">
           <h2>📊 Live Trades - Platform Comparison</h2>
           <p style={{color: 'var(--muted)', marginBottom: '20px', fontSize: '0.9rem'}}>
-            Real-time trade feed grouped by exchange (Luno, Binance, KuCoin)
+            Real-time trade feed showing all 5 platforms (3 active: Luno, Binance, KuCoin)
           </p>
           
           {/* Platform Comparison Cards */}
-          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '20px'}}>
-            {['luno', 'binance', 'kucoin'].map(exchange => {
-              const stats = getExchangeStats(tradesByExchange[exchange]);
+          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '20px'}}>
+            {allPlatforms.map(platform => {
+              const stats = getExchangeStats(tradesByExchange[platform.id]);
               const hasData = stats.count > 0;
+              const isSupported = platform.supported;
               
               return (
-                <div key={exchange} style={{
-                  background: 'var(--glass)',
+                <div key={platform.id} style={{
+                  background: isSupported ? 'var(--glass)' : 'rgba(50, 50, 50, 0.3)',
                   border: '1px solid var(--line)',
                   borderRadius: '12px',
                   padding: '20px',
-                  transition: 'all 0.3s'
+                  transition: 'all 0.3s',
+                  opacity: isSupported ? 1 : 0.6
                 }}>
                   <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px'}}>
                     <h3 style={{margin: 0, textTransform: 'uppercase', fontSize: '1.1rem', color: 'var(--accent)'}}>
-                      {exchange === 'luno' && '🟡'} {exchange === 'binance' && '🟠'} {exchange === 'kucoin' && '🟢'} {exchange}
+                      {platform.icon} {platform.name}
                     </h3>
                     <span style={{
                       padding: '4px 12px',
-                      background: hasData ? 'rgba(16, 185, 129, 0.2)' : 'rgba(139, 139, 139, 0.2)',
-                      color: hasData ? '#10b981' : '#8b8b8b',
+                      background: !isSupported ? 'rgba(245, 158, 11, 0.2)' : hasData ? 'rgba(16, 185, 129, 0.2)' : 'rgba(139, 139, 139, 0.2)',
+                      color: !isSupported ? '#f59e0b' : hasData ? '#10b981' : '#8b8b8b',
                       borderRadius: '12px',
                       fontSize: '0.75rem',
                       fontWeight: 600
                     }}>
-                      {hasData ? 'ACTIVE' : 'NO DATA'}
+                      {!isSupported ? 'COMING SOON' : hasData ? 'ACTIVE' : 'NO DATA'}
                     </span>
                   </div>
                   
-                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px'}}>
-                    <div style={{textAlign: 'center'}}>
-                      <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>TRADES</div>
-                      <div style={{fontSize: '1.4rem', fontWeight: 700, color: 'var(--text)'}}>{stats.count}</div>
-                    </div>
-                    <div style={{textAlign: 'center'}}>
-                      <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>WIN RATE</div>
-                      <div style={{fontSize: '1.4rem', fontWeight: 700, color: hasData ? 'var(--success)' : 'var(--muted)'}}>{stats.winRate}%</div>
-                    </div>
-                    <div style={{textAlign: 'center'}}>
-                      <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>PROFIT</div>
-                      <div style={{fontSize: '1.2rem', fontWeight: 700, color: parseFloat(stats.profit) >= 0 ? 'var(--success)' : 'var(--error)'}}>
-                        R{stats.profit}
+                  {isSupported ? (
+                    <>
+                      <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px'}}>
+                        <div style={{textAlign: 'center'}}>
+                          <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>TRADES</div>
+                          <div style={{fontSize: '1.4rem', fontWeight: 700, color: 'var(--text)'}}>{stats.count}</div>
+                        </div>
+                        <div style={{textAlign: 'center'}}>
+                          <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>WIN RATE</div>
+                          <div style={{fontSize: '1.4rem', fontWeight: 700, color: hasData ? 'var(--success)' : 'var(--muted)'}}>{stats.winRate}%</div>
+                        </div>
+                        <div style={{textAlign: 'center'}}>
+                          <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>PROFIT</div>
+                          <div style={{fontSize: '1.2rem', fontWeight: 700, color: parseFloat(stats.profit) >= 0 ? 'var(--success)' : 'var(--error)'}}>
+                            R{stats.profit}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                  
-                  {!hasData && (
-                    <div style={{marginTop: '12px', padding: '8px', background: 'rgba(139, 139, 139, 0.1)', borderRadius: '6px', textAlign: 'center', fontSize: '0.8rem', color: 'var(--muted)'}}>
-                      No trades yet for this platform
+                      
+                      {!hasData && (
+                        <div style={{marginTop: '12px', padding: '8px', background: 'rgba(139, 139, 139, 0.1)', borderRadius: '6px', textAlign: 'center', fontSize: '0.8rem', color: 'var(--muted)'}}>
+                          No trades yet for this platform
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div style={{marginTop: '12px', padding: '12px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '6px', textAlign: 'center', fontSize: '0.85rem', color: '#f59e0b'}}>
+                      <div style={{marginBottom: '6px', fontWeight: 600}}>🚧 Coming Soon</div>
+                      <div style={{fontSize: '0.75rem', color: 'var(--muted)'}}>
+                        {platform.name} integration in development
+                      </div>
                     </div>
                   )}
                 </div>

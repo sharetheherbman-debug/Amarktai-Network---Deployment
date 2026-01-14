@@ -8,6 +8,8 @@ from typing import Dict, Optional
 import logging
 from datetime import datetime, timezone
 import bcrypt
+import os
+import secrets
 
 from auth import get_current_user
 import database as db
@@ -17,6 +19,65 @@ from json_utils import serialize_doc, serialize_list
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["Admin Dashboard"])
+
+@router.post("/unlock")
+async def unlock_admin_panel(
+    request: dict,
+    current_user_id: str = Depends(get_current_user)
+):
+    """
+    Verify admin password and generate unlock token
+    Case-insensitive and whitespace-tolerant password check
+    """
+    try:
+        # Get password from request
+        password = request.get('password', '').strip()
+        
+        if not password:
+            raise HTTPException(status_code=400, detail="Password is required")
+        
+        # Get admin password from environment with fallback
+        admin_password = os.getenv('ADMIN_PASSWORD', 'ashmor12@').strip()
+        
+        # Case-insensitive and whitespace-tolerant comparison
+        if password.lower() != admin_password.lower():
+            # Log failed attempt
+            await audit_logger.log_event(
+                event_type="admin_unlock_failed",
+                user_id=current_user_id,
+                details={"reason": "Invalid password"},
+                severity="warning"
+            )
+            raise HTTPException(status_code=403, detail="Invalid admin password")
+        
+        # Generate unlock token (valid for 1 hour)
+        unlock_token = secrets.token_urlsafe(32)
+        
+        # Store token in session or cache (simplified: return it)
+        # In production, you'd store this in Redis with expiration
+        
+        # Log successful unlock
+        await audit_logger.log_event(
+            event_type="admin_panel_unlocked",
+            user_id=current_user_id,
+            details={"timestamp": datetime.now(timezone.utc).isoformat()},
+            severity="info"
+        )
+        
+        logger.info(f"Admin panel unlocked by user {current_user_id}")
+        
+        return {
+            "success": True,
+            "message": "Admin panel unlocked",
+            "unlock_token": unlock_token,
+            "expires_in": 3600  # 1 hour in seconds
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin unlock error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 async def verify_admin(current_user_id: str = Depends(get_current_user)):
     """Verify user is admin - fixed to use user_id string from get_current_user"""

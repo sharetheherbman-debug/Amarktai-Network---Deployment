@@ -48,7 +48,7 @@ export default function PlatformSelector({ value, onChange, includeAll = true })
     );
   }
 
-  const enabledPlatforms = platforms.filter(p => p.enabled);
+  const enabledPlatforms = platforms.filter(p => p.enabled && !p.coming_soon);
 
   return (
     <select

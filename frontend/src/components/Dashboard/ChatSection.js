@@ -36,9 +36,10 @@ export const ChatSection = ({
     setChatMessages(prev => [...prev, { role: 'user', content: originalInput }]);
     setChatInput('');
 
-    // Handle admin password
+    // Handle admin password - FIX: Use originalInput instead of cleared chatInput
     if (awaitingPassword) {
-      if (chatInput === ADMIN_PASSWORD) {
+      // Case-insensitive and whitespace-tolerant password check
+      if (originalInput.trim().toLowerCase() === ADMIN_PASSWORD.toLowerCase()) {
         if (adminAction === 'show') {
           setShowAdmin(true);
           sessionStorage.setItem('adminPanelVisible', 'true');
@@ -59,7 +60,7 @@ export const ChatSection = ({
       } else {
         setChatMessages(prev => [...prev, { 
           role: 'assistant', 
-          content: '❌ Incorrect password. Try again.' 
+          content: '❌ Invalid admin password. Please try again.' 
         }]);
         setAwaitingPassword(false);
         setAdminAction(null);
