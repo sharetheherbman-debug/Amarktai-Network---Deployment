@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -23,6 +23,8 @@ import PrometheusMetrics from '../components/PrometheusMetrics';
 import APIKeySettings from '../components/APIKeySettings';
 import PlatformSelector from '../components/PlatformSelector';
 import { API_BASE, wsUrl } from '../lib/api.js';
+import { useRealtimeEvent } from '../hooks/useRealtime';
+import { post, get } from '../lib/apiClient';
 
 ChartJS.register(
   CategoryScale,
@@ -224,6 +226,53 @@ export default function Dashboard() {
       });
     }
   }, [user]);
+
+  // PHASE 12: Load chat history from backend (30 days)
+  useEffect(() => {
+    loadChatHistory();
+  }, []);
+
+  const loadChatHistory = async () => {
+    try {
+      const data = await get('/chat/history?days=30&limit=100');
+      if (data.messages && data.messages.length > 0) {
+        const messages = data.messages.reverse(); // Oldest first
+        setChatMessages(messages);
+      }
+    } catch (error) {
+      console.error('Failed to load chat history:', error);
+      // Initialize with welcome message if history fails
+      if (user) {
+        setChatMessages([{
+          role: 'assistant',
+          content: `Hello ${user.first_name || 'there'}! Welcome to Amarktai Network. I'm your AI assistant. Try commands like 'show admin', 'help', or ask me anything!`
+        }]);
+      }
+    }
+  };
+
+  // PHASE 10: Subscribe to real-time AI task updates
+  useRealtimeEvent('ai_tasks', useCallback((task) => {
+    console.log('AI Task update:', task);
+    
+    if (task.status === 'completed') {
+      setAiTaskLoading(null);
+      toast.success(`${task.task_type} completed successfully`);
+      
+      // Refresh data based on task type
+      if (task.task_type === 'bot_evolution') {
+        loadBots();
+      } else if (task.task_type === 'profit_reinvestment') {
+        loadMetrics();
+        loadBalances();
+      }
+    } else if (task.status === 'failed') {
+      setAiTaskLoading(null);
+      toast.error(`${task.task_type} failed: ${task.error || 'Unknown error'}`);
+    } else if (task.status === 'running') {
+      toast.info(`${task.task_type} in progress: ${Math.round(task.progress * 100)}%`);
+    }
+  }, []), []);
 
   // Check for eligible bots every 5 minutes
   useEffect(() => {
@@ -763,16 +812,39 @@ export default function Dashboard() {
     const originalInput = chatInput;
     setChatInput('');
 
-    // Handle admin commands - COMPLETELY FRONTEND ONLY
+    // PHASE 12: Save user message to backend
+    try {
+      await post('/chat/message', {
+        role: 'user',
+        content: originalInput,
+        metadata: { timestamp: new Date().toISOString() }
+      });
+    } catch (error) {
+      console.error('Failed to save chat message:', error);
+    }
+
+    // PHASE 11: Handle admin commands with backend verification
     if (awaitingPassword) {
-      if (originalInput === ADMIN_PASSWORD) {
+      try {
+        // Verify password with backend
+        const result = await post('/admin/unlock', { password: originalInput });
+        
         setChatMessages(prev => [...prev, { role: 'assistant', content: '✅ Password correct!' }]);
         
         if (adminAction === 'show') {
           console.log('🔓 SHOWING ADMIN - Setting state to TRUE');
           setShowAdmin(true);
           sessionStorage.setItem('adminPanelVisible', 'true');
-          // Force re-render by updating section
+          sessionStorage.setItem('adminUnlockToken', result.unlock_token);
+          
+          // Auto-hide after 1 hour
+          setTimeout(() => {
+            setShowAdmin(false);
+            sessionStorage.removeItem('adminPanelVisible');
+            sessionStorage.removeItem('adminUnlockToken');
+            toast.info('Admin session expired');
+          }, 3600000);
+          
           setTimeout(() => {
             setActiveSection('admin');
             console.log('Admin section activated, showAdmin:', true);
@@ -780,46 +852,111 @@ export default function Dashboard() {
         } else if (adminAction === 'hide') {
           console.log('🔒 HIDING ADMIN - Setting state to FALSE');
           setShowAdmin(false);
-          sessionStorage.setItem('adminPanelVisible', 'false');
+          sessionStorage.removeItem('adminPanelVisible');
+          sessionStorage.removeItem('adminUnlockToken');
           setActiveSection('welcome');
           console.log('Admin section deactivated, showAdmin:', false);
         }
         
         setAwaitingPassword(false);
         setAdminAction(null);
-      } else {
+      } catch (error) {
         console.log('❌ WRONG PASSWORD:', originalInput);
-        setChatMessages(prev => [...prev, { role: 'assistant', content: `❌ Wrong password. You entered: "${originalInput}". Correct password starts with "ash..."` }]);
+        setChatMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: `❌ Invalid admin password. ${error.message || 'Access denied.'}` 
+        }]);
         setAwaitingPassword(false);
         setAdminAction(null);
       }
+      
+      // Save assistant response
+      try {
+        await post('/chat/message', {
+          role: 'assistant',
+          content: awaitingPassword ? '✅ Password verified' : '❌ Invalid password',
+          metadata: { timestamp: new Date().toISOString() }
+        });
+      } catch (error) {
+        console.error('Failed to save assistant message:', error);
+      }
+      
       return;
     }
 
-    // Handle show/hide admin commands (frontend only)
+    // Handle show/hide admin commands
     if (msgLower === 'show admin' || msgLower === 'show admn') {
       setAwaitingPassword(true);
       setAdminAction('show');
-      setChatMessages(prev => [...prev, { role: 'assistant', content: '🔐 Please enter the admin password:' }]);
-      return; // STOP - do not send to backend
+      const assistantMsg = { role: 'assistant', content: '🔐 Please enter the admin password:' };
+      setChatMessages(prev => [...prev, assistantMsg]);
+      
+      // Save assistant message
+      try {
+        await post('/chat/message', {
+          role: 'assistant',
+          content: assistantMsg.content,
+          metadata: { timestamp: new Date().toISOString() }
+        });
+      } catch (error) {
+        console.error('Failed to save assistant message:', error);
+      }
+      
+      return;
     }
 
     if (msgLower === 'hide admin') {
       setAwaitingPassword(true);
       setAdminAction('hide');
-      setChatMessages(prev => [...prev, { role: 'assistant', content: '🔐 Please enter the admin password:' }]);
-      return; // STOP - do not send to backend
+      const assistantMsg = { role: 'assistant', content: '🔐 Please enter the admin password:' };
+      setChatMessages(prev => [...prev, assistantMsg]);
+      
+      // Save assistant message
+      try {
+        await post('/chat/message', {
+          role: 'assistant',
+          content: assistantMsg.content,
+          metadata: { timestamp: new Date().toISOString() }
+        });
+      } catch (error) {
+        console.error('Failed to save assistant message:', error);
+      }
+      
+      return;
     }
 
     // Send all other messages to AI backend
     try {
       const res = await axios.post(`${API}/chat`, { content: originalInput }, axiosConfig);
-      // Backend returns plain string, not an object
       const reply = typeof res.data === 'string' ? res.data : (res.data.response || res.data.reply || res.data.message || 'No response');
-      setChatMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+      const assistantMsg = { role: 'assistant', content: reply };
+      setChatMessages(prev => [...prev, assistantMsg]);
+      
+      // PHASE 12: Save assistant message to backend
+      try {
+        await post('/chat/message', {
+          role: 'assistant',
+          content: reply,
+          metadata: { timestamp: new Date().toISOString() }
+        });
+      } catch (error) {
+        console.error('Failed to save assistant message:', error);
+      }
     } catch (err) {
       console.error('Chat error:', err);
-      setChatMessages(prev => [...prev, { role: 'assistant', content: `AI error: ${err.message}` }]);
+      const errorMsg = { role: 'assistant', content: `AI error: ${err.message}` };
+      setChatMessages(prev => [...prev, errorMsg]);
+      
+      // Save error message
+      try {
+        await post('/chat/message', {
+          role: 'assistant',
+          content: errorMsg.content,
+          metadata: { timestamp: new Date().toISOString(), error: true }
+        });
+      } catch (error) {
+        console.error('Failed to save error message:', error);
+      }
     }
   };
 
@@ -1320,6 +1457,147 @@ export default function Dashboard() {
     }
   };
 
+  // PHASE 10: Additional AI Tool Handlers
+  const handleEvolveBots = async () => {
+    try {
+      setAiTaskLoading('evolve');
+      toast.info('🧬 Evolving bots with genetic algorithm...');
+      
+      const result = await post('/bots/evolve', {});
+      
+      const message = `🧬 Bot Evolution Complete!\n\n` +
+        `📊 Bots Evolved: ${result.evolved_count || 0}\n` +
+        `📈 Performance Improvement: ${result.improvement || 0}%\n` +
+        `🎯 New Strategies: ${result.new_strategies || 0}\n` +
+        `⏱️ Completed: ${new Date().toLocaleTimeString()}\n\n` +
+        `💬 Check your bots to see the improvements!`;
+      
+      setChatMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: message 
+      }]);
+      
+      loadBots(); // Refresh bot list
+      toast.success('✅ Bot evolution complete!');
+    } catch (err) {
+      const errorMsg = err.message || 'Bot evolution failed';
+      if (errorMsg.includes('not configured')) {
+        toast.error('Bot evolution not configured.');
+      } else {
+        toast.error(`❌ ${errorMsg}`);
+      }
+      setChatMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: `❌ Bot evolution failed: ${errorMsg}` 
+      }]);
+    } finally {
+      setAiTaskLoading(null);
+    }
+  };
+
+  const handleGetInsights = async () => {
+    try {
+      setAiTaskLoading('insights');
+      toast.info('🔮 Generating AI insights...');
+      
+      const result = await get('/ai/insights');
+      
+      const message = `🔮 Daily AI Insights\n\n` +
+        `${result.insights || 'No insights available at this time.'}\n\n` +
+        `⏱️ Generated: ${new Date().toLocaleTimeString()}`;
+      
+      setChatMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: message 
+      }]);
+      
+      toast.success('✅ Insights generated!');
+    } catch (err) {
+      const errorMsg = err.message || 'Failed to get insights';
+      toast.error(`❌ ${errorMsg}`);
+      setChatMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: `❌ Insights failed: ${errorMsg}` 
+      }]);
+    } finally {
+      setAiTaskLoading(null);
+    }
+  };
+
+  const handlePredictPrice = async () => {
+    try {
+      setAiTaskLoading('predict');
+      toast.info('📊 Running ML price prediction...');
+      
+      const result = await get('/ml/predict?symbol=BTC-ZAR&platform=luno');
+      
+      const message = `📊 Price Prediction (BTC-ZAR)\n\n` +
+        `💰 Current: R${result.current_price || 'N/A'}\n` +
+        `📈 Predicted (1h): R${result.prediction_1h || 'N/A'}\n` +
+        `📈 Predicted (24h): R${result.prediction_24h || 'N/A'}\n` +
+        `🎯 Confidence: ${result.confidence || 'N/A'}%\n` +
+        `⏱️ Generated: ${new Date().toLocaleTimeString()}\n\n` +
+        `⚠️ This is not financial advice. Use for reference only.`;
+      
+      setChatMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: message 
+      }]);
+      
+      toast.success('✅ Prediction complete!');
+    } catch (err) {
+      const errorMsg = err.message || 'Prediction failed';
+      if (errorMsg.includes('not configured')) {
+        toast.error('ML prediction not configured.');
+      } else {
+        toast.error(`❌ ${errorMsg}`);
+      }
+      setChatMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: `❌ Prediction failed: ${errorMsg}` 
+      }]);
+    } finally {
+      setAiTaskLoading(null);
+    }
+  };
+
+  const handleReinvestProfits = async () => {
+    if (!window.confirm('⚠️ This will automatically reinvest all profits. Continue?')) {
+      return;
+    }
+    
+    try {
+      setAiTaskLoading('reinvest');
+      toast.info('💰 Reinvesting profits...');
+      
+      const result = await post('/profits/reinvest', {});
+      
+      const message = `💰 Profit Reinvestment Complete!\n\n` +
+        `💵 Amount Reinvested: R${result.amount || 0}\n` +
+        `🤖 Bots Updated: ${result.bots_updated || 0}\n` +
+        `📊 New Total Capital: R${result.new_total_capital || 0}\n` +
+        `⏱️ Completed: ${new Date().toLocaleTimeString()}`;
+      
+      setChatMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: message 
+      }]);
+      
+      loadMetrics();
+      loadBalances();
+      toast.success('✅ Profits reinvested!');
+    } catch (err) {
+      const errorMsg = err.message || 'Reinvestment failed';
+      toast.error(`❌ ${errorMsg}`);
+      setChatMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: `❌ Reinvestment failed: ${errorMsg}` 
+      }]);
+    } finally {
+      setAiTaskLoading(null);
+    }
+  };
+
   const handleEmailAllUsers = async () => {
     const subject = window.prompt('📧 Email Subject:');
     if (!subject) return;
@@ -1330,11 +1608,14 @@ export default function Dashboard() {
     if (!window.confirm(`Send to ALL users?\n\nSubject: ${subject}`)) return;
     
     try {
-      const res = await axios.post(`${API}/admin/email-all-users`, { subject, message }, axiosConfig);
-      showNotification(`✅ Sent to ${res.data.sent} users (${res.data.failed} failed)`, 'success');
+      setAiTaskLoading('email');
+      const result = await post('/admin/email/broadcast', { subject, message });
+      toast.success(`✅ Sent to ${result.sent || 0} users (${result.failed || 0} failed)`);
     } catch (err) {
-      const errorMsg = err.response?.data?.detail || 'Failed to send emails';
-      showNotification(`❌ ${errorMsg}`, 'error');
+      const errorMsg = err.message || 'Failed to send emails';
+      toast.error(`❌ ${errorMsg}`);
+    } finally {
+      setAiTaskLoading(null);
     }
   };
 
@@ -1447,71 +1728,35 @@ export default function Dashboard() {
             </button>
             
             <button 
-              onClick={async () => {
-                try {
-                  showNotification('🧬 Evolving bots...', 'info');
-                  const res = await axios.post(`${API}/bots/evolve`, {}, axiosConfig);
-                  const msg = `🧬 Evolution Complete!\n\nEvolved ${res.data.evolved} bots (Generation ${res.data.generation})\n\nNew bots created with optimized DNA from top performers.`;
-                  setChatMessages(prev => [...prev, { role: 'assistant', content: msg }]);
-                  showNotification(`✅ Evolved ${res.data.evolved} bots!`, 'success');
-                } catch (err) {
-                  const errorMsg = err.response?.data?.detail || 'Evolution failed';
-                  setChatMessages(prev => [...prev, { role: 'assistant', content: `❌ Evolution failed: ${errorMsg}` }]);
-                  showNotification(errorMsg, 'error');
-                }
-              }}
-              style={{padding: '12px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem'}}
+              onClick={handleEvolveBots}
+              disabled={aiTaskLoading === 'evolve'}
+              style={{padding: '12px', background: aiTaskLoading === 'evolve' ? '#666' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', borderRadius: '6px', cursor: aiTaskLoading === 'evolve' ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.9rem', opacity: aiTaskLoading === 'evolve' ? 0.7 : 1}}
             >
-              🧬 Evolve Bots
+              {aiTaskLoading === 'evolve' ? '⏳ Evolving...' : '🧬 Evolve Bots'}
             </button>
             
             <button 
-              onClick={async () => {
-                try {
-                  showNotification('💡 Generating insights...', 'info');
-                  const res = await axios.get(`${API}/insights/daily`, axiosConfig);
-                  const msg = `💡 AI Insights Report\n\n${res.data.insights}\n\nRecommendations:\n${res.data.recommendations.map((r, i) => `${i+1}. ${r}`).join('\n')}`;
-                  setChatMessages(prev => [...prev, { role: 'assistant', content: msg }]);
-                  showNotification('✅ Insights generated!', 'success');
-                } catch (err) {
-                  showNotification('Insights failed', 'error');
-                }
-              }}
-              style={{padding: '12px', background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem'}}
+              onClick={handleGetInsights}
+              disabled={aiTaskLoading === 'insights'}
+              style={{padding: '12px', background: aiTaskLoading === 'insights' ? '#666' : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', color: 'white', border: 'none', borderRadius: '6px', cursor: aiTaskLoading === 'insights' ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.9rem', opacity: aiTaskLoading === 'insights' ? 0.7 : 1}}
             >
-              💡 AI Insights
+              {aiTaskLoading === 'insights' ? '⏳ Generating...' : '💡 AI Insights'}
             </button>
             
             <button 
-              onClick={async () => {
-                try {
-                  const res = await axios.get(`${API}/ml/predict/BTC-ZAR?timeframe=1h`, axiosConfig);
-                  const msg = `🔮 ML Price Prediction\n\nPair: BTC/ZAR\nDirection: ${res.data.direction.toUpperCase()}\nConfidence: ${(res.data.confidence*100).toFixed(1)}%\nTimeframe: 1 hour\n\nPredicted Change: ${res.data.predicted_change > 0 ? '+' : ''}${res.data.predicted_change.toFixed(2)}%`;
-                  setChatMessages(prev => [...prev, { role: 'assistant', content: msg }]);
-                  showNotification(`📈 BTC: ${res.data.direction} (${(res.data.confidence*100).toFixed(0)}%)`, 'info');
-                } catch (err) {
-                  showNotification('Prediction failed', 'error');
-                }
-              }}
-              style={{padding: '12px', background: 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem'}}
+              onClick={handlePredictPrice}
+              disabled={aiTaskLoading === 'predict'}
+              style={{padding: '12px', background: aiTaskLoading === 'predict' ? '#666' : 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)', color: 'white', border: 'none', borderRadius: '6px', cursor: aiTaskLoading === 'predict' ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.9rem', opacity: aiTaskLoading === 'predict' ? 0.7 : 1}}
             >
-              🔮 ML Predict
+              {aiTaskLoading === 'predict' ? '⏳ Predicting...' : '🔮 ML Predict'}
             </button>
             
             <button 
-              onClick={async () => {
-                try {
-                  const res = await axios.post(`${API}/autonomous/reinvest-profits`, {}, axiosConfig);
-                  const msg = `💰 Profit Reinvestment\n\nReinvested: R${res.data.reinvested.toFixed(2)}\nBots Funded: ${res.data.bots_funded}\n\n${res.data.message}`;
-                  setChatMessages(prev => [...prev, { role: 'assistant', content: msg }]);
-                  showNotification(`✅ Reinvested R${res.data.reinvested.toFixed(2)}`, 'success');
-                } catch (err) {
-                  showNotification('Reinvestment failed', 'error');
-                }
-              }}
-              style={{padding: '12px', background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem'}}
+              onClick={handleReinvestProfits}
+              disabled={aiTaskLoading === 'reinvest'}
+              style={{padding: '12px', background: aiTaskLoading === 'reinvest' ? '#666' : 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)', color: 'white', border: 'none', borderRadius: '6px', cursor: aiTaskLoading === 'reinvest' ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.9rem', opacity: aiTaskLoading === 'reinvest' ? 0.7 : 1}}
             >
-              💰 Reinvest Profits
+              {aiTaskLoading === 'reinvest' ? '⏳ Reinvesting...' : '💰 Reinvest Profits'}
             </button>
           </div>
         </div>
