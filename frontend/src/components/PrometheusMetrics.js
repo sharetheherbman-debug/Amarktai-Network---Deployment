@@ -1,26 +1,29 @@
 import { useState, useEffect } from 'react';
+import { useRealtimeEvent, useLastUpdate } from '../hooks/useRealtime';
+import { get } from '../lib/apiClient';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
 import { Line } from 'react-chartjs-2';
-import axios from 'axios';
 import './PrometheusMetrics.css';
 
 /**
  * PrometheusMetrics Component
  * 
- * Displays Golden Signals from Prometheus metrics
+ * Displays Golden Signals from Prometheus metrics and system health
  * - Latency: Tick-to-trade execution time
  * - Traffic: Request rate and throughput
  * - Errors: Error rate and types
  * - Saturation: System resource usage
+ * Integrates with unified real-time system for live updates
  */
 export default function PrometheusMetrics() {
   const [metrics, setMetrics] = useState(null);
   const [parsedMetrics, setParsedMetrics] = useState(null);
+  const [systemHealth, setSystemHealth] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [autoRefresh, setAutoRefresh] = useState(true);
   const [selectedMetric, setSelectedMetric] = useState('latency');
+  const lastUpdate = useLastUpdate('system_health');
 
   // Parse Prometheus text format
   const parsePrometheusMetrics = (text) => {
@@ -117,40 +120,50 @@ export default function PrometheusMetrics() {
     return parsed;
   };
 
-  // Fetch metrics from Prometheus endpoint
+  // Fetch metrics from Prometheus endpoint and system health
   const fetchMetrics = async () => {
     try {
-      const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000';
-      
-      const response = await axios.get(`${API_BASE}/api/metrics`, {
+      // Fetch Prometheus metrics
+      const metricsResponse = await get('/metrics', {
         headers: { 'Accept': 'text/plain' }
       });
 
-      setMetrics(response.data);
-      const parsed = parsePrometheusMetrics(response.data);
+      setMetrics(metricsResponse);
+      const parsed = parsePrometheusMetrics(metricsResponse);
       setParsedMetrics(parsed);
+      
+      // Fetch system health
+      try {
+        const healthData = await get('/system/health');
+        setSystemHealth(healthData);
+      } catch (healthErr) {
+        console.error('Error fetching system health:', healthErr);
+      }
+      
       setError(null);
     } catch (err) {
       console.error('Error fetching metrics:', err);
-      setError(err.response?.data?.detail || 'Failed to fetch metrics');
+      setError(err.message || 'Failed to fetch metrics');
     } finally {
       setLoading(false);
     }
   };
 
-  // Initial fetch and auto-refresh
+  // Initial fetch
   useEffect(() => {
     fetchMetrics();
-    
-    let interval;
-    if (autoRefresh) {
-      interval = setInterval(fetchMetrics, 10000); // Refresh every 10 seconds
-    }
-    
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [autoRefresh]);
+  }, []);
+
+  // Subscribe to real-time system health updates
+  useRealtimeEvent('system_health', (data) => {
+    setSystemHealth(data);
+  }, []);
+
+  // Polling fallback (every 10 seconds)
+  useEffect(() => {
+    const interval = setInterval(fetchMetrics, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Get status color based on value
   const getStatusColor = (value, type) => {
