@@ -28,6 +28,10 @@ async def unlock_admin_panel(
     """
     Verify admin password and generate unlock token
     Case-insensitive and whitespace-tolerant password check
+    
+    SECURITY: Requires ADMIN_PASSWORD environment variable to be set.
+    Token is returned but not stored (stateless approach).
+    In production, implement Redis-based token validation for added security.
     """
     try:
         # Get password from request
@@ -36,8 +40,17 @@ async def unlock_admin_panel(
         if not password:
             raise HTTPException(status_code=400, detail="Password is required")
         
-        # Get admin password from environment with fallback
-        admin_password = os.getenv('ADMIN_PASSWORD', 'ashmor12@').strip()
+        # Get admin password from environment (REQUIRED - no fallback)
+        admin_password = os.getenv('ADMIN_PASSWORD', '')
+        
+        if not admin_password:
+            logger.error("ADMIN_PASSWORD environment variable not set")
+            raise HTTPException(
+                status_code=500, 
+                detail="Server configuration error: Admin password not configured"
+            )
+        
+        admin_password = admin_password.strip()
         
         # Case-insensitive and whitespace-tolerant comparison
         if password.lower() != admin_password.lower():
@@ -51,10 +64,9 @@ async def unlock_admin_panel(
             raise HTTPException(status_code=403, detail="Invalid admin password")
         
         # Generate unlock token (valid for 1 hour)
+        # NOTE: Token is not stored server-side (stateless approach)
+        # For production, consider implementing Redis-based token storage
         unlock_token = secrets.token_urlsafe(32)
-        
-        # Store token in session or cache (simplified: return it)
-        # In production, you'd store this in Redis with expiration
         
         # Log successful unlock
         await audit_logger.log_event(

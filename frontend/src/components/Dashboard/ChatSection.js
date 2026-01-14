@@ -4,7 +4,8 @@ import { toast } from 'sonner';
 import { API_BASE } from '../../lib/api.js';
 
 const API = API_BASE;
-const ADMIN_PASSWORD = 'ashmor12@';
+// Admin password is verified on backend only - no hardcoded password in frontend
+// Backend validates against ADMIN_PASSWORD environment variable
 
 export const ChatSection = ({ 
   chatMessages, 
@@ -38,8 +39,11 @@ export const ChatSection = ({
 
     // Handle admin password - FIX: Use originalInput instead of cleared chatInput
     if (awaitingPassword) {
-      // Case-insensitive and whitespace-tolerant password check
-      if (originalInput.trim().toLowerCase() === ADMIN_PASSWORD.toLowerCase()) {
+      // Send password to backend for validation (no client-side password check)
+      try {
+        // Backend validates password against ADMIN_PASSWORD environment variable
+        await axios.post(`${API}/admin/unlock`, { password: originalInput }, axiosConfig);
+        
         if (adminAction === 'show') {
           setShowAdmin(true);
           sessionStorage.setItem('adminPanelVisible', 'true');
@@ -57,7 +61,7 @@ export const ChatSection = ({
         }
         setAwaitingPassword(false);
         setAdminAction(null);
-      } else {
+      } catch (error) {
         setChatMessages(prev => [...prev, { 
           role: 'assistant', 
           content: '❌ Invalid admin password. Please try again.' 

@@ -38,7 +38,8 @@ ChartJS.register(
 );
 
 const API = API_BASE;
-const ADMIN_PASSWORD = 'ashmor12@';
+// Admin password is verified on backend only - no hardcoded password in frontend
+// Backend validates against ADMIN_PASSWORD environment variable
 const APP_VERSION = '1.0.6'; // Increment this to force cache clear
 
 export default function Dashboard() {
