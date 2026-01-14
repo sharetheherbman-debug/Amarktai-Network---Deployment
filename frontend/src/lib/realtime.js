@@ -49,7 +49,9 @@ class RealtimeClient {
 
     try {
       const url = `${wsUrl()}&token=${this.token}`;
-      console.log('🔌 Connecting to WebSocket:', url.replace(this.token, '***'));
+      // Mask token in logs - replace query parameter value
+      const maskedUrl = url.replace(/token=[^&]*/, 'token=***');
+      console.log('🔌 Connecting to WebSocket:', maskedUrl);
       
       this.ws = new WebSocket(url);
       

@@ -11,42 +11,57 @@
 
 import { API_BASE } from './api';
 
-// Platform configuration
+// Platform configuration with defaults
 export const PLATFORMS = {
   luno: {
     id: 'luno',
     name: 'Luno',
     displayName: 'Luno',
     icon: '🇿🇦',
-    color: '#3861FB'
+    color: '#3861FB',
+    bot_limit: 10,
+    supports_paper: true,
+    supports_live: true
   },
   binance: {
     id: 'binance',
     name: 'Binance',
     displayName: 'Binance',
     icon: '🟡',
-    color: '#F3BA2F'
+    color: '#F3BA2F',
+    bot_limit: 20,
+    supports_paper: true,
+    supports_live: true
   },
   kucoin: {
     id: 'kucoin',
     name: 'KuCoin',
     displayName: 'KuCoin',
     icon: '🟢',
-    color: '#23AF91'
+    color: '#23AF91',
+    bot_limit: 15,
+    supports_paper: true,
+    supports_live: true
   },
   kraken: {
     id: 'kraken',
     name: 'Kraken',
     displayName: 'Kraken',
     icon: '🟣',
-    color: '#5741D9'
+    color: '#5741D9',
+    bot_limit: 15,
+    supports_paper: true,
+    supports_live: true
   },
   valr: {
     id: 'valr',
     name: 'VALR',
     displayName: 'VALR',
     icon: '🔵',
-    color: '#00B8D4'
+    color: '#00B8D4',
+    bot_limit: 10,
+    supports_paper: true,
+    supports_live: true
   }
 };
 
@@ -81,13 +96,10 @@ export async function fetchPlatforms(token) {
   } catch (error) {
     console.error('Error fetching platforms:', error);
     
-    // Return default platform list if API fails
+    // Return default platform list with config from PLATFORMS constant
     return PLATFORM_LIST.map(id => ({
       ...PLATFORMS[id],
-      enabled: true,
-      bot_limit: 10,
-      supports_paper: true,
-      supports_live: false
+      enabled: true
     }));
   }
 }

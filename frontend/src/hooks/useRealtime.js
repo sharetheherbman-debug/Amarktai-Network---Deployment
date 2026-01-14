@@ -54,6 +54,8 @@ export function useRealtimeConnection(token) {
  * @param {string} eventType - Event type to subscribe to (trades, bots, balances, etc.)
  * @param {function} callback - Callback function to handle events
  * @param {array} deps - Dependencies array (like useEffect)
+ * 
+ * Note: Callback should be memoized with useCallback to avoid unnecessary re-subscriptions
  */
 export function useRealtimeEvent(eventType, callback, deps = []) {
   useEffect(() => {
