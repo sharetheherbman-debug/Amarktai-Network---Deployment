@@ -65,8 +65,9 @@
   },
   "scripts": {
     "start": "craco start",
-    "build": "craco build",
-    "test": "craco test"
+    "build": "npm run check:assets && craco build",
+    "test": "craco test",
+    "check:assets": "node ../scripts/check-assets.js"
   },
   "browserslist": {
     "production": [

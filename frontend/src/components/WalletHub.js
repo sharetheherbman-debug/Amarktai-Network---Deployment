@@ -1,45 +1,54 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { API_BASE } from '../lib/api.js';
+import { useRealtimeEvent, useLastUpdate } from '../hooks/useRealtime';
+import { get, post } from '../lib/apiClient';
 
-const WalletHub = () => {
+const WalletHub = ({ platformFilter = 'all' }) => {
   const [balances, setBalances] = useState(null);
   const [requirements, setRequirements] = useState(null);
   const [fundingPlans, setFundingPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  const backendUrl = process.env.REACT_APP_API_BASE || '';
+  const lastUpdate = useLastUpdate('wallet');
 
   useEffect(() => {
     loadWalletData();
-    // Refresh every 30 seconds
-    const interval = setInterval(loadWalletData, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  }, [platformFilter]);
 
   const loadWalletData = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const headers = { Authorization: `Bearer ${token}` };
-
       // Load balances, requirements, and funding plans in parallel
-      const [balancesRes, requirementsRes, plansRes] = await Promise.all([
-        axios.get(`${backendUrl}/api/wallet/balances`, { headers }),
-        axios.get(`${backendUrl}/api/wallet/requirements`, { headers }),
-        axios.get(`${backendUrl}/api/wallet/funding-plans?status=awaiting_deposit`, { headers })
+      const [balancesData, requirementsData, plansData] = await Promise.all([
+        get('/wallet/balances'),
+        get('/wallet/requirements'),
+        get('/wallet/funding-plans?status=awaiting_deposit')
       ]);
 
-      setBalances(balancesRes.data);
-      setRequirements(requirementsRes.data);
-      setFundingPlans(plansRes.data.plans || []);
+      setBalances(balancesData);
+      setRequirements(requirementsData);
+      setFundingPlans(plansData.plans || []);
       setLoading(false);
+      setError(null);
     } catch (err) {
       console.error('Wallet data load error:', err);
-      setError(err.response?.data?.detail || 'Failed to load wallet data');
+      setError(err.message || 'Failed to load wallet data');
       setLoading(false);
     }
   };
+
+  // Subscribe to real-time wallet updates
+  useRealtimeEvent('wallet', (data) => {
+    if (data.event === 'balance_update') {
+      loadWalletData();
+    }
+  }, []);
+
+  // Subscribe to real-time balance updates
+  useRealtimeEvent('balances', (data) => {
+    setBalances(prevBalances => ({
+      ...prevBalances,
+      ...data
+    }));
+  }, []);
 
   const getHealthColor = (health) => {
     switch (health) {
@@ -63,15 +72,10 @@ const WalletHub = () => {
 
   const cancelFundingPlan = async (planId) => {
     try {
-      const token = localStorage.getItem('token');
-      await axios.post(
-        `${backendUrl}/api/wallet/funding-plans/${planId}/cancel`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await post(`/wallet/funding-plans/${planId}/cancel`, {});
       loadWalletData();
     } catch (err) {
-      alert('Failed to cancel funding plan: ' + (err.response?.data?.detail || err.message));
+      alert('Failed to cancel funding plan: ' + (err.message || 'Unknown error'));
     }
   };
 

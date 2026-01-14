@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { API_BASE } from '../lib/api';
+import { fetchPlatforms, getPlatformIcon } from '../lib/platforms';
 
 /**
  * Platform Selector Component
@@ -13,30 +12,17 @@ export default function PlatformSelector({ value, onChange, includeAll = true })
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchPlatforms();
+    loadPlatforms();
   }, []);
 
-  const fetchPlatforms = async () => {
+  const loadPlatforms = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_BASE}/system/platforms`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      if (response.data && response.data.platforms) {
-        setPlatforms(response.data.platforms);
-      }
+      const platformsData = await fetchPlatforms(token);
+      setPlatforms(platformsData);
       setLoading(false);
     } catch (error) {
-      console.error('Failed to fetch platforms:', error);
-      // Fallback to default platforms if API fails
-      setPlatforms([
-        { name: 'luno', display_name: 'Luno', enabled: true },
-        { name: 'binance', display_name: 'Binance', enabled: true },
-        { name: 'kucoin', display_name: 'KuCoin', enabled: true },
-        { name: 'kraken', display_name: 'Kraken', enabled: true },
-        { name: 'valr', display_name: 'VALR', enabled: true }
-      ]);
+      console.error('Failed to load platforms:', error);
       setLoading(false);
     }
   };
@@ -87,22 +73,10 @@ export default function PlatformSelector({ value, onChange, includeAll = true })
         </option>
       )}
       {enabledPlatforms.map(platform => (
-        <option key={platform.name} value={platform.name}>
-          {getPlatformIcon(platform.name)} {platform.display_name}
+        <option key={platform.id || platform.name} value={platform.id || platform.name}>
+          {getPlatformIcon(platform.id || platform.name)} {platform.displayName || platform.display_name}
         </option>
       ))}
     </select>
   );
-}
-
-// Platform icons/emojis for better UX
-function getPlatformIcon(platform) {
-  const icons = {
-    luno: '🌙',
-    binance: '🔶',
-    kucoin: '🔷',
-    kraken: '🐙',
-    valr: '💎'
-  };
-  return icons[platform] || '📊';
 }

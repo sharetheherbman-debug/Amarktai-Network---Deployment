@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useRealtimeEvent, useLastUpdate } from '../hooks/useRealtime';
+import { get } from '../lib/apiClient';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
 import { Bar } from 'react-chartjs-2';
@@ -11,7 +13,6 @@ import {
   Tooltip,
   Legend
 } from 'chart.js';
-import axios from 'axios';
 import './WhaleFlowHeatmap.css';
 
 ChartJS.register(
@@ -28,7 +29,7 @@ ChartJS.register(
  * 
  * Visualizes on-chain whale activity across exchanges
  * Shows inflows (positive) and outflows (negative) for BTC, ETH, and stablecoins
- * Color-coded heatmap with real-time updates
+ * Color-coded heatmap with real-time updates via WebSocket and polling fallback
  */
 export default function WhaleFlowHeatmap() {
   const [whaleData, setWhaleData] = useState(null);
@@ -36,7 +37,7 @@ export default function WhaleFlowHeatmap() {
   const [error, setError] = useState(null);
   const [selectedCoin, setSelectedCoin] = useState('BTC');
   const [timeRange, setTimeRange] = useState('1h'); // 1h, 6h, 24h
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const lastUpdate = useLastUpdate('whale');
 
   // Format amount based on coin type
   const formatAmount = (amount, coin) => {
@@ -49,47 +50,47 @@ export default function WhaleFlowHeatmap() {
   // Fetch whale flow data
   const fetchWhaleData = async () => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setError('Not authenticated');
-        return;
-      }
-
-      const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000';
+      const params = new URLSearchParams({ time_range: timeRange });
+      const data = await get(`/advanced/whale/summary?${params}`);
       
-      // Fetch whale summary
-      const response = await axios.get(`${API_BASE}/api/advanced/whale/summary`, {
-        headers: { Authorization: `Bearer ${token}` },
-        params: { time_range: timeRange }
-      });
-
-      if (response.data.status === 'success') {
-        setWhaleData(response.data.data);
+      if (data.status === 'success') {
+        setWhaleData(data.data);
         setError(null);
+      } else if (data.message && data.message.includes('not configured')) {
+        setError('Whale data not configured. Please configure whale tracking service.');
       } else {
-        setError(response.data.message || 'Failed to fetch whale data');
+        setError(data.message || 'Failed to fetch whale data');
       }
     } catch (err) {
       console.error('Error fetching whale data:', err);
-      setError(err.response?.data?.detail || 'Failed to fetch whale data');
+      if (err.message && err.message.includes('not configured')) {
+        setError('Whale data not configured. Please configure whale tracking service.');
+      } else {
+        setError(err.message || 'Failed to fetch whale data');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Initial fetch and auto-refresh
+  // Initial fetch
   useEffect(() => {
     fetchWhaleData();
-    
-    let interval;
-    if (autoRefresh) {
-      interval = setInterval(fetchWhaleData, 60000); // Refresh every minute
-    }
-    
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [timeRange, autoRefresh]);
+  }, [timeRange]);
+
+  // Subscribe to real-time whale updates
+  useRealtimeEvent('whale', (data) => {
+    setWhaleData(prevData => ({
+      ...prevData,
+      ...data
+    }));
+  }, []);
+
+  // Polling fallback (every 60s)
+  useEffect(() => {
+    const interval = setInterval(fetchWhaleData, 60000);
+    return () => clearInterval(interval);
+  }, [timeRange]);
 
   // Prepare chart data
   const getChartData = () => {
@@ -246,9 +247,14 @@ export default function WhaleFlowHeatmap() {
             >
               🔄 Refresh
             </button>
-            <Badge variant={autoRefresh ? 'default' : 'outline'}>
-              {autoRefresh ? '🟢 Auto' : '⏸️ Manual'}
+            <Badge variant={lastUpdate ? 'default' : 'outline'}>
+              {lastUpdate ? '🟢 Live' : '⏸️ Waiting'}
             </Badge>
+            {lastUpdate && (
+              <span className="text-xs text-muted-foreground ml-2">
+                Updated: {new Date(lastUpdate).toLocaleTimeString()}
+              </span>
+            )}
           </div>
         </div>
 
@@ -289,14 +295,6 @@ export default function WhaleFlowHeatmap() {
               </button>
             ))}
           </div>
-
-          {/* Auto-refresh toggle */}
-          <button
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            className="ml-auto px-3 py-1 text-sm border rounded hover:bg-gray-50"
-          >
-            {autoRefresh ? 'Disable' : 'Enable'} Auto-Refresh
-          </button>
         </div>
 
         {/* Summary Stats */}
