@@ -268,7 +268,7 @@ async def create_transfer(
     from_exchange: str,
     to_exchange: str,
     amount: float,
-    currency: str = "ZAR",
+    currency: str = "ZAR",  # Default ZAR for South African users, configurable per request
     user_id: str = Depends(get_current_user)
 ):
     """
@@ -276,6 +276,15 @@ async def create_transfer(
     
     SAFETY: Validates balances, creates audit trail, monitors limits
     Only transfers between user's own exchange accounts
+    
+    Parameters:
+    - from_exchange: Source exchange (luno, binance, kucoin)
+    - to_exchange: Destination exchange
+    - amount: Transfer amount
+    - currency: Currency code (default: ZAR, also supports: BTC, ETH, USDT)
+    
+    Note: Currency defaults to ZAR for South African market.
+    Set explicitly for international users (e.g., currency="USDT" for Binance/KuCoin)
     """
     try:
         # Validation

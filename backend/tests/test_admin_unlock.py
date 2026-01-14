@@ -47,7 +47,7 @@ async def test_user_token():
     await db.users_collection.insert_one(user_data)
     
     # Create JWT token
-    token = create_access_token(data={"sub": test_user_id})
+    token = create_access_token(data={"user_id": test_user_id})  # Fixed: use user_id not sub
     
     yield token
     
