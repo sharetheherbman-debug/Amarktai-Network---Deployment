@@ -21,6 +21,7 @@ import DecisionTrace from '../components/DecisionTrace';
 import WhaleFlowHeatmap from '../components/WhaleFlowHeatmap';
 import PrometheusMetrics from '../components/PrometheusMetrics';
 import APIKeySettings from '../components/APIKeySettings';
+import PlatformSelector from '../components/PlatformSelector';
 import { API_BASE, wsUrl } from '../lib/api.js';
 
 ChartJS.register(
@@ -674,10 +675,19 @@ export default function Dashboard() {
 
   const loadProfitData = async () => {
     try {
-      const res = await axios.get(`${API}/profits?period=${graphPeriod}`, axiosConfig);
+      const res = await axios.get(`${API}/analytics/profit-history?period=${graphPeriod}`, axiosConfig);
       setProfitData(res.data);
     } catch (err) {
       console.error('Profit data error:', err);
+      // Set empty state on error
+      setProfitData({
+        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        values: [0, 0, 0, 0, 0, 0, 0],
+        total: 0,
+        avg_daily: 0,
+        best_day: 0,
+        growth_rate: 0
+      });
     }
   };
 
@@ -1715,7 +1725,14 @@ export default function Dashboard() {
   const renderBots = () => (
       <section className="section active">
         <div className="card">
-          <h2>Bot Management</h2>
+          <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px'}}>
+            <h2 style={{margin: 0}}>Bot Management</h2>
+            <PlatformSelector 
+              value={platformFilter} 
+              onChange={setPlatformFilter}
+              includeAll={true}
+            />
+          </div>
           <div className="bot-container">
             <div className="bot-left">
               <div className="bot-tabs">
@@ -2999,7 +3016,6 @@ export default function Dashboard() {
               <div style={{fontSize: '0.75rem', color: '#f59e0b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px'}}>Best Day</div>
               <div style={{fontSize: '1.75rem', fontWeight: 700, color: '#f59e0b', marginTop: '6px', display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '4px'}}>
                 R{profitData?.best_day ? profitData.best_day.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '0.00'}
-                <span style={{fontSize: '0.75rem', color: 'var(--muted)'}}>—</span>
               </div>
             </div>
             
