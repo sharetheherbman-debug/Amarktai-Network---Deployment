@@ -26,6 +26,7 @@ import { API_BASE, wsUrl } from '../lib/api.js';
 import { useRealtimeEvent } from '../hooks/useRealtime';
 import { post, get } from '../lib/apiClient';
 import marketDataFallback from '../lib/MarketDataFallback';
+import { getAllExchanges, getActiveExchanges, getExchangeById, FEATURE_FLAGS } from '../config/exchanges';
 
 ChartJS.register(
   CategoryScale,
@@ -2039,7 +2040,11 @@ export default function Dashboard() {
   );
 
   const renderApiSetup = () => {
-    const providers = ['openai', 'luno', 'binance', 'kucoin', 'kraken', 'valr', 'flokx', 'fetchai'];
+    // Build providers list dynamically from exchange config
+    const exchanges = getAllExchanges();
+    const exchangeProviders = exchanges.map(ex => ex.id);
+    const otherProviders = ['openai', 'flokx', 'fetchai'];
+    const providers = [...otherProviders, ...exchangeProviders];
     
     return (
       <section className="section active">
@@ -2052,27 +2057,49 @@ export default function Dashboard() {
             {providers.map(provider => {
               const status = getApiStatus(provider);
               const isExpanded = expandedApis[provider];
+              const exchangeInfo = getExchangeById(provider);
               
               return (
                 <div key={provider} className="api-card">
                   <div className="api-header" onClick={() => toggleApiExpand(provider)}>
-                    <span>{provider.charAt(0).toUpperCase() + provider.slice(1)}</span>
+                    <span>
+                      {exchangeInfo ? `${exchangeInfo.icon} ${exchangeInfo.displayName}` : provider.charAt(0).toUpperCase() + provider.slice(1)}
+                      {exchangeInfo?.comingSoon && (
+                        <span style={{
+                          marginLeft: '8px',
+                          fontSize: '0.7rem',
+                          padding: '2px 6px',
+                          background: 'rgba(245, 158, 11, 0.2)',
+                          color: '#f59e0b',
+                          borderRadius: '4px',
+                          fontWeight: '600'
+                        }}>
+                          Coming Soon
+                        </span>
+                      )}
+                    </span>
                     <div style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
                       <span className={`status-badge ${status.badge}`}>{status.text}</span>
                       <div className={`status-dot ${status.dot}`}></div>
                     </div>
                   </div>
                   <div className={`api-form ${isExpanded ? 'active' : ''}`} id={`form-${provider}`}>
+                    {exchangeInfo?.comingSoon && (
+                      <div style={{
+                        padding: '12px',
+                        background: 'rgba(245, 158, 11, 0.1)',
+                        borderRadius: '6px',
+                        marginBottom: '12px',
+                        color: '#f59e0b',
+                        fontSize: '0.85rem'
+                      }}>
+                        ⚠️ {exchangeInfo.displayName} API keys are currently not supported — coming soon! Backend integration in progress.
+                      </div>
+                    )}
                     {provider === 'openai' && (
                       <input name="api_key" placeholder="API Key (sk-...)" type="password" />
                     )}
-                    {provider === 'luno' && (
-                      <>
-                        <input name="api_key" placeholder="Key ID" type="text" />
-                        <input name="api_secret" placeholder="Secret" type="password" />
-                      </>
-                    )}
-                    {provider === 'binance' && (
+                    {(provider === 'luno' || provider === 'binance' || provider === 'valr' || provider === 'kraken' || provider === 'ovex') && (
                       <>
                         <input name="api_key" placeholder="API Key" type="text" />
                         <input name="api_secret" placeholder="Secret" type="password" />
@@ -2091,21 +2118,21 @@ export default function Dashboard() {
                     {provider === 'fetchai' && (
                       <input name="api_key" placeholder="API Key" type="password" />
                     )}
-                    {provider === 'kraken' && (
-                      <>
-                        <input name="api_key" placeholder="API Key" type="password" />
-                        <input name="api_secret" placeholder="Private Key" type="password" />
-                      </>
-                    )}
-                    {provider === 'valr' && (
-                      <>
-                        <input name="api_key" placeholder="API Key" type="password" />
-                        <input name="api_secret" placeholder="API Secret" type="password" />
-                      </>
-                    )}
                     <div className="buttons">
-                      <button onClick={() => handleSaveApiKey(provider)}>Save</button>
-                      <button onClick={() => handleTestApiKey(provider)}>Test</button>
+                      <button 
+                        onClick={() => handleSaveApiKey(provider)}
+                        disabled={exchangeInfo?.comingSoon}
+                        style={{ opacity: exchangeInfo?.comingSoon ? 0.5 : 1 }}
+                      >
+                        Save
+                      </button>
+                      <button 
+                        onClick={() => handleTestApiKey(provider)}
+                        disabled={exchangeInfo?.comingSoon}
+                        style={{ opacity: exchangeInfo?.comingSoon ? 0.5 : 1 }}
+                      >
+                        Test
+                      </button>
                       <button className="danger" onClick={() => handleDeleteApiKey(provider)}>Remove</button>
                     </div>
                   </div>
@@ -2362,12 +2389,20 @@ export default function Dashboard() {
                       <div className="form-group">
                         <label htmlFor="bot-exchange">Exchange Platform</label>
                         <select id="bot-exchange" name="bot-exchange" defaultValue="luno">
-                          <option value="luno">🇿🇦 Luno (ZAR)</option>
-                          <option value="binance">🌍 Binance (USDT)</option>
-                          <option value="kucoin">🌐 KuCoin (USDT)</option>
+                          {getAllExchanges().map(exchange => (
+                            <option 
+                              key={exchange.id} 
+                              value={exchange.id}
+                              disabled={exchange.comingSoon}
+                            >
+                              {exchange.icon} {exchange.displayName}{exchange.comingSoon ? ' (Coming Soon)' : ''}
+                            </option>
+                          ))}
                         </select>
                         <small style={{color: 'var(--muted)', fontSize: '0.75rem', display: 'block', marginTop: '4px'}}>
-                          ⚠️ Only Luno, Binance, and KuCoin are currently supported
+                          {FEATURE_FLAGS.ENABLE_OVEX 
+                            ? '✅ All exchanges available' 
+                            : '⚠️ Luno, Binance, KuCoin, Kraken, VALR supported'}
                         </small>
                       </div>
                       <div className="form-group">
