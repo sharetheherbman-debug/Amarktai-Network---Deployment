@@ -18,14 +18,14 @@ class BotValidator:
     """Validates bot creation parameters"""
     
     def __init__(self):
-        self.supported_exchanges = ['luno', 'binance', 'kucoin', 'kraken', 'valr']
+        self.supported_exchanges = ['luno', 'binance', 'kucoin', 'ovex', 'valr']
         self.min_capital = 100  # R100 minimum
         self.max_capital = 100000  # R100,000 maximum
         self.max_bots_per_exchange = {
-            'luno': 10,
-            'binance': 15,
-            'kucoin': 15,
-            'kraken': 10,
+            'luno': 5,
+            'binance': 10,
+            'kucoin': 10,
+            'ovex': 10,
             'valr': 10
         }
         self.max_bots_total = 45

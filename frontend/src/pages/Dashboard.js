@@ -27,6 +27,7 @@ import { useRealtimeEvent } from '../hooks/useRealtime';
 import { post, get } from '../lib/apiClient';
 import marketDataFallback from '../lib/MarketDataFallback';
 import { getAllExchanges, getActiveExchanges, getExchangeById, FEATURE_FLAGS } from '../config/exchanges';
+import { SUPPORTED_PLATFORMS, PLATFORM_CONFIG, getPlatformIcon, getPlatformDisplayName } from '../constants/platforms';
 
 ChartJS.register(
   CategoryScale,
@@ -2455,11 +2456,6 @@ export default function Dashboard() {
           <div className="bot-right">
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px'}}>
               <h3>Running Bots ({bots.length})</h3>
-              <PlatformSelector 
-                value={platformFilter} 
-                onChange={setPlatformFilter}
-                includeAll={true}
-              />
             </div>
             
             <div className="bot-list">
@@ -3155,7 +3151,7 @@ export default function Dashboard() {
       luno: recentTrades.filter(t => t.exchange?.toLowerCase() === 'luno'),
       binance: recentTrades.filter(t => t.exchange?.toLowerCase() === 'binance'),
       kucoin: recentTrades.filter(t => t.exchange?.toLowerCase() === 'kucoin'),
-      kraken: recentTrades.filter(t => t.exchange?.toLowerCase() === 'kraken'),
+      ovex: recentTrades.filter(t => t.exchange?.toLowerCase() === 'ovex'),
       valr: recentTrades.filter(t => t.exchange?.toLowerCase() === 'valr')
     };
 
@@ -3171,21 +3167,20 @@ export default function Dashboard() {
       };
     };
     
-    // Define all 5 platforms
-    const allPlatforms = [
-      { id: 'luno', name: 'Luno', icon: '🇿🇦', supported: true },
-      { id: 'binance', name: 'Binance', icon: '🟡', supported: true },
-      { id: 'kucoin', name: 'KuCoin', icon: '🟢', supported: true },
-      { id: 'kraken', name: 'Kraken', icon: '🟣', supported: false },
-      { id: 'valr', name: 'VALR', icon: '🔵', supported: false }
-    ];
+    // Use platform constants - single source of truth
+    const allPlatforms = SUPPORTED_PLATFORMS.map(id => ({
+      id: id,
+      name: getPlatformDisplayName(id),
+      icon: getPlatformIcon(id),
+      supported: PLATFORM_CONFIG[id].enabled
+    }));
 
     return (
       <section className="section active">
         <div className="card">
           <h2>📊 Live Trades - Platform Comparison</h2>
           <p style={{color: 'var(--muted)', marginBottom: '20px', fontSize: '0.9rem'}}>
-            Real-time trade feed showing all 5 platforms (3 active: Luno, Binance, KuCoin)
+            Real-time trade feed showing all 5 supported platforms (Luno, Binance, KuCoin, OVEX, VALR)
           </p>
           
           {/* Platform Comparison Cards */}
@@ -3193,16 +3188,15 @@ export default function Dashboard() {
             {allPlatforms.map(platform => {
               const stats = getExchangeStats(tradesByExchange[platform.id]);
               const hasData = stats.count > 0;
-              const isSupported = platform.supported;
               
               return (
                 <div key={platform.id} style={{
-                  background: isSupported ? 'var(--glass)' : 'rgba(50, 50, 50, 0.3)',
+                  background: 'var(--glass)',
                   border: '1px solid var(--line)',
                   borderRadius: '12px',
                   padding: '20px',
                   transition: 'all 0.3s',
-                  opacity: isSupported ? 1 : 0.6
+                  opacity: 1
                 }}>
                   <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px'}}>
                     <h3 style={{margin: 0, textTransform: 'uppercase', fontSize: '1.1rem', color: 'var(--accent)'}}>
@@ -3210,47 +3204,36 @@ export default function Dashboard() {
                     </h3>
                     <span style={{
                       padding: '4px 12px',
-                      background: !isSupported ? 'rgba(245, 158, 11, 0.2)' : hasData ? 'rgba(16, 185, 129, 0.2)' : 'rgba(139, 139, 139, 0.2)',
-                      color: !isSupported ? '#f59e0b' : hasData ? '#10b981' : '#8b8b8b',
+                      background: hasData ? 'rgba(16, 185, 129, 0.2)' : 'rgba(139, 139, 139, 0.2)',
+                      color: hasData ? '#10b981' : '#8b8b8b',
                       borderRadius: '12px',
                       fontSize: '0.75rem',
                       fontWeight: 600
                     }}>
-                      {!isSupported ? 'COMING SOON' : hasData ? 'ACTIVE' : 'NO DATA'}
+                      {hasData ? 'ACTIVE' : 'NO DATA'}
                     </span>
                   </div>
                   
-                  {isSupported ? (
-                    <>
-                      <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px'}}>
-                        <div style={{textAlign: 'center'}}>
-                          <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>TRADES</div>
-                          <div style={{fontSize: '1.4rem', fontWeight: 700, color: 'var(--text)'}}>{stats.count}</div>
-                        </div>
-                        <div style={{textAlign: 'center'}}>
-                          <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>WIN RATE</div>
-                          <div style={{fontSize: '1.4rem', fontWeight: 700, color: hasData ? 'var(--success)' : 'var(--muted)'}}>{stats.winRate}%</div>
-                        </div>
-                        <div style={{textAlign: 'center'}}>
-                          <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>PROFIT</div>
-                          <div style={{fontSize: '1.2rem', fontWeight: 700, color: parseFloat(stats.profit) >= 0 ? 'var(--success)' : 'var(--error)'}}>
-                            R{stats.profit}
-                          </div>
-                        </div>
+                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px'}}>
+                    <div style={{textAlign: 'center'}}>
+                      <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>TRADES</div>
+                      <div style={{fontSize: '1.4rem', fontWeight: 700, color: 'var(--text)'}}>{stats.count}</div>
+                    </div>
+                    <div style={{textAlign: 'center'}}>
+                      <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>WIN RATE</div>
+                      <div style={{fontSize: '1.4rem', fontWeight: 700, color: hasData ? 'var(--success)' : 'var(--muted)'}}>{stats.winRate}%</div>
+                    </div>
+                    <div style={{textAlign: 'center'}}>
+                      <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>PROFIT</div>
+                      <div style={{fontSize: '1.2rem', fontWeight: 700, color: parseFloat(stats.profit) >= 0 ? 'var(--success)' : 'var(--error)'}}>
+                        R{stats.profit}
                       </div>
-                      
-                      {!hasData && (
-                        <div style={{marginTop: '12px', padding: '8px', background: 'rgba(139, 139, 139, 0.1)', borderRadius: '6px', textAlign: 'center', fontSize: '0.8rem', color: 'var(--muted)'}}>
-                          No trades yet for this platform
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div style={{marginTop: '12px', padding: '12px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '6px', textAlign: 'center', fontSize: '0.85rem', color: '#f59e0b'}}>
-                      <div style={{marginBottom: '6px', fontWeight: 600}}>🚧 Coming Soon</div>
-                      <div style={{fontSize: '0.75rem', color: 'var(--muted)'}}>
-                        {platform.name} integration in development
-                      </div>
+                    </div>
+                  </div>
+                  
+                  {!hasData && (
+                    <div style={{marginTop: '12px', padding: '8px', background: 'rgba(139, 139, 139, 0.1)', borderRadius: '6px', textAlign: 'center', fontSize: '0.8rem', color: 'var(--muted)'}}>
+                      No trades yet for this platform
                     </div>
                   )}
                 </div>
@@ -4110,7 +4093,7 @@ export default function Dashboard() {
             {/* Metrics - Single nav item that opens section with tabs inside */}
             <a 
               href="#" 
-              className={['metrics', 'flokx', 'decision-trace', 'whale-flow', 'metrics-panel'].includes(activeSection) ? 'active' : ''}
+              className={activeSection === 'metrics' ? 'active' : ''}
               onClick={(e) => { 
                 e.preventDefault(); 
                 showSection('metrics'); // Show metrics section which will have tabs inside
@@ -4186,10 +4169,6 @@ export default function Dashboard() {
         {activeSection === 'countdown' && renderCountdown()}
         {activeSection === 'wallet' && renderWalletHub()}
         {activeSection === 'metrics' && renderMetricsWithTabs()}
-        {activeSection === 'flokx' && renderFlokxAlerts()}
-        {activeSection === 'decision-trace' && renderDecisionTrace()}
-        {activeSection === 'whale-flow' && renderWhaleFlow()}
-        {activeSection === 'metrics-panel' && renderMetrics()}
         {activeSection === 'profile' && renderProfile()}
         {activeSection === 'admin' && showAdmin && renderAdmin()}
       </main>
