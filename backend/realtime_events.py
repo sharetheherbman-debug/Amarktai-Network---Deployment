@@ -156,6 +156,28 @@ class RealTimeEvents:
             "details": details,
             "message": f"🧠 AI Evolution: {action}"
         })
+    
+    @staticmethod
+    async def balance_updated(user_id: str, balance_data: dict):
+        """Broadcast wallet balance updates"""
+        await manager.send_message(user_id, {
+            "type": "balance_updated",
+            "balance": balance_data,
+            "master_wallet": balance_data.get('master_wallet', {}),
+            "exchange_balances": balance_data.get('exchange_balances', {}),
+            "message": "💰 Balance updated"
+        })
+        logger.info(f"📡 Real-time: balance_updated for user {user_id[:8]}")
+    
+    @staticmethod
+    async def wallet_update(user_id: str, wallet_data: dict):
+        """Broadcast general wallet updates"""
+        await manager.send_message(user_id, {
+            "type": "wallet",
+            "event": "balance_update",
+            "data": wallet_data,
+            "message": "💰 Wallet updated"
+        })
 
 # Global instance
 rt_events = RealTimeEvents()

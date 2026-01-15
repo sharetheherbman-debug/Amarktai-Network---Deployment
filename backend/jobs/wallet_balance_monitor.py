@@ -9,6 +9,7 @@ import logging
 
 import database as db
 from engines.wallet_manager import wallet_manager
+from realtime_events import rt_events
 
 logger = logging.getLogger(__name__)
 
@@ -78,11 +79,23 @@ class WalletBalanceMonitor:
             }
             
             # Upsert balance document
-            await wallet_balances_collection.update_one(
+            result = await wallet_balances_collection.update_one(
                 {"user_id": user_id},
                 {"$set": balance_doc},
                 upsert=True
             )
+            
+            # Emit WebSocket event for real-time UI updates
+            if result.modified_count > 0 or result.upserted_id:
+                try:
+                    await rt_events.balance_updated(user_id, balance_doc)
+                    await rt_events.wallet_update(user_id, {
+                        "master": master_balance,
+                        "exchanges": exchange_balances,
+                        "timestamp": balance_doc["timestamp"]
+                    })
+                except Exception as ws_error:
+                    logger.debug(f"WebSocket emission error: {ws_error}")
             
         except Exception as e:
             logger.debug(f"Update user balance error for {user_id[:8]}: {e}")

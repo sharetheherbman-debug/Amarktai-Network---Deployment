@@ -46,22 +46,24 @@ export const PLATFORMS = {
   kraken: {
     id: 'kraken',
     name: 'Kraken',
-    displayName: 'Kraken',
+    displayName: 'Kraken (Coming Soon)',
     icon: '🟣',
     color: '#5741D9',
     bot_limit: 15,
-    supports_paper: true,
-    supports_live: true
+    supports_paper: false,
+    supports_live: false,
+    coming_soon: true
   },
   valr: {
     id: 'valr',
     name: 'VALR',
-    displayName: 'VALR',
+    displayName: 'VALR (Coming Soon)',
     icon: '🔵',
     color: '#00B8D4',
     bot_limit: 10,
-    supports_paper: true,
-    supports_live: true
+    supports_paper: false,
+    supports_live: false,
+    coming_soon: true
   }
 };
 

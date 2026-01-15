@@ -8,6 +8,8 @@ from typing import Dict, Optional
 import logging
 from datetime import datetime, timezone
 import bcrypt
+import os
+import secrets
 
 from auth import get_current_user
 import database as db
@@ -17,6 +19,77 @@ from json_utils import serialize_doc, serialize_list
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["Admin Dashboard"])
+
+@router.post("/unlock")
+async def unlock_admin_panel(
+    request: dict,
+    current_user_id: str = Depends(get_current_user)
+):
+    """
+    Verify admin password and generate unlock token
+    Case-insensitive and whitespace-tolerant password check
+    
+    SECURITY: Requires ADMIN_PASSWORD environment variable to be set.
+    Token is returned but not stored (stateless approach).
+    In production, implement Redis-based token validation for added security.
+    """
+    try:
+        # Get password from request
+        password = request.get('password', '').strip()
+        
+        if not password:
+            raise HTTPException(status_code=400, detail="Password is required")
+        
+        # Get admin password from environment (REQUIRED - no fallback for security)
+        admin_password = os.getenv('ADMIN_PASSWORD')
+        
+        if not admin_password or not admin_password.strip():
+            logger.error("ADMIN_PASSWORD environment variable not set or empty")
+            raise HTTPException(
+                status_code=500, 
+                detail="Server configuration error: Admin password not configured"
+            )
+        
+        admin_password = admin_password.strip()
+        
+        # Case-insensitive and whitespace-tolerant comparison
+        if password.lower() != admin_password.lower():
+            # Log failed attempt
+            await audit_logger.log_event(
+                event_type="admin_unlock_failed",
+                user_id=current_user_id,
+                details={"reason": "Invalid password"},
+                severity="warning"
+            )
+            raise HTTPException(status_code=403, detail="Invalid admin password")
+        
+        # Generate unlock token (valid for 1 hour)
+        # NOTE: Token is not stored server-side (stateless approach)
+        # For production, consider implementing Redis-based token storage
+        unlock_token = secrets.token_urlsafe(32)
+        
+        # Log successful unlock
+        await audit_logger.log_event(
+            event_type="admin_panel_unlocked",
+            user_id=current_user_id,
+            details={"timestamp": datetime.now(timezone.utc).isoformat()},
+            severity="info"
+        )
+        
+        logger.info(f"Admin panel unlocked by user {current_user_id}")
+        
+        return {
+            "success": True,
+            "message": "Admin panel unlocked",
+            "unlock_token": unlock_token,
+            "expires_in": 3600  # 1 hour in seconds
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin unlock error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 async def verify_admin(current_user_id: str = Depends(get_current_user)):
     """Verify user is admin - fixed to use user_id string from get_current_user"""
