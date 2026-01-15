@@ -2,21 +2,29 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { API_BASE } from '../../lib/api.js';
+import { SUPPORTED_PLATFORMS, PLATFORM_CONFIG } from '../../constants/platforms.js';
 
 const API = API_BASE;
 
 export const APISetupSection = ({ apiKeys, token, onKeysUpdate }) => {
   const [showForm, setShowForm] = useState(null);
   const [formData, setFormData] = useState({});
-  const axiosConfig = { headers: { Authorization: `Bearer ${token}` } };
+  const axiosConfig = { headers: { Authorization: `****** } };
 
   const providers = [
     { id: 'openai', name: 'OpenAI', fields: ['api_key'] },
-    { id: 'luno', name: 'Luno', fields: ['api_key', 'api_secret'] },
-    { id: 'binance', name: 'Binance', fields: ['api_key', 'api_secret'] },
-    { id: 'kucoin', name: 'KuCoin', fields: ['api_key', 'api_secret', 'passphrase'] },
-    { id: 'kraken', name: 'Kraken', fields: ['api_key', 'api_secret'] },
-    { id: 'valr', name: 'VALR', fields: ['api_key', 'api_secret'] },
+    ...SUPPORTED_PLATFORMS.map(platformId => {
+      const config = PLATFORM_CONFIG[platformId];
+      const fields = ['api_key', 'api_secret'];
+      if (config.requiresPassphrase) {
+        fields.push('passphrase');
+      }
+      return {
+        id: platformId,
+        name: config.displayName,
+        fields
+      };
+    }),
     { id: 'fetchai', name: 'Fetch.ai', fields: ['api_key'] },
     { id: 'flokx', name: 'Flokx', fields: ['api_key'] }
   ];

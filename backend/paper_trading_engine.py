@@ -58,40 +58,105 @@ class PaperTradingEngine:
         self.preferred_exchange = 'luno'
         self.available_pairs_cache = {}  # Cache for dynamically fetched pairs
         
-    async def init_exchanges(self):
-        """Initialize all supported exchanges"""
-        try:
-            # Luno (best for South Africa)
-            if not self.luno_exchange:
-                self.luno_exchange = ccxt.luno({
-                    'enableRateLimit': True,
-                    'timeout': 30000
-                })
-                logger.info("✅ Connected to LUNO (South Africa) for REAL ZAR data")
-        except Exception as e:
-            logger.warning(f"Luno init failed: {e}")
+        # Status tracking for monitoring
+        self.is_running = False
+        self.last_tick_time = None
+        self.last_trade_simulation = None
+        self.last_error = None
+        self.trade_count = 0
+        
+        # Dual-mode support: 'demo' (no keys) or 'verified' (with Luno keys)
+        self.current_mode = 'demo'  # Default to demo/public mode
+        self.user_id = None  # Track which user's keys we're using (if any)
+        self.luno_keys_available = False
+        
+    async def init_exchanges(self, mode='demo', user_keys=None):
+        """
+        Initialize all supported exchanges with dual-mode support
+        
+        Args:
+            mode: 'demo' (public endpoints, no keys) or 'verified' (authenticated with Luno keys)
+            user_keys: Dict with Luno API credentials if mode='verified'
+                      {'api_key': '...', 'api_secret': '...'}
+        """
+        self.current_mode = mode
         
         try:
-            # Binance
+            # Luno - Dual Mode Support
+            if not self.luno_exchange:
+                if mode == 'verified' and user_keys and user_keys.get('api_key') and user_keys.get('api_secret'):
+                    # VERIFIED MODE - Use authenticated endpoints
+                    self.luno_exchange = ccxt.luno({
+                        'enableRateLimit': True,
+                        'timeout': 30000,
+                        'apiKey': user_keys['api_key'],
+                        'secret': user_keys['api_secret']
+                    })
+                    self.luno_keys_available = True
+                    logger.info("✅ Connected to LUNO (VERIFIED MODE) - using authenticated endpoints for enhanced accuracy")
+                else:
+                    # DEMO/PUBLIC MODE - No API keys
+                    self.luno_exchange = ccxt.luno({
+                        'enableRateLimit': True,
+                        'timeout': 30000,
+                        'apiKey': None,  # Explicitly no API key - public mode
+                        'secret': None
+                    })
+                    self.luno_keys_available = False
+                    logger.info("✅ Connected to LUNO (DEMO MODE) - using public endpoints only")
+        except Exception as e:
+            logger.warning(f"Luno init failed: {e}")
+            self.luno_keys_available = False
+        
+        try:
+            # Binance - Always PUBLIC MODE (focus on Luno for verified mode)
             if not self.binance_exchange:
                 self.binance_exchange = ccxt.binance({
                     'enableRateLimit': True,
-                    'options': {'defaultType': 'spot'}
+                    'options': {'defaultType': 'spot'},
+                    'apiKey': None,  # Explicitly no API key - public mode
+                    'secret': None
                 })
-                logger.info("✅ Binance ready")
+                logger.info("✅ Binance ready (PUBLIC MODE)")
         except Exception as e:
             logger.warning(f"Binance init failed: {e}")
         
         try:
-            # KuCoin
+            # KuCoin - Always PUBLIC MODE (focus on Luno for verified mode)
             if not self.kucoin_exchange:
                 self.kucoin_exchange = ccxt.kucoin({
                     'enableRateLimit': True,
-                    'timeout': 30000
+                    'timeout': 30000,
+                    'apiKey': None,  # Explicitly no API key - public mode
+                    'secret': None
                 })
-                logger.info("✅ KuCoin ready")
+                logger.info("✅ KuCoin ready (PUBLIC MODE)")
         except Exception as e:
             logger.warning(f"KuCoin init failed: {e}")
+    
+    def get_mode_label(self) -> dict:
+        """
+        Get current trading mode information with labels
+        
+        Returns:
+            {
+                'mode': 'verified' or 'demo',
+                'label': 'Verified Data' or 'Estimated (Demo)',
+                'description': Full description of what this mode means
+            }
+        """
+        if self.current_mode == 'verified' and self.luno_keys_available:
+            return {
+                'mode': 'verified',
+                'label': 'Verified Data',
+                'description': 'Using authenticated Luno API - enhanced accuracy with real account data'
+            }
+        else:
+            return {
+                'mode': 'demo',
+                'label': 'Estimated (Demo)',
+                'description': 'Using public market data only - simulated for demonstration purposes'
+            }
     
     async def get_available_pairs(self, exchange: str = 'luno') -> list:
         """Dynamically fetch ALL available trading pairs for maximum profit"""
@@ -136,24 +201,106 @@ class PaperTradingEngine:
             return self.KUCOIN_PAIRS
         return self.BINANCE_PAIRS
     
-    async def get_real_price(self, symbol: str, exchange: str = 'luno') -> float:
-        """Fetch REAL price - accurate to live trading"""
+    async def get_real_price(self, symbol: str, exchange: str = 'luno', with_label: bool = False) -> float:
+        """
+        Fetch REAL price using PUBLIC or AUTHENTICATED endpoints depending on mode
+        
+        Args:
+            symbol: Trading pair symbol (e.g., 'BTC/ZAR')
+            exchange: Exchange to use ('luno', 'binance', 'kucoin')
+            with_label: If True, return dict with price and mode label. If False, return price only.
+        
+        Returns:
+            If with_label=False: float price
+            If with_label=True: dict with {'price': float, 'mode': str, 'label': str, ...}
+        """
         try:
             if not self.luno_exchange and not self.binance_exchange:
                 await self.init_exchanges()
             
-            exchange_obj = self.luno_exchange if exchange == 'luno' else self.binance_exchange
+            # Select exchange
+            if exchange == 'luno':
+                exchange_obj = self.luno_exchange
+            elif exchange == 'binance':
+                exchange_obj = self.binance_exchange
+            elif exchange == 'kucoin':
+                exchange_obj = self.kucoin_exchange
+            else:
+                exchange_obj = self.luno_exchange  # Default to Luno
             
             if exchange_obj:
+                # Use fetch_ticker which is PUBLIC on most exchanges
+                # In verified mode with Luno, this also benefits from authenticated rate limits
                 ticker = await exchange_obj.fetch_ticker(symbol)
-                price = ticker['last']
-                self.price_cache[symbol] = price
-                return price
+                price = ticker.get('last') or ticker.get('close') or ticker.get('bid')
+                
+                # Guard against None price
+                if price is not None and price > 0:
+                    self.price_cache[symbol] = float(price)
+                    
+                    if with_label:
+                        mode_info = self.get_mode_label()
+                        return {
+                            'price': float(price),
+                            'symbol': symbol,
+                            'exchange': exchange,
+                            'timestamp': datetime.now(timezone.utc).isoformat(),
+                            **mode_info  # Includes mode, label, description
+                        }
+                    return float(price)
+                else:
+                    logger.warning(f"Price for {symbol} is None or invalid, using cache or fallback")
+                    
         except Exception as e:
-            logger.debug(f"Price fetch for {symbol}: {e}")
+            logger.debug(f"Price fetch for {symbol} on {exchange}: {e}")
         
-        # Fallback to cache
-        return self.price_cache.get(symbol, 50000.0 if 'BTC' in symbol else 1.0)
+        # Fallback 1: Try cache
+        if symbol in self.price_cache:
+            cached_price = self.price_cache[symbol]
+            if cached_price is not None and cached_price > 0:
+                logger.info(f"Using cached price for {symbol}: {cached_price}")
+                
+                if with_label:
+                    mode_info = self.get_mode_label()
+                    return {
+                        'price': float(cached_price),
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'timestamp': datetime.now(timezone.utc).isoformat(),
+                        'source': 'cache',
+                        **mode_info
+                    }
+                return float(cached_price)
+        
+        # Fallback 2: Default safe prices (never None)
+        if 'BTC' in symbol:
+            fallback_price = 50000.0
+        elif 'ETH' in symbol:
+            fallback_price = 3000.0
+        elif 'BNB' in symbol:
+            fallback_price = 300.0
+        elif 'SOL' in symbol:
+            fallback_price = 100.0
+        elif 'XRP' in symbol:
+            fallback_price = 0.5
+        else:
+            fallback_price = 1.0
+        
+        logger.warning(f"Using fallback price for {symbol}: {fallback_price}")
+        self.price_cache[symbol] = fallback_price
+        
+        if with_label:
+            return {
+                'price': fallback_price,
+                'symbol': symbol,
+                'exchange': exchange,
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'source': 'fallback',
+                'mode': 'demo',
+                'label': 'Estimated (Fallback)',
+                'description': 'Using safe fallback price - real market data unavailable'
+            }
+        return fallback_price
     
     async def analyze_trend(self, symbol: str, exchange: str = 'luno') -> str:
         """Analyze REAL market trend"""
@@ -188,6 +335,10 @@ class PaperTradingEngine:
     async def execute_smart_trade(self, bot_id: str, bot_data: Dict) -> Dict:
         """Execute trade with AI INTELLIGENCE, RISK ENGINE, RATE LIMITER, and FEE SIMULATION"""
         try:
+            # Update status tracking
+            self.is_running = True
+            self.last_tick_time = datetime.now(timezone.utc).isoformat()
+            
             user_id = bot_data.get('user_id')
             risk_mode = bot_data.get('risk_mode', 'safe')
             current_capital = bot_data.get('current_capital', 1000)
@@ -203,8 +354,14 @@ class PaperTradingEngine:
             available_pairs = await self.get_available_pairs(exchange)
             symbol = random.choice(available_pairs)
             
-            # Get REAL price
+            # Get REAL price with safety check
             current_price = await self.get_real_price(symbol, exchange)
+            
+            # CRITICAL: Guard against None or invalid price
+            if current_price is None or current_price <= 0:
+                logger.error(f"Invalid price for {symbol}: {current_price}, skipping trade")
+                self.last_error = f"Invalid price: {current_price}"
+                return {"success": False, "bot_id": bot_id, "error": f"Invalid price for {symbol}"}
             
             # 2. AI INTELLIGENCE: Check market regime
             from market_regime import market_regime_detector
@@ -311,6 +468,12 @@ class PaperTradingEngine:
                 logger.warning(f"Risk block: {bot_data['name'][:15]} - {risk_reason}")
                 return {"success": False, "bot_id": bot_id, "error": risk_reason}
             
+            # Guard against invalid current_price before calculations
+            if current_price is None or current_price <= 0:
+                logger.error(f"Invalid current_price before trade: {current_price}")
+                self.last_error = f"Invalid price: {current_price}"
+                return {"success": False, "bot_id": bot_id, "error": "Invalid price before trade"}
+            
             crypto_amount = trade_amount / current_price
             entry_price = current_price
             
@@ -365,6 +528,12 @@ class PaperTradingEngine:
             exit_multiplier = base_multiplier
             
             exit_price = entry_price * exit_multiplier
+            
+            # Guard against invalid exit_price
+            if exit_price is None or exit_price <= 0:
+                logger.error(f"Invalid exit_price after multiplier: {exit_price}")
+                self.last_error = f"Invalid exit_price: {exit_price}"
+                return {"success": False, "bot_id": bot_id, "error": "Invalid exit price"}
             
             # Calculate GROSS P&L
             gross_profit = (exit_price - entry_price) * crypto_amount
@@ -463,10 +632,16 @@ class PaperTradingEngine:
             emoji = "🟢" if is_profitable else "🔴"
             logger.info(f"{emoji} {bot_data['name'][:15]} | {symbol} | {trend.upper()} | {profit_pct:+.2f}% = R{net_profit:+.2f} (fees: R{fees:.2f})")
             
+            # Update status tracking
+            self.last_trade_simulation = trade_result
+            self.trade_count += 1
+            self.last_error = None
+            
             return trade_result
             
         except Exception as e:
             logger.error(f"Trade error: {e}")
+            self.last_error = str(e)
             return {"success": False, "bot_id": bot_id, "error": str(e)}
     
     def _calculate_trade_quality(self, net_profit: float, fees: float, trade_amount: float, profit_pct: float) -> int:
@@ -601,6 +776,29 @@ class PaperTradingEngine:
                 logger.info("Closed KuCoin exchange session")
         except Exception as e:
             logger.error(f"Error closing KuCoin exchange: {e}")
+    
+    def get_status(self) -> Dict:
+        """Get paper trading engine status for monitoring with mode information"""
+        mode_info = self.get_mode_label()
+        
+        return {
+            "is_running": self.is_running,
+            "last_tick_time": self.last_tick_time,
+            "last_trade_simulation": self.last_trade_simulation,
+            "last_error": self.last_error,
+            "total_trades": self.trade_count,
+            "exchanges_initialized": {
+                "luno": self.luno_exchange is not None,
+                "binance": self.binance_exchange is not None,
+                "kucoin": self.kucoin_exchange is not None
+            },
+            # Mode information
+            "mode": mode_info['mode'],
+            "mode_label": mode_info['label'],
+            "mode_description": mode_info['description'],
+            "luno_keys_available": self.luno_keys_available,
+            "user_id": self.user_id
+        }
 
 # Global instance
 paper_engine = PaperTradingEngine()

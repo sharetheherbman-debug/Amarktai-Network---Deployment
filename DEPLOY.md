@@ -1,8 +1,42 @@
 # Amarktai Network - Production Deployment Guide
 
-**Last Updated:** 2026-01-14
+**Last Updated:** 2026-01-15
 **Target Environment:** Ubuntu 24.04 LTS
 **Production Ready:** ✅ YES
+
+---
+
+## 🚀 QUICK START (If System Already Set Up)
+
+If this is an **update deployment** on an already-running system:
+
+```bash
+# 1. Run verification
+bash scripts/verify_go_live.sh
+# Must show: ✓ ALL CHECKS PASSED
+
+# 2. Update backend
+cd backend
+pip install -r requirements.txt
+sudo systemctl restart amarktai-api
+sudo systemctl status amarktai-api
+
+# 3. Update frontend
+cd ../frontend
+npm install
+npm run build
+sudo cp -r build/* /var/www/amarktai/
+sudo systemctl reload nginx
+
+# 4. Verify deployment
+curl http://localhost:8000/api/health/ping
+curl -I http://localhost/
+```
+
+**Critical Environment Variable:**
+- `ADMIN_PASSWORD=Ashmor12@` must be set in systemd service
+
+For **first-time setup**, continue reading below.
 
 ---
 

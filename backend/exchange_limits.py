@@ -16,15 +16,15 @@ KUCOIN: 45 orders/3s (~15 orders/second)
 OUR USAGE: Hundreds of times below limits = ULTRA SAFE
 """
 
-# GLOBAL LIMIT: 50 bots total across all exchanges
-MAX_BOTS_GLOBAL = 50
+# GLOBAL LIMIT: 45 bots total across all exchanges
+MAX_BOTS_GLOBAL = 45
 
 # Bot allocation per exchange
 BOT_ALLOCATION = {
     "luno": 5,
-    "binance": 15,
+    "binance": 10,
     "kucoin": 10,
-    "kraken": 10,
+    "ovex": 10,
     "valr": 10
 }
 
@@ -39,8 +39,8 @@ EXCHANGE_LIMITS = {
         "fee_taker": 0.0025,  # 0.25%
     },
     "binance": {
-        "max_bots": 15,
-        "max_orders_per_day": 750,  # 15 bots × 50 trades
+        "max_bots": 10,
+        "max_orders_per_day": 500,  # 10 bots × 50 trades
         "max_orders_per_minute": 60,
         "max_orders_per_10_seconds": 10,
         "max_orders_per_bot_per_day": 50,
@@ -56,14 +56,14 @@ EXCHANGE_LIMITS = {
         "fee_maker": 0.001,  # 0.1%
         "fee_taker": 0.001,  # 0.1%
     },
-    "kraken": {
+    "ovex": {
         "max_bots": 10,
         "max_orders_per_day": 500,  # 10 bots × 50 trades
         "max_orders_per_minute": 60,
         "max_orders_per_10_seconds": 10,
         "max_orders_per_bot_per_day": 50,
-        "fee_maker": 0.0016,  # 0.16%
-        "fee_taker": 0.0026,  # 0.26%
+        "fee_maker": 0.001,  # 0.1%
+        "fee_taker": 0.0015,  # 0.15%
     },
     "valr": {
         "max_bots": 10,

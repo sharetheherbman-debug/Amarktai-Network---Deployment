@@ -101,7 +101,7 @@ async def test_api_key(
             raise HTTPException(status_code=400, detail="Provider and API key required")
         
         # Test based on provider type
-        if provider in ["binance", "luno", "kucoin", "kraken", "valr"]:
+        if provider in ["binance", "luno", "kucoin", "ovex", "valr"]:
             # Test exchange API key
             import ccxt.async_support as ccxt
             
