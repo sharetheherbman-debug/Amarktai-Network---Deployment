@@ -4,7 +4,7 @@
  * Provides fallback market data from public APIs when user keys are not available
  * or backend fails. NO API KEYS required.
  * 
- * Supported exchanges: Binance, KuCoin, Kraken, Luno, VALR
+ * Supported exchanges: Binance, KuCoin, Luno, OVEX, VALR
  * Supported pairs: BTC, ETH, XRP (to ZAR or USD)
  */
 
@@ -55,29 +55,6 @@ class MarketDataFallback {
       return null;
     } catch (error) {
       console.error('KuCoin fetch error:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Fetch BTC price from Kraken (XBTUSD)
-   */
-  async fetchKrakenBTC() {
-    try {
-      const response = await fetch('https://api.kraken.com/0/public/Ticker?pair=XBTUSD', {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' }
-      });
-      
-      if (!response.ok) throw new Error('Kraken API error');
-      
-      const data = await response.json();
-      if (data.result && data.result.XXBTZUSD) {
-        return parseFloat(data.result.XXBTZUSD.c[0]); // Last trade closed price
-      }
-      return null;
-    } catch (error) {
-      console.error('Kraken fetch error:', error);
       return null;
     }
   }
@@ -163,10 +140,9 @@ class MarketDataFallback {
     }
 
     // Fetch fresh data from multiple sources in parallel
-    const [binanceBTC, kucoinBTC, krakenBTC, lunoBTC, valrBTC, ovexBTC] = await Promise.all([
+    const [binanceBTC, kucoinBTC, lunoBTC, valrBTC, ovexBTC] = await Promise.all([
       this.fetchBinanceBTC(),
       this.fetchKuCoinBTC(),
-      this.fetchKrakenBTC(),
       this.fetchLunoBTC(),
       this.fetchVALRBTC(),
       this.fetchOVEXBTC()
@@ -185,9 +161,9 @@ class MarketDataFallback {
         isFallback: true
       },
       'BTC/USD': {
-        price: binanceBTC || kucoinBTC || krakenBTC || 0,
+        price: binanceBTC || kucoinBTC || 0,
         change: 0,
-        source: binanceBTC ? 'Binance' : kucoinBTC ? 'KuCoin' : 'Kraken',
+        source: binanceBTC ? 'Binance' : kucoinBTC ? 'KuCoin' : 'N/A',
         currency: 'USD',
         isFallback: true
       },

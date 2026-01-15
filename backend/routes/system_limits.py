@@ -78,7 +78,7 @@ async def get_exchange_limits(exchange: str, user_id: str = Depends(get_current_
     """Get detailed trade budget information for a specific exchange
     
     Args:
-        exchange: Exchange name (luno, binance, kucoin, kraken, valr)
+        exchange: Exchange name (luno, binance, kucoin, ovex, valr)
     """
     try:
         report = await trade_budget_manager.get_exchange_budget_report(exchange)

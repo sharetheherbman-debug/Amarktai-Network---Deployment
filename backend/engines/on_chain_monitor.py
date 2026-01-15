@@ -86,7 +86,6 @@ class OnChainWhaleMonitor:
         self.exchange_addresses = {
             'binance': ['1NDyJtNTjmwk5xPNhjgAMu4HDHigtobu1s', '0x28c6c06298d514db089934071355e5743bf21d60'],
             'coinbase': ['1FzWLkAahHooV3kzTgyx3XYC9iJ7zH3w5X', '0x71660c4005ba85c37ccec55d0c4493e66fe775d3'],
-            'kraken': ['16rCmCmbuWDhPjWTrpQGaU3EPdZF7MTdUk', '0x2910543af39aba0cd09dbb2d50200b3e800a63d2'],
             'okx': ['1KzXE97kV7DrpxCViCN3HbGbiKhzzPM7TQ', '0x236f9f97e0e62388479bf9e5ba4889e46b0273c3']
         }
         

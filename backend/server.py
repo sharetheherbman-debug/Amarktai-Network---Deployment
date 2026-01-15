@@ -1115,29 +1115,6 @@ async def test_api_key(provider: str, user_id: str = Depends(get_current_user)):
             logger.error(f"Fetch.ai test failed: {e}")
             raise HTTPException(status_code=400, detail=f"Fetch.ai test failed: {str(e)}")
     
-    elif provider == 'kraken':
-        # Test Kraken key
-        try:
-            import ccxt
-            exchange = ccxt.kraken({
-                'apiKey': key.get('api_key'),
-                'secret': key.get('api_secret')
-            })
-            await asyncio.to_thread(exchange.fetch_balance)
-            
-            await db.api_keys_collection.update_one(
-                {"id": key['id']},
-                {"$set": {"connected": True}}
-            )
-            return {"message": "Kraken connection successful", "connected": True}
-        except Exception as e:
-            logger.error(f"Kraken test failed: {e}")
-            await db.api_keys_collection.update_one(
-                {"id": key['id']},
-                {"$set": {"connected": False}}
-            )
-            raise HTTPException(status_code=400, detail=f"Kraken test failed: {str(e)}")
-    
     elif provider == 'valr':
         # Test VALR key
         try:
@@ -2227,7 +2204,7 @@ async def get_wallet_mode_stats(user_id: str = Depends(get_current_user)):
                 "luno": {"balance": 0, "available": 0},
                 "binance": {"balance": 0, "available": 0},
                 "kucoin": {"balance": 0, "available": 0},
-                "kraken": {"balance": 0, "available": 0},
+                "ovex": {"balance": 0, "available": 0},
                 "valr": {"balance": 0, "available": 0}
             }
         }

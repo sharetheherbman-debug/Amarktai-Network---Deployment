@@ -25,7 +25,7 @@ class BotSpawner:
             'luno': 5,      # 5 bots on Luno
             'binance': 10,  # 10 bots on Binance
             'kucoin': 10,   # 10 bots on KuCoin
-            'kraken': 10,   # 10 bots on Kraken
+            'ovex': 10,     # 10 bots on OVEX
             'valr': 10      # 10 bots on VALR
         }
         

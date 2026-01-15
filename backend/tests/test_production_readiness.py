@@ -263,8 +263,8 @@ class ProductionReadinessTester:
         """Test 5: Bot Management (All Exchanges)"""
         print("\n🔄 Testing Bot Management (All Exchanges)...")
         
-        exchanges = ["luno", "binance", "kucoin", "kraken", "valr"]
-        exchange_limits = {"luno": 5, "binance": 10, "kucoin": 10, "kraken": 10, "valr": 10}
+        exchanges = ["luno", "binance", "kucoin", "ovex", "valr"]
+        exchange_limits = {"luno": 5, "binance": 10, "kucoin": 10, "ovex": 10, "valr": 10}
         
         for exchange in exchanges:
             # Test bot creation

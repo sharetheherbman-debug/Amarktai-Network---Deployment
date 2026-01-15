@@ -69,12 +69,16 @@ bash scripts/verify_go_live.sh
 
 **Expected Output:**
 - ✓ All platform checks pass (OVEX present, Kraken removed)
-- ✓ Platform constants verified
+- ✓ Platform constants verified (exactly 5 platforms, TOTAL_BOT_CAPACITY=45)
 - ✓ Admin endpoints exist
-- ✓ Paper trading status endpoint responds
-- ✓ WebSocket typed messages confirmed
+- ✓ Dashboard PlatformSelector not duplicated
 - ✓ No Kraken references in code
+- ✓ No hardcoded platform arrays in Dashboard
+- ✓ Frontend build successful
+- ✓ Bundle contains required strings (OVEX, Win Rate, Trade Count)
+- ✓ Bundle does NOT contain Kraken
 - ✓ All required files present
+- ✓ LiveTradesView removed (was unused)
 
 **Script must show:** `✓ ALL CHECKS PASSED - READY FOR GO-LIVE! 🎉`
 
@@ -170,6 +174,10 @@ curl $API/health/paper-trading
 # System health indicators
 curl $API/health/indicators
 # Expected: {"overall_status":"healthy"}
+
+# Note: /api/prices/live requires authentication token
+# curl $API/prices/live -H "Authorization: Bearer $TOKEN"
+# Expected: {"btc": 1234567.89, ...}
 ```
 
 ### 5. Admin Access Test ✓
