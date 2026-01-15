@@ -58,6 +58,13 @@ class PaperTradingEngine:
         self.preferred_exchange = 'luno'
         self.available_pairs_cache = {}  # Cache for dynamically fetched pairs
         
+        # Status tracking for monitoring
+        self.is_running = False
+        self.last_tick_time = None
+        self.last_trade_simulation = None
+        self.last_error = None
+        self.trade_count = 0
+        
     async def init_exchanges(self):
         """Initialize all supported exchanges"""
         try:
@@ -188,6 +195,10 @@ class PaperTradingEngine:
     async def execute_smart_trade(self, bot_id: str, bot_data: Dict) -> Dict:
         """Execute trade with AI INTELLIGENCE, RISK ENGINE, RATE LIMITER, and FEE SIMULATION"""
         try:
+            # Update status tracking
+            self.is_running = True
+            self.last_tick_time = datetime.now(timezone.utc).isoformat()
+            
             user_id = bot_data.get('user_id')
             risk_mode = bot_data.get('risk_mode', 'safe')
             current_capital = bot_data.get('current_capital', 1000)
@@ -463,10 +474,16 @@ class PaperTradingEngine:
             emoji = "🟢" if is_profitable else "🔴"
             logger.info(f"{emoji} {bot_data['name'][:15]} | {symbol} | {trend.upper()} | {profit_pct:+.2f}% = R{net_profit:+.2f} (fees: R{fees:.2f})")
             
+            # Update status tracking
+            self.last_trade_simulation = trade_result
+            self.trade_count += 1
+            self.last_error = None
+            
             return trade_result
             
         except Exception as e:
             logger.error(f"Trade error: {e}")
+            self.last_error = str(e)
             return {"success": False, "bot_id": bot_id, "error": str(e)}
     
     def _calculate_trade_quality(self, net_profit: float, fees: float, trade_amount: float, profit_pct: float) -> int:
@@ -601,6 +618,21 @@ class PaperTradingEngine:
                 logger.info("Closed KuCoin exchange session")
         except Exception as e:
             logger.error(f"Error closing KuCoin exchange: {e}")
+    
+    def get_status(self) -> Dict:
+        """Get paper trading engine status for monitoring"""
+        return {
+            "is_running": self.is_running,
+            "last_tick_time": self.last_tick_time,
+            "last_trade_simulation": self.last_trade_simulation,
+            "last_error": self.last_error,
+            "total_trades": self.trade_count,
+            "exchanges_initialized": {
+                "luno": self.luno_exchange is not None,
+                "binance": self.binance_exchange is not None,
+                "kucoin": self.kucoin_exchange is not None
+            }
+        }
 
 # Global instance
 paper_engine = PaperTradingEngine()

@@ -114,3 +114,31 @@ async def ping():
         "status": "ok",
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+
+@router.get("/paper-trading")
+async def get_paper_trading_status():
+    """Get paper trading engine status for monitoring"""
+    try:
+        from paper_trading_engine import paper_engine
+        
+        status = paper_engine.get_status()
+        
+        return {
+            "status": "ok",
+            "paper_trading": status,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Paper trading status error: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "paper_trading": {
+                "is_running": False,
+                "last_error": str(e)
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
