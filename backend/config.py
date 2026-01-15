@@ -62,7 +62,7 @@ EXCHANGE_BOT_LIMITS = {
     'luno': 5,
     'binance': 10,
     'kucoin': 10,
-    'kraken': 10,
+    'ovex': 10,
     'valr': 10
 }
 
@@ -83,7 +83,7 @@ EXCHANGE_TRADE_LIMITS = {
         'min_cooldown_minutes': 10,
         'max_api_calls_per_minute': 600
     },
-    'kraken': {
+    'ovex': {
         'max_trades_per_bot_per_day': 100,
         'min_cooldown_minutes': 12,
         'max_api_calls_per_minute': 120

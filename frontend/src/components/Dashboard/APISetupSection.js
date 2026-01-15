@@ -15,7 +15,7 @@ export const APISetupSection = ({ apiKeys, token, onKeysUpdate }) => {
     { id: 'luno', name: 'Luno', fields: ['api_key', 'api_secret'] },
     { id: 'binance', name: 'Binance', fields: ['api_key', 'api_secret'] },
     { id: 'kucoin', name: 'KuCoin', fields: ['api_key', 'api_secret', 'passphrase'] },
-    { id: 'kraken', name: 'Kraken', fields: ['api_key', 'api_secret'] },
+    { id: 'ovex', name: 'OVEX', fields: ['api_key', 'api_secret'] },
     { id: 'valr', name: 'VALR', fields: ['api_key', 'api_secret'] },
     { id: 'fetchai', name: 'Fetch.ai', fields: ['api_key'] },
     { id: 'flokx', name: 'Flokx', fields: ['api_key'] }

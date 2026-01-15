@@ -5,7 +5,7 @@
  * - luno
  * - binance
  * - kucoin
- * - kraken
+ * - ovex
  * - valr
  */
 
@@ -19,7 +19,7 @@ export const PLATFORMS = {
     displayName: 'Luno',
     icon: '🇿🇦',
     color: '#3861FB',
-    bot_limit: 10,
+    bot_limit: 5,
     supports_paper: true,
     supports_live: true
   },
@@ -29,7 +29,7 @@ export const PLATFORMS = {
     displayName: 'Binance',
     icon: '🟡',
     color: '#F3BA2F',
-    bot_limit: 20,
+    bot_limit: 10,
     supports_paper: true,
     supports_live: true
   },
@@ -39,36 +39,34 @@ export const PLATFORMS = {
     displayName: 'KuCoin',
     icon: '🟢',
     color: '#23AF91',
-    bot_limit: 15,
+    bot_limit: 10,
     supports_paper: true,
     supports_live: true
   },
-  kraken: {
-    id: 'kraken',
-    name: 'Kraken',
-    displayName: 'Kraken (Coming Soon)',
-    icon: '🟣',
-    color: '#5741D9',
-    bot_limit: 15,
-    supports_paper: false,
-    supports_live: false,
-    coming_soon: true
+  ovex: {
+    id: 'ovex',
+    name: 'OVEX',
+    displayName: 'OVEX',
+    icon: '🟠',
+    color: '#FF8C00',
+    bot_limit: 10,
+    supports_paper: true,
+    supports_live: true
   },
   valr: {
     id: 'valr',
     name: 'VALR',
-    displayName: 'VALR (Coming Soon)',
+    displayName: 'VALR',
     icon: '🔵',
     color: '#00B8D4',
     bot_limit: 10,
-    supports_paper: false,
-    supports_live: false,
-    coming_soon: true
+    supports_paper: true,
+    supports_live: true
   }
 };
 
 // Platform list in display order
-export const PLATFORM_LIST = ['luno', 'binance', 'kucoin', 'kraken', 'valr'];
+export const PLATFORM_LIST = ['luno', 'binance', 'kucoin', 'ovex', 'valr'];
 
 /**
  * Fetch platforms from backend with their enabled status and limits

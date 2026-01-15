@@ -45,13 +45,13 @@ export const EXCHANGES = {
     requiresPassphrase: true, // KuCoin requires passphrase
     supported: true
   },
-  KRAKEN: {
-    id: 'kraken',
-    name: 'Kraken',
-    displayName: 'Kraken',
+  OVEX: {
+    id: 'ovex',
+    name: 'OVEX',
+    displayName: 'OVEX',
     maxBots: 10,
-    region: 'Global',
-    icon: '🟣',
+    region: 'ZA', // South Africa
+    icon: '🟠',
     requiresSecret: true,
     requiresPassphrase: false,
     supported: true
@@ -66,18 +66,6 @@ export const EXCHANGES = {
     requiresSecret: true,
     requiresPassphrase: false,
     supported: true
-  },
-  OVEX: {
-    id: 'ovex',
-    name: 'OVEX',
-    displayName: 'OVEX',
-    maxBots: 10,
-    region: 'ZA', // South Africa
-    icon: '🟠',
-    requiresSecret: true,
-    requiresPassphrase: false,
-    supported: FEATURE_FLAGS.ENABLE_OVEX, // Conditional based on feature flag
-    comingSoon: !FEATURE_FLAGS.ENABLE_OVEX // Show "Coming soon" if not enabled
   }
 };
 
