@@ -5,6 +5,7 @@ User management, system monitoring, and administrative actions
 
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Optional
+from pydantic import BaseModel, Field
 import logging
 from datetime import datetime, timezone
 import bcrypt
@@ -20,9 +21,32 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["Admin Dashboard"])
 
+
+# Pydantic models for request validation
+class AdminUnlockRequest(BaseModel):
+    password: str = Field(..., min_length=1, description="Admin password")
+
+
+class BlockUserRequest(BaseModel):
+    reason: str = Field("No reason provided", description="Reason for blocking the user")
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str = Field(..., min_length=8, description="New password for the user")
+
+
+class DeleteUserRequest(BaseModel):
+    confirm: bool = Field(..., description="Confirmation flag to prevent accidental deletion")
+
+
+class ChangeAdminPasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1, description="Current admin password")
+    new_password: str = Field(..., min_length=8, description="New admin password")
+
+
 @router.post("/unlock")
 async def unlock_admin_panel(
-    request: dict,
+    request: AdminUnlockRequest,
     current_user_id: str = Depends(get_current_user)
 ):
     """
@@ -35,7 +59,7 @@ async def unlock_admin_panel(
     """
     try:
         # Get password from request
-        password = request.get('password', '').strip()
+        password = request.password.strip()
         
         if not password:
             raise HTTPException(status_code=400, detail="Password is required")
@@ -214,12 +238,12 @@ async def get_user_details(user_id: str, admin_user_id: str = Depends(verify_adm
 @router.post("/users/{user_id}/block")
 async def block_user(
     user_id: str,
-    request: dict,
+    request: BlockUserRequest,
     admin_user_id: str = Depends(verify_admin)
 ):
     """Block a user"""
     try:
-        reason = request.get('reason', 'No reason provided')
+        reason = request.reason
         
         # Update user status
         result = await db.users_collection.update_one(
@@ -306,15 +330,12 @@ async def unblock_user(user_id: str, admin_user_id: str = Depends(verify_admin))
 @router.post("/users/{user_id}/reset-password")
 async def reset_user_password(
     user_id: str,
-    request: dict,
+    request: ResetPasswordRequest,
     admin_user_id: str = Depends(verify_admin)
 ):
     """Reset user password (admin action)"""
     try:
-        new_password = request.get('new_password', '').strip()
-        
-        if not new_password:
-            raise HTTPException(status_code=400, detail="New password required")
+        new_password = request.new_password
         
         # Hash new password
         hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
@@ -358,12 +379,12 @@ async def reset_user_password(
 @router.delete("/users/{user_id}")
 async def delete_user(
     user_id: str,
-    request: dict,
+    request: DeleteUserRequest,
     admin_user_id: str = Depends(verify_admin)
 ):
     """Delete user and all their data (dangerous!)"""
     try:
-        confirm = request.get('confirm', False)
+        confirm = request.confirm
         
         if not confirm:
             return {
@@ -680,16 +701,13 @@ async def get_system_logs(
 
 @router.post("/change-password")
 async def change_admin_password(
-    request: dict,
+    request: ChangeAdminPasswordRequest,
     admin_user_id: str = Depends(verify_admin)
 ):
     """Change the admin unlock password (stores hashed in env or database)"""
     try:
-        current_password = request.get('current_password', '').strip()
-        new_password = request.get('new_password', '').strip()
-        
-        if not current_password or not new_password:
-            raise HTTPException(status_code=400, detail="Current and new password required")
+        current_password = request.current_password.strip()
+        new_password = request.new_password.strip()
         
         # Verify current password
         admin_password = os.getenv('ADMIN_PASSWORD')
