@@ -16,22 +16,39 @@ const WalletHub = ({ platformFilter = 'all' }) => {
 
   const loadWalletData = async () => {
     try {
-      // Load balances, requirements, and funding plans in parallel
+      setLoading(true);
+      setError(null);
+      
+      // Load balances, requirements, and funding plans in parallel with safe defaults
       const [balancesData, requirementsData, plansData] = await Promise.all([
-        get('/wallet/balances'),
-        get('/wallet/requirements'),
-        get('/wallet/funding-plans?status=awaiting_deposit')
+        get('/wallet/balances').catch(err => {
+          console.error('Balance fetch error:', err);
+          return { master_wallet: {}, last_updated: null }; // Safe default
+        }),
+        get('/wallet/requirements').catch(err => {
+          console.error('Requirements fetch error:', err);
+          return { requirements: {} }; // Safe default
+        }),
+        get('/wallet/funding-plans?status=awaiting_deposit').catch(err => {
+          console.error('Funding plans fetch error:', err);
+          return { plans: [] }; // Safe default
+        })
       ]);
 
-      setBalances(balancesData);
-      setRequirements(requirementsData);
+      setBalances(balancesData || {});
+      setRequirements(requirementsData || {});
       setFundingPlans(plansData.plans || []);
       setLoading(false);
-      setError(null);
     } catch (err) {
       console.error('Wallet data load error:', err);
-      setError(err.message || 'Failed to load wallet data');
+      const statusCode = err.status || err.response?.status || '';
+      setError(`Failed to load wallet data${statusCode ? ` (${statusCode})` : ''}: ${err.message || 'Unknown error'}`);
       setLoading(false);
+      
+      // Initialize to safe defaults even on error
+      setBalances({});
+      setRequirements({});
+      setFundingPlans([]);
     }
   };
 
@@ -90,18 +107,75 @@ const WalletHub = ({ platformFilter = 'all' }) => {
 
   if (error) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center', color: '#e74c3c' }}>
-        <div style={{ fontSize: '2rem', marginBottom: '20px' }}>⚠️</div>
-        <p>{error}</p>
-        <button onClick={loadWalletData} style={{ marginTop: '20px', padding: '10px 20px' }}>
-          Retry
+      <div style={{ padding: '40px', textAlign: 'center' }}>
+        <div style={{ fontSize: '2rem', marginBottom: '20px', color: '#e74c3c' }}>⚠️</div>
+        <p style={{ color: '#e74c3c', fontWeight: '600', marginBottom: '12px' }}>Backend Error Fetching Balances</p>
+        <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '16px' }}>{error}</p>
+        <div style={{
+          padding: '12px',
+          background: 'var(--glass)',
+          borderRadius: '6px',
+          marginBottom: '16px',
+          textAlign: 'left',
+          fontSize: '0.85rem',
+          color: 'var(--muted)',
+          maxWidth: '500px',
+          margin: '0 auto 16px'
+        }}>
+          <p><strong>Possible causes:</strong></p>
+          <ul style={{paddingLeft: '20px', marginTop: '8px'}}>
+            <li>No exchange API keys configured yet</li>
+            <li>Backend wallet service not responding</li>
+            <li>Database connection issue</li>
+          </ul>
+        </div>
+        <button onClick={loadWalletData} style={{ 
+          marginTop: '20px', 
+          padding: '12px 24px',
+          background: 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)',
+          color: 'white',
+          border: 'none',
+          borderRadius: '6px',
+          fontWeight: '600',
+          cursor: 'pointer'
+        }}>
+          🔄 Retry
         </button>
       </div>
     );
   }
 
+  // Check if user has any keys saved
   const masterWallet = balances?.master_wallet || {};
   const exchanges = requirements?.requirements || {};
+  const hasAnyKeys = Object.keys(exchanges).length > 0;
+
+  if (!hasAnyKeys && !loading) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center' }}>
+        <div style={{ fontSize: '3rem', marginBottom: '20px' }}>🔑</div>
+        <h3 style={{ marginBottom: '12px', color: 'var(--text)' }}>Add Exchange Keys to See Wallet Balances</h3>
+        <p style={{ color: 'var(--muted)', marginBottom: '20px', fontSize: '0.95rem' }}>
+          Configure your exchange API keys to view your wallet balances and start trading.
+        </p>
+        <button 
+          onClick={() => window.location.hash = '#api'}
+          style={{
+            padding: '12px 24px',
+            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            fontSize: '1rem'
+          }}
+        >
+          ➕ Add Exchange Keys
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>

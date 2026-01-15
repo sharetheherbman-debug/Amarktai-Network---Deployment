@@ -129,6 +129,29 @@ class MarketDataFallback {
   }
 
   /**
+   * Fetch BTC price from OVEX (BTCZAR) - South African exchange
+   */
+  async fetchOVEXBTC() {
+    try {
+      const response = await fetch('https://www.ovex.io/api/v2/markets/btczar/ticker', {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      
+      if (!response.ok) throw new Error('OVEX API error');
+      
+      const data = await response.json();
+      if (data.ticker && data.ticker.last) {
+        return parseFloat(data.ticker.last);
+      }
+      return null;
+    } catch (error) {
+      console.error('OVEX fetch error:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get cached or fetch fresh prices
    */
   async getPrices() {
@@ -140,12 +163,13 @@ class MarketDataFallback {
     }
 
     // Fetch fresh data from multiple sources in parallel
-    const [binanceBTC, kucoinBTC, krakenBTC, lunoBTC, valrBTC] = await Promise.all([
+    const [binanceBTC, kucoinBTC, krakenBTC, lunoBTC, valrBTC, ovexBTC] = await Promise.all([
       this.fetchBinanceBTC(),
       this.fetchKuCoinBTC(),
       this.fetchKrakenBTC(),
       this.fetchLunoBTC(),
-      this.fetchVALRBTC()
+      this.fetchVALRBTC(),
+      this.fetchOVEXBTC()
     ]);
 
     // Use USD/ZAR conversion rate (approximate, you might want a real API for this)
@@ -154,9 +178,9 @@ class MarketDataFallback {
     // Build price map
     const prices = {
       'BTC/ZAR': {
-        price: lunoBTC || valrBTC || (binanceBTC ? binanceBTC * usdToZar : 0),
+        price: lunoBTC || valrBTC || ovexBTC || (binanceBTC ? binanceBTC * usdToZar : 0),
         change: 0, // We don't have 24h change from public APIs easily
-        source: lunoBTC ? 'Luno' : valrBTC ? 'VALR' : 'Binance (USD→ZAR)',
+        source: lunoBTC ? 'Luno' : valrBTC ? 'VALR' : ovexBTC ? 'OVEX' : 'Binance (USD→ZAR)',
         currency: 'ZAR',
         isFallback: true
       },

@@ -48,6 +48,7 @@ export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [activeSection, setActiveSection] = useState('welcome');
   const [intelligenceTab, setIntelligenceTab] = useState('whale-flow'); // Tab state for Intelligence section
+  const [metricsTab, setMetricsTab] = useState('flokx'); // Tab state for Metrics section - default to Flokx Alerts
   // Admin panel state - Hidden by default, shown only after password
   const [showAdmin, setShowAdmin] = useState(() => {
     // Check sessionStorage only (more temporary)
@@ -3745,6 +3746,204 @@ export default function Dashboard() {
     );
   };
 
+  // New unified Metrics section with tabs
+  const renderMetricsWithTabs = () => {
+    return (
+      <section className="section active">
+        <div className="card">
+          <h2>📊 Metrics Dashboard</h2>
+          
+          {/* Horizontal Tabs */}
+          <div style={{
+            display: 'flex', 
+            gap: '10px', 
+            marginBottom: '24px', 
+            marginTop: '16px',
+            borderBottom: '2px solid var(--line)', 
+            paddingBottom: '10px',
+            flexWrap: 'wrap'
+          }}>
+            <button 
+              onClick={() => setMetricsTab('flokx')}
+              style={{
+                padding: '10px 20px',
+                background: metricsTab === 'flokx' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (metricsTab === 'flokx' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: metricsTab === 'flokx' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: metricsTab === 'flokx' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: metricsTab === 'flokx' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              🔔 Flokx Alerts
+            </button>
+            <button 
+              onClick={() => setMetricsTab('decision-trace')}
+              style={{
+                padding: '10px 20px',
+                background: metricsTab === 'decision-trace' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (metricsTab === 'decision-trace' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: metricsTab === 'decision-trace' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: metricsTab === 'decision-trace' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: metricsTab === 'decision-trace' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              🎬 Decision Trace
+            </button>
+            <button 
+              onClick={() => setMetricsTab('whale-flow')}
+              style={{
+                padding: '10px 20px',
+                background: metricsTab === 'whale-flow' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (metricsTab === 'whale-flow' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: metricsTab === 'whale-flow' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: metricsTab === 'whale-flow' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: metricsTab === 'whale-flow' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              🐋 Whale Flow
+            </button>
+            <button 
+              onClick={() => setMetricsTab('system-metrics')}
+              style={{
+                padding: '10px 20px',
+                background: metricsTab === 'system-metrics' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (metricsTab === 'system-metrics' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: metricsTab === 'system-metrics' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: metricsTab === 'system-metrics' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: metricsTab === 'system-metrics' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              📊 System Metrics
+            </button>
+          </div>
+
+          {/* Tab Content */}
+          <div style={{marginTop: '20px'}}>
+            {metricsTab === 'flokx' && (
+              <div>
+                {!isFlokxActive && (
+                  <div style={{padding: '40px', textAlign: 'center', background: 'var(--panel)', borderRadius: '6px', border: '1px solid var(--line)'}}>
+                    <p style={{color: 'var(--muted)', marginBottom: '12px'}}>
+                      ⚠️ Flokx alerts are not active. Configure your Flokx API key in the API Setup section to enable real-time alerts.
+                    </p>
+                    <button 
+                      onClick={() => showSection('api')}
+                      style={{
+                        padding: '8px 16px',
+                        background: 'var(--accent2)',
+                        color: 'var(--text)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Configure Flokx API
+                    </button>
+                  </div>
+                )}
+                
+                {isFlokxActive && (
+                  <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
+                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                        <div style={{width: '8px', height: '8px', borderRadius: '50%', background: 'var(--success)'}}></div>
+                        <span style={{fontSize: '0.85rem', color: 'var(--muted)'}}>Flokx Connected</span>
+                      </div>
+                      <button 
+                        onClick={loadFlokxAlerts} 
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          background: 'var(--accent2)',
+                          color: 'var(--text)',
+                          border: 'none',
+                          fontWeight: 600,
+                          fontSize: '0.85rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Refresh Alerts
+                      </button>
+                    </div>
+                    
+                    <div style={{background: 'var(--glass)', padding: '12px', borderRadius: '6px', border: '1px solid var(--line)'}}>
+                      {!Array.isArray(flokxAlerts) || flokxAlerts.length === 0 ? (
+                        <p style={{color: 'var(--muted)', padding: '20px', textAlign: 'center'}}>
+                          ✓ No alerts at this time - System running smoothly
+                        </p>
+                      ) : (
+                        <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
+                          {Array.isArray(flokxAlerts) && flokxAlerts.map((alert, idx) => (
+                            <div 
+                              key={idx}
+                              style={{
+                                padding: '12px',
+                                background: 'var(--panel)',
+                                borderRadius: '6px',
+                                borderLeft: '4px solid ' + getAlertColor(alert.priority || alert.type || 'info'),
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                              }}
+                            >
+                              <div>
+                                <div style={{fontWeight: 600, marginBottom: '4px'}}>
+                                  {alert.title || alert.pair || 'Alert'}
+                                </div>
+                                <div style={{fontSize: '0.85rem', color: 'var(--muted)'}}>
+                                  {alert.message || 'No details available'}
+                                </div>
+                                <div style={{fontSize: '0.75rem', color: 'var(--muted)', marginTop: '4px'}}>
+                                  {alert.timestamp ? new Date(alert.timestamp).toLocaleString() : 'No timestamp'}
+                                </div>
+                              </div>
+                              {(alert.priority || alert.type) && (
+                                <div style={{
+                                  padding: '4px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  background: getAlertColor(alert.priority || alert.type || 'info'),
+                                  color: 'white'
+                                }}>
+                                  {(alert.priority || alert.type || 'INFO').toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {metricsTab === 'decision-trace' && <DecisionTrace />}
+            {metricsTab === 'whale-flow' && <WhaleFlowHeatmap />}
+            {metricsTab === 'system-metrics' && <PrometheusMetrics />}
+          </div>
+        </div>
+      </section>
+    );
+  };
+
   const renderFlokxAlerts = () => {
     
     return (
@@ -3873,53 +4072,17 @@ export default function Dashboard() {
             <a href="#" className={activeSection === 'graphs' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('graphs'); }}>📈 Profit & Performance</a>
             <a href="#" className={activeSection === 'trades' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('trades'); }}>📊 Live Trades</a>
             
-            {/* Metrics Section with Submenu */}
-            <div style={{position: 'relative'}}>
-              <a 
-                href="#" 
-                className={['flokx', 'decision-trace', 'whale-flow', 'metrics-panel'].includes(activeSection) ? 'active' : ''}
-                onClick={(e) => { e.preventDefault(); setMetricsExpanded(!metricsExpanded); }}
-                style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}
-              >
-                📊 Metrics {metricsExpanded ? '▼' : '▶'}
-              </a>
-              {metricsExpanded && (
-                <div style={{paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px'}}>
-                  <a 
-                    href="#" 
-                    className={activeSection === 'flokx' ? 'active' : ''}
-                    onClick={(e) => { e.preventDefault(); showSection('flokx'); }}
-                    style={{fontSize: '0.9em', padding: '6px 12px'}}
-                  >
-                    🔔 Flokx Alerts
-                  </a>
-                  <a 
-                    href="#" 
-                    className={activeSection === 'decision-trace' ? 'active' : ''}
-                    onClick={(e) => { e.preventDefault(); showSection('decision-trace'); }}
-                    style={{fontSize: '0.9em', padding: '6px 12px'}}
-                  >
-                    🎬 Decision Trace
-                  </a>
-                  <a 
-                    href="#" 
-                    className={activeSection === 'whale-flow' ? 'active' : ''}
-                    onClick={(e) => { e.preventDefault(); showSection('whale-flow'); }}
-                    style={{fontSize: '0.9em', padding: '6px 12px'}}
-                  >
-                    🐋 Whale Flow
-                  </a>
-                  <a 
-                    href="#" 
-                    className={activeSection === 'metrics-panel' ? 'active' : ''}
-                    onClick={(e) => { e.preventDefault(); showSection('metrics-panel'); }}
-                    style={{fontSize: '0.9em', padding: '6px 12px'}}
-                  >
-                    📊 System Metrics
-                  </a>
-                </div>
-              )}
-            </div>
+            {/* Metrics - Single nav item that opens section with tabs inside */}
+            <a 
+              href="#" 
+              className={['metrics', 'flokx', 'decision-trace', 'whale-flow', 'metrics-panel'].includes(activeSection) ? 'active' : ''}
+              onClick={(e) => { 
+                e.preventDefault(); 
+                showSection('metrics'); // Show metrics section which will have tabs inside
+              }}
+            >
+              📊 Metrics
+            </a>
             
             <a href="#" className={activeSection === 'countdown' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('countdown'); }}>⏱️ Countdown</a>
             <a href="#" className={activeSection === 'wallet' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('wallet'); }}>💰 Wallet Hub</a>
@@ -3987,6 +4150,7 @@ export default function Dashboard() {
         {activeSection === 'trades' && renderLiveTradeFeed()}
         {activeSection === 'countdown' && renderCountdown()}
         {activeSection === 'wallet' && renderWalletHub()}
+        {activeSection === 'metrics' && renderMetricsWithTabs()}
         {activeSection === 'flokx' && renderFlokxAlerts()}
         {activeSection === 'decision-trace' && renderDecisionTrace()}
         {activeSection === 'whale-flow' && renderWhaleFlow()}

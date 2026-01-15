@@ -123,9 +123,15 @@ export default function PrometheusMetrics() {
   // Fetch metrics from Prometheus endpoint and system health
   const fetchMetrics = async () => {
     try {
+      // Attach authorization token properly
+      const token = localStorage.getItem('token');
+      
       // Fetch Prometheus metrics
       const metricsResponse = await get('/metrics', {
-        headers: { 'Accept': 'text/plain' }
+        headers: { 
+          'Accept': 'text/plain',
+          'Authorization': `Bearer ${token}`
+        }
       });
 
       setMetrics(metricsResponse);
@@ -143,7 +149,9 @@ export default function PrometheusMetrics() {
       setError(null);
     } catch (err) {
       console.error('Error fetching metrics:', err);
-      setError(err.message || 'Failed to fetch metrics');
+      const errorMessage = err.message || 'Failed to fetch metrics';
+      const statusCode = err.status || err.response?.status || 'N/A';
+      setError(`Metrics not available yet (${statusCode}): ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -198,13 +206,40 @@ export default function PrometheusMetrics() {
   if (error) {
     return (
       <Card className="p-6">
-        <div className="text-center text-red-600">
-          <p>Error: {error}</p>
+        <div className="text-center">
+          <div style={{fontSize: '2rem', marginBottom: '16px', color: 'var(--error)'}}>⚠️</div>
+          <p style={{color: 'var(--error)', fontWeight: '600', marginBottom: '12px'}}>Metrics Not Available Yet</p>
+          <p style={{color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '16px'}}>{error}</p>
+          <div style={{
+            padding: '12px',
+            background: 'var(--glass)',
+            borderRadius: '6px',
+            marginBottom: '16px',
+            textAlign: 'left',
+            fontSize: '0.85rem',
+            color: 'var(--muted)'
+          }}>
+            <p><strong>Possible reasons:</strong></p>
+            <ul style={{paddingLeft: '20px', marginTop: '8px'}}>
+              <li>Prometheus metrics endpoint not configured on backend</li>
+              <li>Insufficient permissions to access metrics</li>
+              <li>Backend service not running</li>
+            </ul>
+          </div>
           <button
             onClick={fetchMetrics}
             className="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            style={{
+              padding: '10px 20px',
+              background: 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
           >
-            Retry
+            🔄 Retry
           </button>
         </div>
       </Card>
