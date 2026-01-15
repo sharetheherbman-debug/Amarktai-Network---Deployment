@@ -25,6 +25,7 @@ import PlatformSelector from '../components/PlatformSelector';
 import { API_BASE, wsUrl } from '../lib/api.js';
 import { useRealtimeEvent } from '../hooks/useRealtime';
 import { post, get } from '../lib/apiClient';
+import marketDataFallback from '../lib/MarketDataFallback';
 
 ChartJS.register(
   CategoryScale,
@@ -138,6 +139,9 @@ export default function Dashboard() {
   const token = localStorage.getItem('token');
   const axiosConfig = { headers: { Authorization: `Bearer ${token}` } };
 
+  // Track if WebSocket has been initialized to prevent double initialization
+  const wsInitializedRef = useRef(false);
+
   useEffect(() => {
     if (!token) {
       navigate('/login');
@@ -151,8 +155,11 @@ export default function Dashboard() {
     loadRecentTrades();
     loadCountdown();
     
-    // Setup real-time connections
-    setupRealTimeConnections();
+    // Setup real-time connections ONCE
+    if (!wsInitializedRef.current) {
+      setupRealTimeConnections();
+      wsInitializedRef.current = true;
+    }
     
     // Handle responsive
     const handleResize = () => setIsMobile(window.innerWidth <= 900);
@@ -167,10 +174,14 @@ export default function Dashboard() {
     
     return () => {
       window.removeEventListener('resize', handleResize);
-      if (wsRef.current) wsRef.current.close();
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsInitializedRef.current = false;
+      }
       if (sseRef.current) sseRef.current.close();
     };
   }, []);
+  
   useEffect(() => {
     if (token && user) {
       loadBots();
@@ -178,7 +189,7 @@ export default function Dashboard() {
       loadSystemStats();
       loadProfitData();
       loadLivePrices();
-      setupRealTimeConnections();
+      // REMOVED: Duplicate setupRealTimeConnections() call
       
       // Update live prices every 5 seconds
       const priceInterval = setInterval(() => {
@@ -187,8 +198,7 @@ export default function Dashboard() {
       
       return () => {
         clearInterval(priceInterval);
-        if (wsRef.current) wsRef.current.close();
-        if (sseRef.current) sseRef.current.close();
+        // Don't close WebSocket here, it's managed by the first useEffect
       };
     }
   }, [token, user]);
@@ -381,8 +391,26 @@ export default function Dashboard() {
     }
   };
 
+  // Rate limiter for unknown message types
+  const unknownMessageRateLimit = useRef({ count: 0, lastReset: Date.now() });
+
   const handleRealTimeUpdate = (data) => {
     switch (data.type) {
+      case 'connection':
+        // Handle WebSocket connection status updates
+        setConnectionStatus(prev => ({
+          ...prev,
+          ws: data.status === 'Connected' ? 'Connected' : 'Disconnected',
+          sse: data.status === 'Connected' ? 'Connected' : 'Disconnected'
+        }));
+        console.log('🔌 Connection status:', data.status);
+        break;
+      
+      case 'ping':
+        // Handle ping messages - update last seen timestamp silently
+        setSseLastUpdate(new Date().toISOString());
+        break;
+      
       case 'metrics':
         setMetrics(prev => ({ ...prev, ...data.payload }));
         break;
@@ -572,7 +600,20 @@ export default function Dashboard() {
         break;
       
       default:
-        console.log('Unknown real-time update:', data);
+        // Rate-limited debug logging for unknown message types
+        const now = Date.now();
+        if (now - unknownMessageRateLimit.current.lastReset > 60000) {
+          // Reset counter every minute
+          unknownMessageRateLimit.current = { count: 0, lastReset: now };
+        }
+        
+        if (unknownMessageRateLimit.current.count < 5) {
+          console.debug('Unknown real-time update:', data);
+          unknownMessageRateLimit.current.count++;
+        } else if (unknownMessageRateLimit.current.count === 5) {
+          console.debug('Unknown message types rate limit reached. Suppressing further logs for 1 minute.');
+          unknownMessageRateLimit.current.count++;
+        }
     }
   };
 
@@ -745,9 +786,32 @@ export default function Dashboard() {
     try {
       const res = await axios.get(`${API}/prices/live`, axiosConfig);
       // Backend returns prices directly, not wrapped
-      setLivePrices(res.data || {});
+      const backendPrices = res.data || {};
+      
+      // Check if we have valid backend prices
+      const hasValidPrices = Object.keys(backendPrices).length > 0 && 
+                            Object.values(backendPrices).some(p => p.price && p.price > 0);
+      
+      if (hasValidPrices) {
+        // Mark as backend data
+        Object.keys(backendPrices).forEach(key => {
+          backendPrices[key].isFallback = false;
+        });
+        setLivePrices(backendPrices);
+      } else {
+        // Use fallback public data
+        const fallbackPrices = await marketDataFallback.getPrices();
+        setLivePrices(fallbackPrices);
+      }
     } catch (err) {
-      console.error('Live prices fetch error:', err);
+      console.error('Live prices fetch error, using public fallback:', err);
+      // On error, use fallback
+      try {
+        const fallbackPrices = await marketDataFallback.getPrices();
+        setLivePrices(fallbackPrices);
+      } catch (fallbackErr) {
+        console.error('Fallback prices also failed:', fallbackErr);
+      }
     }
   };
 
@@ -1222,15 +1286,23 @@ export default function Dashboard() {
     if (!form) return;
 
     const inputs = form.querySelectorAll('input');
-    const data = { provider };
+    const data = { exchange: provider.toLowerCase() }; // Backend expects 'exchange' field
     let hasValidInput = false;
     
     inputs.forEach(input => {
       const value = input.value.trim();
       if (value) {
-        // Map field names correctly
+        // Map field names correctly for backend contract
         if (input.name === 'api_token') {
-          data['api_key'] = value;  // Flokx uses api_token in UI but api_key in backend
+          data['apiKey'] = value;  // Use apiKey for consistency
+        } else if (input.name === 'api_key') {
+          data['apiKey'] = value;
+        } else if (input.name === 'api_secret') {
+          data['apiSecret'] = value;
+        } else if (input.name === 'passphrase') {
+          data['passphrase'] = value; // KuCoin requires passphrase
+        } else if (input.name === 'sandbox' || input.name === 'paper') {
+          data[input.name] = value === 'true' || value === true;
         } else {
           data[input.name] = value;
         }
@@ -1239,43 +1311,81 @@ export default function Dashboard() {
     });
 
     // Validate that at least the primary API key is provided
-    if (!hasValidInput || !data.api_key) {
+    if (!hasValidInput || !data.apiKey) {
       showNotification('Please enter a valid API key', 'error');
       return;
     }
 
     // Special validation for OpenAI
-    if (provider === 'openai' && data.api_key && !data.api_key.startsWith('sk-')) {
+    if (provider === 'openai' && data.apiKey && !data.apiKey.startsWith('sk-')) {
       showNotification('Invalid OpenAI API key format (must start with sk-)', 'error');
       return;
     }
 
-    // Validate exchange keys have secrets
-    if (['luno', 'binance', 'kucoin'].includes(provider) && !data.api_secret) {
+    // Validate exchange keys have secrets (except for some exchanges)
+    const exchangesNeedingSecret = ['luno', 'binance', 'kucoin', 'kraken', 'valr'];
+    if (exchangesNeedingSecret.includes(provider.toLowerCase()) && !data.apiSecret) {
       showNotification(`${provider.toUpperCase()} requires both API key and secret`, 'error');
       return;
     }
 
     try {
-      await axios.post(`${API}/keys/save`, data, axiosConfig);
+      const response = await axios.post(`${API}/keys/save`, data, axiosConfig);
       showNotification(`✅ ${provider.toUpperCase()} API key saved!`);
       loadApiStatuses();
       
       // Clear form inputs after successful save
       inputs.forEach(input => input.value = '');
     } catch (err) {
-      showNotification(extractErrorMessage(err, 'Failed to save API key'), 'error');
+      // Handle 500 errors with detailed debug information
+      if (err.response?.status === 500) {
+        const errorData = {
+          endpoint: '/api/keys/save',
+          exchange: provider,
+          statusCode: 500,
+          message: err.response?.data?.detail || 'Internal server error',
+          requestId: err.response?.headers?.['x-request-id'] || 'N/A'
+        };
+        
+        showNotification(
+          `❌ Backend error saving key (500): ${errorData.message}. Check server logs.`,
+          'error'
+        );
+        
+        // Add a "Copy debug info" button via toast with longer duration
+        console.error('API Key Save Error (500):', errorData);
+        console.error('Debug Info (copy this):', JSON.stringify(errorData, null, 2));
+      } else if (err.response?.status === 400) {
+        showNotification(
+          `❌ Invalid request (400): ${extractErrorMessage(err, 'Bad request')}`,
+          'error'
+        );
+      } else {
+        showNotification(extractErrorMessage(err, 'Failed to save API key'), 'error');
+      }
       console.error('API key save error:', err);
     }
   };
 
   const handleTestApiKey = async (provider) => {
     try {
-      await axios.post(`${API}/keys/test`, { provider }, axiosConfig);
-      showNotification(`${provider} connection verified!`);
+      // Backend expects exchange field, not provider
+      const response = await axios.post(`${API}/keys/test`, { 
+        exchange: provider.toLowerCase() 
+      }, axiosConfig);
+      
+      showNotification(`✅ ${provider.toUpperCase()} connection verified!`);
       loadApiStatuses();
     } catch (err) {
-      showNotification(`${provider} connection failed`, 'error');
+      if (err.response?.status === 400) {
+        showNotification(
+          `❌ ${provider.toUpperCase()} test failed (400): ${extractErrorMessage(err, 'Invalid credentials format')}`,
+          'error'
+        );
+      } else {
+        showNotification(`❌ ${provider.toUpperCase()} connection failed: ${extractErrorMessage(err)}`, 'error');
+      }
+      console.error('API key test error:', err);
     }
   };
 
@@ -1845,6 +1955,19 @@ export default function Dashboard() {
                 <strong>BTC/ZAR</strong>
                 <div className="led-row">
                   <span>R{livePrices['BTC/ZAR']?.price?.toLocaleString() || '0'}</span>
+                  {livePrices['BTC/ZAR']?.isFallback && (
+                    <span style={{
+                      fontSize: '0.65rem',
+                      padding: '2px 6px',
+                      marginLeft: '8px',
+                      background: 'rgba(59, 130, 246, 0.2)',
+                      color: '#3b82f6',
+                      borderRadius: '4px',
+                      fontWeight: '600'
+                    }}>
+                      Public data
+                    </span>
+                  )}
                   <span style={{
                     color: livePrices['BTC/ZAR']?.change >= 0 ? 'var(--success)' : 'var(--error)',
                     fontSize: '0.8rem',
@@ -1858,6 +1981,19 @@ export default function Dashboard() {
                 <strong>ETH/ZAR</strong>
                 <div className="led-row">
                   <span>R{livePrices['ETH/ZAR']?.price?.toLocaleString() || '0'}</span>
+                  {livePrices['ETH/ZAR']?.isFallback && (
+                    <span style={{
+                      fontSize: '0.65rem',
+                      padding: '2px 6px',
+                      marginLeft: '8px',
+                      background: 'rgba(59, 130, 246, 0.2)',
+                      color: '#3b82f6',
+                      borderRadius: '4px',
+                      fontWeight: '600'
+                    }}>
+                      Public data
+                    </span>
+                  )}
                   <span style={{
                     color: livePrices['ETH/ZAR']?.change >= 0 ? 'var(--success)' : 'var(--error)',
                     fontSize: '0.8rem',
@@ -1871,6 +2007,19 @@ export default function Dashboard() {
                 <strong>XRP/ZAR</strong>
                 <div className="led-row">
                   <span>R{livePrices['XRP/ZAR']?.price?.toLocaleString() || '0'}</span>
+                  {livePrices['XRP/ZAR']?.isFallback && (
+                    <span style={{
+                      fontSize: '0.65rem',
+                      padding: '2px 6px',
+                      marginLeft: '8px',
+                      background: 'rgba(59, 130, 246, 0.2)',
+                      color: '#3b82f6',
+                      borderRadius: '4px',
+                      fontWeight: '600'
+                    }}>
+                      Public data
+                    </span>
+                  )}
                   <span style={{
                     color: livePrices['XRP/ZAR']?.change >= 0 ? 'var(--success)' : 'var(--error)',
                     fontSize: '0.8rem',
