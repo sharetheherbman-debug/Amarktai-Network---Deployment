@@ -214,11 +214,13 @@ async def get_user_details(user_id: str, admin_user_id: str = Depends(verify_adm
 @router.post("/users/{user_id}/block")
 async def block_user(
     user_id: str,
-    reason: str,
+    request: dict,
     admin_user_id: str = Depends(verify_admin)
 ):
     """Block a user"""
     try:
+        reason = request.get('reason', 'No reason provided')
+        
         # Update user status
         result = await db.users_collection.update_one(
             {"id": user_id},
@@ -226,7 +228,7 @@ async def block_user(
                 "$set": {
                     "status": "blocked",
                     "blocked_at": datetime.now(timezone.utc).isoformat(),
-                    "blocked_by": admin_user['id'],
+                    "blocked_by": admin_user_id,
                     "blocked_reason": reason
                 }
             }
@@ -244,7 +246,7 @@ async def block_user(
         # Log action
         await audit_logger.log_event(
             event_type="user_blocked",
-            user_id=admin_user['id'],
+            user_id=admin_user_id,
             details={
                 "target_user_id": user_id,
                 "reason": reason
@@ -255,7 +257,7 @@ async def block_user(
         return {
             "success": True,
             "message": f"User {user_id} blocked",
-            "blocked_by": admin_user['email']
+            "blocked_by": admin_user_id
         }
         
     except HTTPException:
@@ -274,7 +276,7 @@ async def unblock_user(user_id: str, admin_user_id: str = Depends(verify_admin))
                 "$set": {
                     "status": "active",
                     "unblocked_at": datetime.now(timezone.utc).isoformat(),
-                    "unblocked_by": admin_user['id']
+                    "unblocked_by": admin_user_id
                 }
             }
         )
@@ -285,7 +287,7 @@ async def unblock_user(user_id: str, admin_user_id: str = Depends(verify_admin))
         # Log action
         await audit_logger.log_event(
             event_type="user_unblocked",
-            user_id=admin_user['id'],
+            user_id=admin_user_id,
             details={"target_user_id": user_id},
             severity="warning"
         )
@@ -304,11 +306,16 @@ async def unblock_user(user_id: str, admin_user_id: str = Depends(verify_admin))
 @router.post("/users/{user_id}/reset-password")
 async def reset_user_password(
     user_id: str,
-    new_password: str,
+    request: dict,
     admin_user_id: str = Depends(verify_admin)
 ):
     """Reset user password (admin action)"""
     try:
+        new_password = request.get('new_password', '').strip()
+        
+        if not new_password:
+            raise HTTPException(status_code=400, detail="New password required")
+        
         # Hash new password
         hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
         
@@ -329,10 +336,10 @@ async def reset_user_password(
         # Log action
         await audit_logger.log_event(
             event_type="password_reset_by_admin",
-            user_id=admin_user['id'],
+            user_id=admin_user_id,
             details={
                 "target_user_id": user_id,
-                "reset_by": admin_user['email']
+                "reset_by": admin_user_id
             },
             severity="critical"
         )
@@ -351,11 +358,13 @@ async def reset_user_password(
 @router.delete("/users/{user_id}")
 async def delete_user(
     user_id: str,
-    confirm: bool,
+    request: dict,
     admin_user_id: str = Depends(verify_admin)
 ):
     """Delete user and all their data (dangerous!)"""
     try:
+        confirm = request.get('confirm', False)
+        
         if not confirm:
             return {
                 "success": False,
@@ -377,12 +386,12 @@ async def delete_user(
         # Log action
         await audit_logger.log_event(
             event_type="user_deleted",
-            user_id=admin_user['id'],
+            user_id=admin_user_id,
             details={
                 "target_user_id": user_id,
                 "bots_deleted": bots_result.deleted_count,
                 "trades_deleted": trades_result.deleted_count,
-                "deleted_by": admin_user['email']
+                "deleted_by": admin_user_id
             },
             severity="critical"
         )
@@ -485,3 +494,276 @@ async def get_audit_events(
     except Exception as e:
         logger.error(f"Get audit events error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/system/resources")
+async def get_system_resources(admin_user_id: str = Depends(verify_admin)):
+    """Get system resource usage (disk, memory, load, inodes)"""
+    import psutil
+    import shutil
+    
+    try:
+        # Disk usage
+        disk = shutil.disk_usage("/")
+        disk_info = {
+            "total": disk.total,
+            "used": disk.used,
+            "free": disk.free,
+            "percent": round((disk.used / disk.total) * 100, 2)
+        }
+        
+        # Inode usage (Linux only)
+        inode_info = {}
+        try:
+            import subprocess
+            result = subprocess.run(['df', '-i', '/'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                if len(lines) >= 2:
+                    parts = lines[1].split()
+                    if len(parts) >= 5:
+                        inode_info = {
+                            "total": parts[1],
+                            "used": parts[2],
+                            "free": parts[3],
+                            "percent": parts[4]
+                        }
+        except Exception as e:
+            logger.warning(f"Could not get inode info: {e}")
+            inode_info = {"error": "Not available"}
+        
+        # Memory usage
+        memory = psutil.virtual_memory()
+        memory_info = {
+            "total": memory.total,
+            "available": memory.available,
+            "used": memory.used,
+            "percent": memory.percent
+        }
+        
+        # Load average (Linux/Unix)
+        try:
+            load_avg = psutil.getloadavg()
+            load_info = {
+                "1min": load_avg[0],
+                "5min": load_avg[1],
+                "15min": load_avg[2]
+            }
+        except (AttributeError, OSError):
+            load_info = {"error": "Not available on this platform"}
+        
+        return {
+            "disk": disk_info,
+            "inodes": inode_info,
+            "memory": memory_info,
+            "load": load_info,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Get system resources error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/system/processes")
+async def get_process_health(admin_user_id: str = Depends(verify_admin)):
+    """Get health status of key processes (amarktai-api, nginx, redis)"""
+    import psutil
+    
+    try:
+        processes = {}
+        
+        # Check for key processes by name
+        process_names = ['python', 'uvicorn', 'nginx', 'redis-server', 'mongod']
+        
+        for proc in psutil.process_iter(['pid', 'name', 'status', 'cpu_percent', 'memory_percent']):
+            try:
+                name = proc.info['name']
+                if any(pname in name.lower() for pname in process_names):
+                    if name not in processes:
+                        processes[name] = []
+                    
+                    processes[name].append({
+                        "pid": proc.info['pid'],
+                        "status": proc.info['status'],
+                        "cpu_percent": round(proc.info['cpu_percent'], 2),
+                        "memory_percent": round(proc.info['memory_percent'], 2)
+                    })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        
+        # Determine overall health
+        health_status = "healthy" if processes else "degraded"
+        
+        return {
+            "status": health_status,
+            "processes": processes,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Get process health error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/system/logs")
+async def get_system_logs(
+    lines: int = 200,
+    log_file: str = "backend",
+    admin_user_id: str = Depends(verify_admin)
+):
+    """Get last N lines of key logs (sanitized to remove secrets)"""
+    import re
+    
+    try:
+        # Map log file names to actual paths
+        log_paths = {
+            "backend": "/var/log/amarktai/backend.log",
+            "nginx": "/var/log/nginx/access.log",
+            "error": "/var/log/nginx/error.log"
+        }
+        
+        # Default to looking in current directory if standard paths don't exist
+        if log_file not in log_paths:
+            log_file = "backend"
+        
+        log_path = log_paths.get(log_file, "/var/log/amarktai/backend.log")
+        
+        # Try alternate paths if main path doesn't exist
+        import os
+        if not os.path.exists(log_path):
+            # Try current directory
+            alt_paths = [
+                f"logs/{log_file}.log",
+                f"{log_file}.log",
+                "server.log"
+            ]
+            for alt_path in alt_paths:
+                if os.path.exists(alt_path):
+                    log_path = alt_path
+                    break
+        
+        # Read log file
+        if os.path.exists(log_path):
+            with open(log_path, 'r') as f:
+                all_lines = f.readlines()
+                recent_lines = all_lines[-lines:]
+        else:
+            recent_lines = [f"Log file not found: {log_path}"]
+        
+        # Sanitize logs to remove API keys, passwords, tokens
+        sanitized_lines = []
+        for line in recent_lines:
+            # Remove API keys (look for patterns like api_key=..., apiKey:..., etc.)
+            line = re.sub(r'(api[_-]?key|apiKey|API[_-]?KEY)["\s:=]+[a-zA-Z0-9_-]+', r'\1=***REDACTED***', line, flags=re.IGNORECASE)
+            # Remove tokens
+            line = re.sub(r'(token|Token|TOKEN)["\s:=]+[a-zA-Z0-9._-]+', r'\1=***REDACTED***', line)
+            # Remove passwords
+            line = re.sub(r'(password|Password|PASSWORD)["\s:=]+[^\s"]+', r'\1=***REDACTED***', line)
+            # Remove bearer tokens
+            line = re.sub(r'Bearer [a-zA-Z0-9._-]+', 'Bearer ***REDACTED***', line)
+            
+            sanitized_lines.append(line.rstrip())
+        
+        return {
+            "log_file": log_file,
+            "path": log_path,
+            "lines": sanitized_lines,
+            "total_lines": len(sanitized_lines),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Get system logs error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/change-password")
+async def change_admin_password(
+    request: dict,
+    admin_user_id: str = Depends(verify_admin)
+):
+    """Change the admin unlock password (stores hashed in env or database)"""
+    try:
+        current_password = request.get('current_password', '').strip()
+        new_password = request.get('new_password', '').strip()
+        
+        if not current_password or not new_password:
+            raise HTTPException(status_code=400, detail="Current and new password required")
+        
+        # Verify current password
+        admin_password = os.getenv('ADMIN_PASSWORD')
+        if not admin_password or current_password.lower() != admin_password.lower():
+            raise HTTPException(status_code=403, detail="Current password incorrect")
+        
+        # Hash new password
+        hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+        
+        # Store in database (admin_config collection)
+        await db.admin_config_collection.update_one(
+            {"key": "admin_password"},
+            {
+                "$set": {
+                    "value": hashed.decode('utf-8'),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_by": admin_user_id
+                }
+            },
+            upsert=True
+        )
+        
+        # Log action
+        await audit_logger.log_event(
+            event_type="admin_password_changed",
+            user_id=admin_user_id,
+            details={"timestamp": datetime.now(timezone.utc).isoformat()},
+            severity="critical"
+        )
+        
+        return {
+            "success": True,
+            "message": "Admin password changed successfully. Update ADMIN_PASSWORD env variable for persistence."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Change admin password error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/users/{user_id}/api-keys")
+async def get_user_api_keys_status(
+    user_id: str,
+    admin_user_id: str = Depends(verify_admin)
+):
+    """Get status of which exchanges have keys set for a user (no secrets exposed)"""
+    try:
+        user = await db.users_collection.find_one({"id": user_id}, {"api_keys": 1})
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        api_keys = user.get("api_keys", {})
+        
+        # Return only status, not actual keys
+        key_status = {}
+        for exchange in ["luno", "binance", "kucoin", "ovex", "valr"]:
+            key_status[exchange] = {
+                "configured": exchange in api_keys and api_keys[exchange],
+                "last_tested": api_keys.get(f"{exchange}_last_tested"),
+                "status": api_keys.get(f"{exchange}_status", "unknown")
+            }
+        
+        return {
+            "user_id": user_id,
+            "exchanges": key_status,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get user API keys status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
