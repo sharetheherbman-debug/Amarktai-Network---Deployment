@@ -17,7 +17,10 @@ PLATFORM_CONFIG = {
         'max_bots': 5,
         'region': 'ZA',
         'requires_passphrase': False,
-        'enabled': True
+        'enabled': True,
+        'supports_paper': True,  # Can run paper trading without keys
+        'supports_live': True,   # Can run live trading with keys
+        'required_key_fields': ['api_key', 'api_secret']  # Required credentials
     },
     'binance': {
         'id': 'binance',
@@ -28,7 +31,10 @@ PLATFORM_CONFIG = {
         'max_bots': 10,
         'region': 'Global',
         'requires_passphrase': False,
-        'enabled': True
+        'enabled': True,
+        'supports_paper': True,
+        'supports_live': True,
+        'required_key_fields': ['api_key', 'api_secret']
     },
     'kucoin': {
         'id': 'kucoin',
@@ -39,7 +45,10 @@ PLATFORM_CONFIG = {
         'max_bots': 10,
         'region': 'Global',
         'requires_passphrase': True,  # KuCoin requires passphrase
-        'enabled': True
+        'enabled': True,
+        'supports_paper': True,
+        'supports_live': True,
+        'required_key_fields': ['api_key', 'api_secret', 'passphrase']  # KuCoin needs passphrase
     },
     'ovex': {
         'id': 'ovex',
@@ -50,7 +59,10 @@ PLATFORM_CONFIG = {
         'max_bots': 10,
         'region': 'ZA',
         'requires_passphrase': False,
-        'enabled': True
+        'enabled': True,
+        'supports_paper': True,
+        'supports_live': True,
+        'required_key_fields': ['api_key', 'api_secret']
     },
     'valr': {
         'id': 'valr',
@@ -61,7 +73,10 @@ PLATFORM_CONFIG = {
         'max_bots': 10,
         'region': 'ZA',
         'requires_passphrase': False,
-        'enabled': True
+        'enabled': True,
+        'supports_paper': True,
+        'supports_live': True,
+        'required_key_fields': ['api_key', 'api_secret']
     }
 }
 

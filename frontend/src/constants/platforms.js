@@ -17,7 +17,10 @@ export const PLATFORM_CONFIG = {
     maxBots: 5,
     region: 'ZA',
     requiresPassphrase: false,
-    enabled: true
+    enabled: true,
+    supportsPaper: true,  // Can run paper trading without keys
+    supportsLive: true,   // Can run live trading with keys
+    requiredKeyFields: ['api_key', 'api_secret']  // Required credentials
   },
   binance: {
     id: 'binance',
@@ -28,7 +31,10 @@ export const PLATFORM_CONFIG = {
     maxBots: 10,
     region: 'Global',
     requiresPassphrase: false,
-    enabled: true
+    enabled: true,
+    supportsPaper: true,
+    supportsLive: true,
+    requiredKeyFields: ['api_key', 'api_secret']
   },
   kucoin: {
     id: 'kucoin',
@@ -39,7 +45,10 @@ export const PLATFORM_CONFIG = {
     maxBots: 10,
     region: 'Global',
     requiresPassphrase: true,  // KuCoin requires passphrase
-    enabled: true
+    enabled: true,
+    supportsPaper: true,
+    supportsLive: true,
+    requiredKeyFields: ['api_key', 'api_secret', 'passphrase']  // KuCoin needs passphrase
   },
   ovex: {
     id: 'ovex',
@@ -50,7 +59,10 @@ export const PLATFORM_CONFIG = {
     maxBots: 10,
     region: 'ZA',
     requiresPassphrase: false,
-    enabled: true
+    enabled: true,
+    supportsPaper: true,
+    supportsLive: true,
+    requiredKeyFields: ['api_key', 'api_secret']
   },
   valr: {
     id: 'valr',
@@ -61,7 +73,10 @@ export const PLATFORM_CONFIG = {
     maxBots: 10,
     region: 'ZA',
     requiresPassphrase: false,
-    enabled: true
+    enabled: true,
+    supportsPaper: true,
+    supportsLive: true,
+    requiredKeyFields: ['api_key', 'api_secret']
   }
 };
 
