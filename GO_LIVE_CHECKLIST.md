@@ -6,7 +6,243 @@
 
 ---
 
-## PRE-DEPLOYMENT CHECKS
+## CRITICAL ENVIRONMENT VARIABLES
+
+### Required for Production:
+
+```bash
+# Admin access
+ADMIN_PASSWORD=Ashmor12@
+
+# Database
+MONGO_URL=mongodb://localhost:27017
+DB_NAME=amarktai_trading
+
+# Security
+JWT_SECRET=your-production-secret-change-this
+API_KEY_ENCRYPTION_KEY=your-encryption-key-base64
+
+# Feature flags
+ENABLE_TRADING=false      # Start with paper trading only, set to true for live
+ENABLE_AUTOPILOT=false    # Enable after testing
+ENABLE_CCXT=true          # Required for price data
+ENABLE_SCHEDULERS=false   # Enable after testing
+
+# Optional (for full functionality)
+OPENAI_API_KEY=your-openai-key
+FETCHAI_API_KEY=your-fetchai-key
+FLOKX_API_KEY=your-flokx-key
+```
+
+### Setting Environment Variables on Ubuntu Systemd:
+
+1. Edit systemd service file:
+```bash
+sudo nano /etc/systemd/system/amarktai-api.service
+```
+
+2. Add environment variables:
+```ini
+[Service]
+Environment="ADMIN_PASSWORD=Ashmor12@"
+Environment="MONGO_URL=mongodb://localhost:27017"
+Environment="ENABLE_CCXT=true"
+# Add other vars...
+```
+
+3. Reload and restart:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart amarktai-api
+```
+
+---
+
+## PRE-DEPLOYMENT VERIFICATION
+
+### 1. Run Verification Script ✓
+
+```bash
+cd /path/to/Amarktai-Network---Deployment
+bash scripts/verify_go_live.sh
+```
+
+**Expected Output:**
+- ✓ All platform checks pass (OVEX present, Kraken removed)
+- ✓ Platform constants verified
+- ✓ Admin endpoints exist
+- ✓ Paper trading status endpoint responds
+- ✓ WebSocket typed messages confirmed
+- ✓ No Kraken references in code
+- ✓ All required files present
+
+**Script must show:** `✓ ALL CHECKS PASSED - READY FOR GO-LIVE! 🎉`
+
+If any checks fail, review and fix before proceeding.
+
+---
+
+## DEPLOYMENT STEPS
+
+### 2. Backend Deployment ✓
+
+```bash
+cd /path/to/Amarktai-Network---Deployment/backend
+
+# 1. Pull latest code
+git pull origin main
+
+# 2. Activate virtual environment (if using)
+source venv/bin/activate
+
+# 3. Install/update dependencies
+pip install -r requirements.txt
+
+# 4. Verify environment variables are set
+printenv | grep -E "ADMIN_PASSWORD|MONGO_URL|JWT_SECRET"
+
+# 5. Test backend starts without errors
+python server.py &
+sleep 5
+curl http://localhost:8000/api/health/ping
+pkill -f "python server.py"
+
+# 6. Restart via systemd
+sudo systemctl restart amarktai-api
+sudo systemctl status amarktai-api
+
+# 7. Check logs for errors
+sudo journalctl -u amarktai-api -f --lines=50
+```
+
+### 3. Frontend Build & Deployment ✓
+
+```bash
+cd /path/to/Amarktai-Network---Deployment/frontend
+
+# 1. Pull latest code (if not already done)
+git pull origin main
+
+# 2. Install/update dependencies
+npm install
+
+# 3. Build production bundle
+npm run build
+
+# 4. Verify build succeeded
+ls -lh build/
+# Should see index.html, static/, assets/, etc.
+
+# 5. Deploy to web server
+# Option A: Copy to nginx root
+sudo rm -rf /var/www/amarktai/*
+sudo cp -r build/* /var/www/amarktai/
+
+# Option B: Use rsync
+sudo rsync -av --delete build/ /var/www/amarktai/
+
+# 6. Set correct permissions
+sudo chown -R www-data:www-data /var/www/amarktai
+sudo chmod -R 755 /var/www/amarktai
+
+# 7. Restart nginx
+sudo systemctl reload nginx
+sudo systemctl status nginx
+```
+
+---
+
+## POST-DEPLOYMENT VALIDATION
+
+### 4. Backend Health Checks ✓
+
+```bash
+API="http://localhost:8000/api"
+
+# Health check
+curl $API/health/ping
+# Expected: {"status":"ok"}
+
+# Paper trading status
+curl $API/health/paper-trading
+# Expected: {"status":"ok", "paper_trading": {...}}
+
+# System health indicators
+curl $API/health/indicators
+# Expected: {"overall_status":"healthy"}
+```
+
+### 5. Admin Access Test ✓
+
+```bash
+# Get auth token first (login as admin user)
+TOKEN="your-jwt-token"
+
+# Test admin unlock
+curl -X POST http://localhost:8000/api/admin/unlock \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"password":"Ashmor12@"}'
+  
+# Expected: {"success": true, "token": "..."}
+```
+
+### 6. Platform Verification ✓
+
+Check that all 5 platforms are available:
+- Luno (max 5 bots)
+- Binance (max 10 bots)
+- KuCoin (max 10 bots)
+- OVEX (max 10 bots)
+- VALR (max 10 bots)
+
+```bash
+# Check backend config
+grep -A 20 "BOT_ALLOCATION" backend/exchange_limits.py
+
+# Check frontend (access site and inspect bot creation dropdown)
+```
+
+### 7. Frontend Access ✓
+
+```bash
+# Check nginx is serving frontend
+curl -I http://localhost/
+# Expected: 200 OK
+
+# Check assets load
+curl -I http://localhost/assets/logo.png
+# Expected: 200 OK
+```
+
+### 8. Paper Trading Execution Test ✓
+
+1. Login to dashboard
+2. Navigate to Autopilot section
+3. Enable Autopilot with Paper Trading mode
+4. Wait 60 seconds
+5. Check trades appear in Live Trades section
+6. Verify paper trading status shows trades executing
+
+### 9. WebSocket Connection Test ✓
+
+1. Open browser developer console
+2. Navigate to dashboard
+3. Check Network tab for WebSocket connection
+4. Should see: `ws://` or `wss://` connection established
+5. Verify real-time updates work (bots, trades, metrics)
+
+### 10. Metrics Tabs Test ✓
+
+Navigate to Metrics section and verify all tabs work:
+- [ ] Flokx Alerts - No errors, shows data or empty state
+- [ ] Decision Trace - No blank screen, shows placeholder if empty
+- [ ] Whale Flow - No errors, handles missing data gracefully
+- [ ] System Metrics - Loads without crashes
+
+---
+
+## PRE-DEPLOYMENT CHECKS (Detailed)
 
 ### 1. Assets ✓
 - [ ] All assets exist in `frontend/public/assets/`

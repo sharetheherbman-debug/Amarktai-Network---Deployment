@@ -279,15 +279,120 @@ fi
 echo ""
 
 ###############################################################################
-# TEST 6: File Structure Check
+# TEST 6: No Kraken References in Current Files (case-insensitive)
 ###############################################################################
-echo "📁 Test 6: File Structure"
+echo "🔍 Test 6: Kraken Reference Check"
+echo "----------------------------------"
+
+# Check for kraken references in key files (excluding git history, comments about removal)
+kraken_found=0
+
+# Frontend JS files
+if grep -ri "kraken" frontend/src/ --include="*.js" --include="*.jsx" 2>/dev/null | grep -v "Removed\|removed\|Replace" | grep -q .; then
+    fail "Found 'Kraken' references in frontend/src/"
+    kraken_found=1
+else
+    pass "No Kraken references in frontend/src/"
+fi
+
+# Backend Python files (excluding migrations/docs about the change)
+if grep -ri "kraken" backend/ --include="*.py" 2>/dev/null | grep -v "Removed\|removed\|Replace\|#.*kraken" | grep -q .; then
+    fail "Found 'Kraken' references in backend/"
+    kraken_found=1
+else
+    pass "No Kraken references in backend/"
+fi
+
+# Platform constants check
+if [ -f "backend/platform_constants.py" ]; then
+    if grep -qi "kraken" backend/platform_constants.py; then
+        fail "Kraken found in platform_constants.py"
+        kraken_found=1
+    else
+        pass "Platform constants clean (no Kraken)"
+    fi
+else
+    warn "platform_constants.py not found"
+fi
+
+if [ -f "frontend/src/constants/platforms.js" ]; then
+    if grep -qi "kraken" frontend/src/constants/platforms.js; then
+        fail "Kraken found in frontend constants/platforms.js"
+        kraken_found=1
+    else
+        pass "Frontend platform constants clean (no Kraken)"
+    fi
+else
+    warn "frontend constants/platforms.js not found"
+fi
+
+echo ""
+
+###############################################################################
+# TEST 7: Platform Constants Validation
+###############################################################################
+echo "📐 Test 7: Platform Constants Validation"
+echo "----------------------------------------"
+
+# Check backend constants exist and have correct platforms
+if [ -f "backend/platform_constants.py" ]; then
+    # Check all 5 platforms present
+    if grep -q "'luno'" backend/platform_constants.py && \
+       grep -q "'binance'" backend/platform_constants.py && \
+       grep -q "'kucoin'" backend/platform_constants.py && \
+       grep -q "'ovex'" backend/platform_constants.py && \
+       grep -q "'valr'" backend/platform_constants.py; then
+        pass "Backend constants: All 5 platforms defined"
+    else
+        fail "Backend constants: Missing one or more platforms"
+    fi
+    
+    # Check total capacity is 45
+    if grep -q "45" backend/platform_constants.py; then
+        pass "Backend constants: Total capacity appears correct"
+    else
+        warn "Backend constants: Could not verify total capacity of 45"
+    fi
+else
+    fail "Backend platform_constants.py not found"
+fi
+
+# Check frontend constants exist and have correct platforms
+if [ -f "frontend/src/constants/platforms.js" ]; then
+    if grep -q "'luno'" frontend/src/constants/platforms.js && \
+       grep -q "'binance'" frontend/src/constants/platforms.js && \
+       grep -q "'kucoin'" frontend/src/constants/platforms.js && \
+       grep -q "'ovex'" frontend/src/constants/platforms.js && \
+       grep -q "'valr'" frontend/src/constants/platforms.js; then
+        pass "Frontend constants: All 5 platforms defined"
+    else
+        fail "Frontend constants: Missing one or more platforms"
+    fi
+    
+    # Check maxBots are correct
+    if grep -q "maxBots: 5" frontend/src/constants/platforms.js && \
+       grep -q "maxBots: 10" frontend/src/constants/platforms.js; then
+        pass "Frontend constants: Bot limits appear correct"
+    else
+        warn "Frontend constants: Could not verify bot limits"
+    fi
+else
+    fail "Frontend constants/platforms.js not found"
+fi
+
+echo ""
+
+###############################################################################
+# TEST 8: File Structure Check
+###############################################################################
+echo "📁 Test 8: File Structure"
 echo "-------------------------"
 
 required_files=(
     "backend/exchange_limits.py"
     "backend/config.py"
     "backend/paper_trading_engine.py"
+    "backend/platform_constants.py"
     "backend/routes/admin_endpoints.py"
     "backend/routes/api_key_management.py"
     "backend/routes/system_health_endpoints.py"
@@ -295,8 +400,10 @@ required_files=(
     "backend/realtime_events.py"
     "frontend/src/config/exchanges.js"
     "frontend/src/lib/platforms.js"
+    "frontend/src/constants/platforms.js"
     "frontend/src/components/Dashboard/CreateBotSection.js"
     "frontend/src/components/Dashboard/APISetupSection.js"
+    "frontend/src/components/LiveTradesView.js"
 )
 
 for file in "${required_files[@]}"; do
