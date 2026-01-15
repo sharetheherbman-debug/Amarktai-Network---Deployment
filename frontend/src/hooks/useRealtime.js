@@ -61,8 +61,7 @@ export function useRealtimeEvent(eventType, callback, deps = []) {
   useEffect(() => {
     const unsubscribe = realtimeClient.on(eventType, callback);
     return unsubscribe;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventType, ...deps]);
+  }, [eventType, callback, ...deps]); // Explicitly list all dependencies
 }
 
 /**

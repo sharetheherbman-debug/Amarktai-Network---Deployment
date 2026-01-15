@@ -25,6 +25,8 @@ import PlatformSelector from '../components/PlatformSelector';
 import { API_BASE, wsUrl } from '../lib/api.js';
 import { useRealtimeEvent } from '../hooks/useRealtime';
 import { post, get } from '../lib/apiClient';
+import marketDataFallback from '../lib/MarketDataFallback';
+import { getAllExchanges, getActiveExchanges, getExchangeById, FEATURE_FLAGS } from '../config/exchanges';
 
 ChartJS.register(
   CategoryScale,
@@ -47,6 +49,7 @@ export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [activeSection, setActiveSection] = useState('welcome');
   const [intelligenceTab, setIntelligenceTab] = useState('whale-flow'); // Tab state for Intelligence section
+  const [metricsTab, setMetricsTab] = useState('flokx'); // Tab state for Metrics section - default to Flokx Alerts
   // Admin panel state - Hidden by default, shown only after password
   const [showAdmin, setShowAdmin] = useState(() => {
     // Check sessionStorage only (more temporary)
@@ -138,6 +141,9 @@ export default function Dashboard() {
   const token = localStorage.getItem('token');
   const axiosConfig = { headers: { Authorization: `Bearer ${token}` } };
 
+  // Track if WebSocket has been initialized to prevent double initialization
+  const wsInitializedRef = useRef(false);
+
   useEffect(() => {
     if (!token) {
       navigate('/login');
@@ -151,8 +157,11 @@ export default function Dashboard() {
     loadRecentTrades();
     loadCountdown();
     
-    // Setup real-time connections
-    setupRealTimeConnections();
+    // Setup real-time connections ONCE
+    if (!wsInitializedRef.current) {
+      setupRealTimeConnections();
+      wsInitializedRef.current = true;
+    }
     
     // Handle responsive
     const handleResize = () => setIsMobile(window.innerWidth <= 900);
@@ -167,10 +176,14 @@ export default function Dashboard() {
     
     return () => {
       window.removeEventListener('resize', handleResize);
-      if (wsRef.current) wsRef.current.close();
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsInitializedRef.current = false;
+      }
       if (sseRef.current) sseRef.current.close();
     };
   }, []);
+  
   useEffect(() => {
     if (token && user) {
       loadBots();
@@ -178,7 +191,7 @@ export default function Dashboard() {
       loadSystemStats();
       loadProfitData();
       loadLivePrices();
-      setupRealTimeConnections();
+      // REMOVED: Duplicate setupRealTimeConnections() call
       
       // Update live prices every 5 seconds
       const priceInterval = setInterval(() => {
@@ -187,8 +200,7 @@ export default function Dashboard() {
       
       return () => {
         clearInterval(priceInterval);
-        if (wsRef.current) wsRef.current.close();
-        if (sseRef.current) sseRef.current.close();
+        // Don't close WebSocket here, it's managed by the first useEffect
       };
     }
   }, [token, user]);
@@ -381,8 +393,26 @@ export default function Dashboard() {
     }
   };
 
+  // Rate limiter for unknown message types
+  const unknownMessageRateLimit = useRef({ count: 0, lastReset: Date.now() });
+
   const handleRealTimeUpdate = (data) => {
     switch (data.type) {
+      case 'connection':
+        // Handle WebSocket connection status updates
+        setConnectionStatus(prev => ({
+          ...prev,
+          ws: data.status === 'Connected' ? 'Connected' : 'Disconnected',
+          sse: data.status === 'Connected' ? 'Connected' : 'Disconnected'
+        }));
+        console.log('🔌 Connection status:', data.status);
+        break;
+      
+      case 'ping':
+        // Handle ping messages - update last seen timestamp silently
+        setSseLastUpdate(new Date().toISOString());
+        break;
+      
       case 'metrics':
         setMetrics(prev => ({ ...prev, ...data.payload }));
         break;
@@ -572,7 +602,20 @@ export default function Dashboard() {
         break;
       
       default:
-        console.log('Unknown real-time update:', data);
+        // Rate-limited debug logging for unknown message types
+        const now = Date.now();
+        if (now - unknownMessageRateLimit.current.lastReset > 60000) {
+          // Reset counter every minute
+          unknownMessageRateLimit.current = { count: 0, lastReset: now };
+        }
+        
+        if (unknownMessageRateLimit.current.count < 5) {
+          console.debug('Unknown real-time update:', data);
+          unknownMessageRateLimit.current.count++;
+        } else if (unknownMessageRateLimit.current.count === 5) {
+          console.debug('Unknown message types rate limit reached. Suppressing further logs for 1 minute.');
+          unknownMessageRateLimit.current.count++;
+        }
     }
   };
 
@@ -745,9 +788,32 @@ export default function Dashboard() {
     try {
       const res = await axios.get(`${API}/prices/live`, axiosConfig);
       // Backend returns prices directly, not wrapped
-      setLivePrices(res.data || {});
+      const backendPrices = res.data || {};
+      
+      // Check if we have valid backend prices
+      const hasValidPrices = Object.keys(backendPrices).length > 0 && 
+                            Object.values(backendPrices).some(p => p.price && p.price > 0);
+      
+      if (hasValidPrices) {
+        // Mark as backend data
+        Object.keys(backendPrices).forEach(key => {
+          backendPrices[key].isFallback = false;
+        });
+        setLivePrices(backendPrices);
+      } else {
+        // Use fallback public data
+        const fallbackPrices = await marketDataFallback.getPrices();
+        setLivePrices(fallbackPrices);
+      }
     } catch (err) {
-      console.error('Live prices fetch error:', err);
+      console.error('Live prices fetch error, using public fallback:', err);
+      // On error, use fallback
+      try {
+        const fallbackPrices = await marketDataFallback.getPrices();
+        setLivePrices(fallbackPrices);
+      } catch (fallbackErr) {
+        console.error('Fallback prices also failed:', fallbackErr);
+      }
     }
   };
 
@@ -1222,15 +1288,23 @@ export default function Dashboard() {
     if (!form) return;
 
     const inputs = form.querySelectorAll('input');
-    const data = { provider };
+    const data = { exchange: provider.toLowerCase() }; // Backend expects 'exchange' field
     let hasValidInput = false;
     
     inputs.forEach(input => {
       const value = input.value.trim();
       if (value) {
-        // Map field names correctly
+        // Map field names correctly for backend contract
         if (input.name === 'api_token') {
-          data['api_key'] = value;  // Flokx uses api_token in UI but api_key in backend
+          data['apiKey'] = value;  // Use apiKey for consistency
+        } else if (input.name === 'api_key') {
+          data['apiKey'] = value;
+        } else if (input.name === 'api_secret') {
+          data['apiSecret'] = value;
+        } else if (input.name === 'passphrase') {
+          data['passphrase'] = value; // KuCoin requires passphrase
+        } else if (input.name === 'sandbox' || input.name === 'paper') {
+          data[input.name] = value === 'true' || value === true;
         } else {
           data[input.name] = value;
         }
@@ -1239,43 +1313,81 @@ export default function Dashboard() {
     });
 
     // Validate that at least the primary API key is provided
-    if (!hasValidInput || !data.api_key) {
+    if (!hasValidInput || !data.apiKey) {
       showNotification('Please enter a valid API key', 'error');
       return;
     }
 
     // Special validation for OpenAI
-    if (provider === 'openai' && data.api_key && !data.api_key.startsWith('sk-')) {
+    if (provider === 'openai' && data.apiKey && !data.apiKey.startsWith('sk-')) {
       showNotification('Invalid OpenAI API key format (must start with sk-)', 'error');
       return;
     }
 
-    // Validate exchange keys have secrets
-    if (['luno', 'binance', 'kucoin'].includes(provider) && !data.api_secret) {
+    // Validate exchange keys have secrets (except for some exchanges)
+    const exchangesNeedingSecret = ['luno', 'binance', 'kucoin', 'kraken', 'valr'];
+    if (exchangesNeedingSecret.includes(provider.toLowerCase()) && !data.apiSecret) {
       showNotification(`${provider.toUpperCase()} requires both API key and secret`, 'error');
       return;
     }
 
     try {
-      await axios.post(`${API}/keys/save`, data, axiosConfig);
+      const response = await axios.post(`${API}/keys/save`, data, axiosConfig);
       showNotification(`✅ ${provider.toUpperCase()} API key saved!`);
       loadApiStatuses();
       
       // Clear form inputs after successful save
       inputs.forEach(input => input.value = '');
     } catch (err) {
-      showNotification(extractErrorMessage(err, 'Failed to save API key'), 'error');
+      // Handle 500 errors with detailed debug information
+      if (err.response?.status === 500) {
+        const errorData = {
+          endpoint: '/api/keys/save',
+          exchange: provider,
+          statusCode: 500,
+          message: err.response?.data?.detail || 'Internal server error',
+          requestId: err.response?.headers?.['x-request-id'] || 'N/A'
+        };
+        
+        showNotification(
+          `❌ Backend error saving key (500): ${errorData.message}. Check server logs.`,
+          'error'
+        );
+        
+        // Add a "Copy debug info" button via toast with longer duration
+        console.error('API Key Save Error (500):', errorData);
+        console.error('Debug Info (copy this):', JSON.stringify(errorData, null, 2));
+      } else if (err.response?.status === 400) {
+        showNotification(
+          `❌ Invalid request (400): ${extractErrorMessage(err, 'Bad request')}`,
+          'error'
+        );
+      } else {
+        showNotification(extractErrorMessage(err, 'Failed to save API key'), 'error');
+      }
       console.error('API key save error:', err);
     }
   };
 
   const handleTestApiKey = async (provider) => {
     try {
-      await axios.post(`${API}/keys/test`, { provider }, axiosConfig);
-      showNotification(`${provider} connection verified!`);
+      // Backend expects exchange field, not provider
+      const response = await axios.post(`${API}/keys/test`, { 
+        exchange: provider.toLowerCase() 
+      }, axiosConfig);
+      
+      showNotification(`✅ ${provider.toUpperCase()} connection verified!`);
       loadApiStatuses();
     } catch (err) {
-      showNotification(`${provider} connection failed`, 'error');
+      if (err.response?.status === 400) {
+        showNotification(
+          `❌ ${provider.toUpperCase()} test failed (400): ${extractErrorMessage(err, 'Invalid credentials format')}`,
+          'error'
+        );
+      } else {
+        showNotification(`❌ ${provider.toUpperCase()} connection failed: ${extractErrorMessage(err)}`, 'error');
+      }
+      console.error('API key test error:', err);
     }
   };
 
@@ -1845,6 +1957,19 @@ export default function Dashboard() {
                 <strong>BTC/ZAR</strong>
                 <div className="led-row">
                   <span>R{livePrices['BTC/ZAR']?.price?.toLocaleString() || '0'}</span>
+                  {livePrices['BTC/ZAR']?.isFallback && (
+                    <span style={{
+                      fontSize: '0.65rem',
+                      padding: '2px 6px',
+                      marginLeft: '8px',
+                      background: 'rgba(59, 130, 246, 0.2)',
+                      color: '#3b82f6',
+                      borderRadius: '4px',
+                      fontWeight: '600'
+                    }}>
+                      Public data
+                    </span>
+                  )}
                   <span style={{
                     color: livePrices['BTC/ZAR']?.change >= 0 ? 'var(--success)' : 'var(--error)',
                     fontSize: '0.8rem',
@@ -1858,6 +1983,19 @@ export default function Dashboard() {
                 <strong>ETH/ZAR</strong>
                 <div className="led-row">
                   <span>R{livePrices['ETH/ZAR']?.price?.toLocaleString() || '0'}</span>
+                  {livePrices['ETH/ZAR']?.isFallback && (
+                    <span style={{
+                      fontSize: '0.65rem',
+                      padding: '2px 6px',
+                      marginLeft: '8px',
+                      background: 'rgba(59, 130, 246, 0.2)',
+                      color: '#3b82f6',
+                      borderRadius: '4px',
+                      fontWeight: '600'
+                    }}>
+                      Public data
+                    </span>
+                  )}
                   <span style={{
                     color: livePrices['ETH/ZAR']?.change >= 0 ? 'var(--success)' : 'var(--error)',
                     fontSize: '0.8rem',
@@ -1871,6 +2009,19 @@ export default function Dashboard() {
                 <strong>XRP/ZAR</strong>
                 <div className="led-row">
                   <span>R{livePrices['XRP/ZAR']?.price?.toLocaleString() || '0'}</span>
+                  {livePrices['XRP/ZAR']?.isFallback && (
+                    <span style={{
+                      fontSize: '0.65rem',
+                      padding: '2px 6px',
+                      marginLeft: '8px',
+                      background: 'rgba(59, 130, 246, 0.2)',
+                      color: '#3b82f6',
+                      borderRadius: '4px',
+                      fontWeight: '600'
+                    }}>
+                      Public data
+                    </span>
+                  )}
                   <span style={{
                     color: livePrices['XRP/ZAR']?.change >= 0 ? 'var(--success)' : 'var(--error)',
                     fontSize: '0.8rem',
@@ -1889,7 +2040,11 @@ export default function Dashboard() {
   );
 
   const renderApiSetup = () => {
-    const providers = ['openai', 'luno', 'binance', 'kucoin', 'kraken', 'valr', 'flokx', 'fetchai'];
+    // Build providers list dynamically from exchange config
+    const exchanges = getAllExchanges();
+    const exchangeProviders = exchanges.map(ex => ex.id);
+    const otherProviders = ['openai', 'flokx', 'fetchai'];
+    const providers = [...otherProviders, ...exchangeProviders];
     
     return (
       <section className="section active">
@@ -1902,27 +2057,49 @@ export default function Dashboard() {
             {providers.map(provider => {
               const status = getApiStatus(provider);
               const isExpanded = expandedApis[provider];
+              const exchangeInfo = getExchangeById(provider);
               
               return (
                 <div key={provider} className="api-card">
                   <div className="api-header" onClick={() => toggleApiExpand(provider)}>
-                    <span>{provider.charAt(0).toUpperCase() + provider.slice(1)}</span>
+                    <span>
+                      {exchangeInfo ? `${exchangeInfo.icon} ${exchangeInfo.displayName}` : provider.charAt(0).toUpperCase() + provider.slice(1)}
+                      {exchangeInfo?.comingSoon && (
+                        <span style={{
+                          marginLeft: '8px',
+                          fontSize: '0.7rem',
+                          padding: '2px 6px',
+                          background: 'rgba(245, 158, 11, 0.2)',
+                          color: '#f59e0b',
+                          borderRadius: '4px',
+                          fontWeight: '600'
+                        }}>
+                          Coming Soon
+                        </span>
+                      )}
+                    </span>
                     <div style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
                       <span className={`status-badge ${status.badge}`}>{status.text}</span>
                       <div className={`status-dot ${status.dot}`}></div>
                     </div>
                   </div>
                   <div className={`api-form ${isExpanded ? 'active' : ''}`} id={`form-${provider}`}>
+                    {exchangeInfo?.comingSoon && (
+                      <div style={{
+                        padding: '12px',
+                        background: 'rgba(245, 158, 11, 0.1)',
+                        borderRadius: '6px',
+                        marginBottom: '12px',
+                        color: '#f59e0b',
+                        fontSize: '0.85rem'
+                      }}>
+                        ⚠️ {exchangeInfo.displayName} API keys are currently not supported — coming soon! Backend integration in progress.
+                      </div>
+                    )}
                     {provider === 'openai' && (
                       <input name="api_key" placeholder="API Key (sk-...)" type="password" />
                     )}
-                    {provider === 'luno' && (
-                      <>
-                        <input name="api_key" placeholder="Key ID" type="text" />
-                        <input name="api_secret" placeholder="Secret" type="password" />
-                      </>
-                    )}
-                    {provider === 'binance' && (
+                    {(provider === 'luno' || provider === 'binance' || provider === 'valr' || provider === 'kraken' || provider === 'ovex') && (
                       <>
                         <input name="api_key" placeholder="API Key" type="text" />
                         <input name="api_secret" placeholder="Secret" type="password" />
@@ -1941,21 +2118,21 @@ export default function Dashboard() {
                     {provider === 'fetchai' && (
                       <input name="api_key" placeholder="API Key" type="password" />
                     )}
-                    {provider === 'kraken' && (
-                      <>
-                        <input name="api_key" placeholder="API Key" type="password" />
-                        <input name="api_secret" placeholder="Private Key" type="password" />
-                      </>
-                    )}
-                    {provider === 'valr' && (
-                      <>
-                        <input name="api_key" placeholder="API Key" type="password" />
-                        <input name="api_secret" placeholder="API Secret" type="password" />
-                      </>
-                    )}
                     <div className="buttons">
-                      <button onClick={() => handleSaveApiKey(provider)}>Save</button>
-                      <button onClick={() => handleTestApiKey(provider)}>Test</button>
+                      <button 
+                        onClick={() => handleSaveApiKey(provider)}
+                        disabled={exchangeInfo?.comingSoon}
+                        style={{ opacity: exchangeInfo?.comingSoon ? 0.5 : 1 }}
+                      >
+                        Save
+                      </button>
+                      <button 
+                        onClick={() => handleTestApiKey(provider)}
+                        disabled={exchangeInfo?.comingSoon}
+                        style={{ opacity: exchangeInfo?.comingSoon ? 0.5 : 1 }}
+                      >
+                        Test
+                      </button>
                       <button className="danger" onClick={() => handleDeleteApiKey(provider)}>Remove</button>
                     </div>
                   </div>
@@ -2212,12 +2389,20 @@ export default function Dashboard() {
                       <div className="form-group">
                         <label htmlFor="bot-exchange">Exchange Platform</label>
                         <select id="bot-exchange" name="bot-exchange" defaultValue="luno">
-                          <option value="luno">🇿🇦 Luno (ZAR)</option>
-                          <option value="binance">🌍 Binance (USDT)</option>
-                          <option value="kucoin">🌐 KuCoin (USDT)</option>
+                          {getAllExchanges().map(exchange => (
+                            <option 
+                              key={exchange.id} 
+                              value={exchange.id}
+                              disabled={exchange.comingSoon}
+                            >
+                              {exchange.icon} {exchange.displayName}{exchange.comingSoon ? ' (Coming Soon)' : ''}
+                            </option>
+                          ))}
                         </select>
                         <small style={{color: 'var(--muted)', fontSize: '0.75rem', display: 'block', marginTop: '4px'}}>
-                          ⚠️ Only Luno, Binance, and KuCoin are currently supported
+                          {FEATURE_FLAGS.ENABLE_OVEX 
+                            ? '✅ All exchanges available' 
+                            : '⚠️ Luno, Binance, KuCoin, Kraken, VALR supported'}
                         </small>
                       </div>
                       <div className="form-group">
@@ -3596,6 +3781,204 @@ export default function Dashboard() {
     );
   };
 
+  // New unified Metrics section with tabs
+  const renderMetricsWithTabs = () => {
+    return (
+      <section className="section active">
+        <div className="card">
+          <h2>📊 Metrics Dashboard</h2>
+          
+          {/* Horizontal Tabs */}
+          <div style={{
+            display: 'flex', 
+            gap: '10px', 
+            marginBottom: '24px', 
+            marginTop: '16px',
+            borderBottom: '2px solid var(--line)', 
+            paddingBottom: '10px',
+            flexWrap: 'wrap'
+          }}>
+            <button 
+              onClick={() => setMetricsTab('flokx')}
+              style={{
+                padding: '10px 20px',
+                background: metricsTab === 'flokx' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (metricsTab === 'flokx' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: metricsTab === 'flokx' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: metricsTab === 'flokx' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: metricsTab === 'flokx' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              🔔 Flokx Alerts
+            </button>
+            <button 
+              onClick={() => setMetricsTab('decision-trace')}
+              style={{
+                padding: '10px 20px',
+                background: metricsTab === 'decision-trace' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (metricsTab === 'decision-trace' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: metricsTab === 'decision-trace' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: metricsTab === 'decision-trace' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: metricsTab === 'decision-trace' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              🎬 Decision Trace
+            </button>
+            <button 
+              onClick={() => setMetricsTab('whale-flow')}
+              style={{
+                padding: '10px 20px',
+                background: metricsTab === 'whale-flow' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (metricsTab === 'whale-flow' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: metricsTab === 'whale-flow' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: metricsTab === 'whale-flow' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: metricsTab === 'whale-flow' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              🐋 Whale Flow
+            </button>
+            <button 
+              onClick={() => setMetricsTab('system-metrics')}
+              style={{
+                padding: '10px 20px',
+                background: metricsTab === 'system-metrics' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (metricsTab === 'system-metrics' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: metricsTab === 'system-metrics' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: metricsTab === 'system-metrics' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: metricsTab === 'system-metrics' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              📊 System Metrics
+            </button>
+          </div>
+
+          {/* Tab Content */}
+          <div style={{marginTop: '20px'}}>
+            {metricsTab === 'flokx' && (
+              <div>
+                {!isFlokxActive && (
+                  <div style={{padding: '40px', textAlign: 'center', background: 'var(--panel)', borderRadius: '6px', border: '1px solid var(--line)'}}>
+                    <p style={{color: 'var(--muted)', marginBottom: '12px'}}>
+                      ⚠️ Flokx alerts are not active. Configure your Flokx API key in the API Setup section to enable real-time alerts.
+                    </p>
+                    <button 
+                      onClick={() => showSection('api')}
+                      style={{
+                        padding: '8px 16px',
+                        background: 'var(--accent2)',
+                        color: 'var(--text)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Configure Flokx API
+                    </button>
+                  </div>
+                )}
+                
+                {isFlokxActive && (
+                  <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
+                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                        <div style={{width: '8px', height: '8px', borderRadius: '50%', background: 'var(--success)'}}></div>
+                        <span style={{fontSize: '0.85rem', color: 'var(--muted)'}}>Flokx Connected</span>
+                      </div>
+                      <button 
+                        onClick={loadFlokxAlerts} 
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          background: 'var(--accent2)',
+                          color: 'var(--text)',
+                          border: 'none',
+                          fontWeight: 600,
+                          fontSize: '0.85rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Refresh Alerts
+                      </button>
+                    </div>
+                    
+                    <div style={{background: 'var(--glass)', padding: '12px', borderRadius: '6px', border: '1px solid var(--line)'}}>
+                      {!Array.isArray(flokxAlerts) || flokxAlerts.length === 0 ? (
+                        <p style={{color: 'var(--muted)', padding: '20px', textAlign: 'center'}}>
+                          ✓ No alerts at this time - System running smoothly
+                        </p>
+                      ) : (
+                        <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
+                          {Array.isArray(flokxAlerts) && flokxAlerts.map((alert, idx) => (
+                            <div 
+                              key={idx}
+                              style={{
+                                padding: '12px',
+                                background: 'var(--panel)',
+                                borderRadius: '6px',
+                                borderLeft: '4px solid ' + getAlertColor(alert.priority || alert.type || 'info'),
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                              }}
+                            >
+                              <div>
+                                <div style={{fontWeight: 600, marginBottom: '4px'}}>
+                                  {alert.title || alert.pair || 'Alert'}
+                                </div>
+                                <div style={{fontSize: '0.85rem', color: 'var(--muted)'}}>
+                                  {alert.message || 'No details available'}
+                                </div>
+                                <div style={{fontSize: '0.75rem', color: 'var(--muted)', marginTop: '4px'}}>
+                                  {alert.timestamp ? new Date(alert.timestamp).toLocaleString() : 'No timestamp'}
+                                </div>
+                              </div>
+                              {(alert.priority || alert.type) && (
+                                <div style={{
+                                  padding: '4px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  background: getAlertColor(alert.priority || alert.type || 'info'),
+                                  color: 'white'
+                                }}>
+                                  {(alert.priority || alert.type || 'INFO').toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {metricsTab === 'decision-trace' && <DecisionTrace />}
+            {metricsTab === 'whale-flow' && <WhaleFlowHeatmap />}
+            {metricsTab === 'system-metrics' && <PrometheusMetrics />}
+          </div>
+        </div>
+      </section>
+    );
+  };
+
   const renderFlokxAlerts = () => {
     
     return (
@@ -3724,53 +4107,17 @@ export default function Dashboard() {
             <a href="#" className={activeSection === 'graphs' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('graphs'); }}>📈 Profit & Performance</a>
             <a href="#" className={activeSection === 'trades' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('trades'); }}>📊 Live Trades</a>
             
-            {/* Metrics Section with Submenu */}
-            <div style={{position: 'relative'}}>
-              <a 
-                href="#" 
-                className={['flokx', 'decision-trace', 'whale-flow', 'metrics-panel'].includes(activeSection) ? 'active' : ''}
-                onClick={(e) => { e.preventDefault(); setMetricsExpanded(!metricsExpanded); }}
-                style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}
-              >
-                📊 Metrics {metricsExpanded ? '▼' : '▶'}
-              </a>
-              {metricsExpanded && (
-                <div style={{paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px'}}>
-                  <a 
-                    href="#" 
-                    className={activeSection === 'flokx' ? 'active' : ''}
-                    onClick={(e) => { e.preventDefault(); showSection('flokx'); }}
-                    style={{fontSize: '0.9em', padding: '6px 12px'}}
-                  >
-                    🔔 Flokx Alerts
-                  </a>
-                  <a 
-                    href="#" 
-                    className={activeSection === 'decision-trace' ? 'active' : ''}
-                    onClick={(e) => { e.preventDefault(); showSection('decision-trace'); }}
-                    style={{fontSize: '0.9em', padding: '6px 12px'}}
-                  >
-                    🎬 Decision Trace
-                  </a>
-                  <a 
-                    href="#" 
-                    className={activeSection === 'whale-flow' ? 'active' : ''}
-                    onClick={(e) => { e.preventDefault(); showSection('whale-flow'); }}
-                    style={{fontSize: '0.9em', padding: '6px 12px'}}
-                  >
-                    🐋 Whale Flow
-                  </a>
-                  <a 
-                    href="#" 
-                    className={activeSection === 'metrics-panel' ? 'active' : ''}
-                    onClick={(e) => { e.preventDefault(); showSection('metrics-panel'); }}
-                    style={{fontSize: '0.9em', padding: '6px 12px'}}
-                  >
-                    📊 System Metrics
-                  </a>
-                </div>
-              )}
-            </div>
+            {/* Metrics - Single nav item that opens section with tabs inside */}
+            <a 
+              href="#" 
+              className={['metrics', 'flokx', 'decision-trace', 'whale-flow', 'metrics-panel'].includes(activeSection) ? 'active' : ''}
+              onClick={(e) => { 
+                e.preventDefault(); 
+                showSection('metrics'); // Show metrics section which will have tabs inside
+              }}
+            >
+              📊 Metrics
+            </a>
             
             <a href="#" className={activeSection === 'countdown' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('countdown'); }}>⏱️ Countdown</a>
             <a href="#" className={activeSection === 'wallet' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('wallet'); }}>💰 Wallet Hub</a>
@@ -3838,6 +4185,7 @@ export default function Dashboard() {
         {activeSection === 'trades' && renderLiveTradeFeed()}
         {activeSection === 'countdown' && renderCountdown()}
         {activeSection === 'wallet' && renderWalletHub()}
+        {activeSection === 'metrics' && renderMetricsWithTabs()}
         {activeSection === 'flokx' && renderFlokxAlerts()}
         {activeSection === 'decision-trace' && renderDecisionTrace()}
         {activeSection === 'whale-flow' && renderWhaleFlow()}
