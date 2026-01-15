@@ -31,7 +31,7 @@ class ErrorCode:
     INVALID_EXCHANGE = {
         "code": "INVALID_EXCHANGE",
         "message": "Exchange '{exchange}' is not supported",
-        "action": "Choose from: Luno, Binance, KuCoin, Kraken, VALR",
+        "action": "Choose from: Luno, Binance, KuCoin, OVEX, VALR",
         "severity": "error"
     }
     

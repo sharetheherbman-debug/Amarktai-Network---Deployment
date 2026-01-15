@@ -1326,7 +1326,7 @@ export default function Dashboard() {
     }
 
     // Validate exchange keys have secrets (except for some exchanges)
-    const exchangesNeedingSecret = ['luno', 'binance', 'kucoin', 'kraken', 'valr'];
+    const exchangesNeedingSecret = ['luno', 'binance', 'kucoin', 'ovex', 'valr'];
     if (exchangesNeedingSecret.includes(provider.toLowerCase()) && !data.apiSecret) {
       showNotification(`${provider.toUpperCase()} requires both API key and secret`, 'error');
       return;
@@ -2100,7 +2100,7 @@ export default function Dashboard() {
                     {provider === 'openai' && (
                       <input name="api_key" placeholder="API Key (sk-...)" type="password" />
                     )}
-                    {(provider === 'luno' || provider === 'binance' || provider === 'valr' || provider === 'kraken' || provider === 'ovex') && (
+                    {(provider === 'luno' || provider === 'binance' || provider === 'valr' || provider === 'ovex' || provider === 'kucoin') && (
                       <>
                         <input name="api_key" placeholder="API Key" type="text" />
                         <input name="api_secret" placeholder="Secret" type="password" />
@@ -2197,11 +2197,11 @@ export default function Dashboard() {
                         <option value="luno">🇿🇦 Luno (Best for South Africa - ZAR)</option>
                         <option value="binance">🌍 Binance (Global - USDT pairs)</option>
                         <option value="kucoin">🌐 KuCoin (Global - USDT pairs)</option>
-                        <option value="kraken">🇺🇸 Kraken (USA/Europe - USDT pairs)</option>
+                        <option value="ovex">🟠 OVEX (South Africa - ZAR)</option>
                         <option value="valr">🇿🇦 VALR (South Africa - ZAR)</option>
                       </select>
                       <small style={{color: 'var(--muted)', display: 'block', marginTop: '6px'}}>
-                        💡 Luno & VALR recommended for South African users (ZAR support)
+                        💡 Luno, OVEX & VALR recommended for South African users (ZAR support)
                       </small>
                     </div>
 
@@ -2403,7 +2403,7 @@ export default function Dashboard() {
                         <small style={{color: 'var(--muted)', fontSize: '0.75rem', display: 'block', marginTop: '4px'}}>
                           {FEATURE_FLAGS.ENABLE_OVEX 
                             ? '✅ All exchanges available' 
-                            : '⚠️ Luno, Binance, KuCoin, Kraken, VALR supported'}
+                            : '⚠️ Luno, Binance, KuCoin, OVEX, VALR supported'}
                         </small>
                       </div>
                       <div className="form-group">

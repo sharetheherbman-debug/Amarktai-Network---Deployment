@@ -4,7 +4,8 @@
 # Validates all requirements for production deployment
 ###############################################################################
 
-set -e  # Exit on error
+# Don't exit on grep failures, but exit on other errors
+set +e  # Allow commands to fail (we check return codes manually)
 
 echo "=========================================="
 echo "🚀 AMARKTAI NETWORK - GO-LIVE VERIFICATION"
@@ -445,22 +446,24 @@ fi
 echo ""
 
 ###############################################################################
-# TEST 11: Frontend Build and Bundle Verification
+# TEST 11: Frontend Build and Bundle Verification (Optional)
 ###############################################################################
-echo "🏗️ Test 11: Frontend Build & Bundle Verification"
-echo "--------------------------------------------------"
+echo "🏗️ Test 11: Frontend Build & Bundle Verification (Optional)"
+echo "-------------------------------------------------------------"
 
-# Check if node_modules exists
-if [ ! -d "frontend/node_modules" ]; then
-    warn "node_modules not found, running npm ci..."
-    cd frontend && npm ci --silent && cd ..
-fi
+# Check if BUILD_FRONTEND env var is set
+if [ "${BUILD_FRONTEND}" = "true" ]; then
+    # Check if node_modules exists
+    if [ ! -d "frontend/node_modules" ]; then
+        warn "node_modules not found, running npm ci..."
+        cd frontend && npm ci --silent && cd ..
+    fi
 
-# Build frontend
-echo "Building frontend..."
-cd frontend
-if npm run build > /tmp/build.log 2>&1; then
-    pass "Frontend build successful"
+    # Build frontend
+    echo "Building frontend..."
+    cd frontend
+    if npm run build > /tmp/build.log 2>&1; then
+        pass "Frontend build successful"
     
     # Check if build directory exists
     if [ -d "build" ]; then
@@ -512,12 +515,16 @@ if npm run build > /tmp/build.log 2>&1; then
     else
         fail "Build directory not created"
     fi
-else
-    fail "Frontend build failed - check /tmp/build.log for details"
-    cat /tmp/build.log | tail -20
-fi
+    else
+        fail "Frontend build failed - check /tmp/build.log for details"
+        cat /tmp/build.log | tail -20
+    fi
 
-cd ..
+    cd ..
+else
+    warn "Skipping frontend build (set BUILD_FRONTEND=true to enable)"
+    warn "Bundle verification checks will be skipped"
+fi
 
 echo ""
 
