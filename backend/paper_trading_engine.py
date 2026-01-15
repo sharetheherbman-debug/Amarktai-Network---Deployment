@@ -66,37 +66,43 @@ class PaperTradingEngine:
         self.trade_count = 0
         
     async def init_exchanges(self):
-        """Initialize all supported exchanges"""
+        """Initialize all supported exchanges in PUBLIC MODE (no API keys required)"""
         try:
-            # Luno (best for South Africa)
+            # Luno (best for South Africa) - PUBLIC MODE
             if not self.luno_exchange:
                 self.luno_exchange = ccxt.luno({
                     'enableRateLimit': True,
-                    'timeout': 30000
+                    'timeout': 30000,
+                    'apiKey': None,  # Explicitly no API key - public mode
+                    'secret': None
                 })
-                logger.info("✅ Connected to LUNO (South Africa) for REAL ZAR data")
+                logger.info("✅ Connected to LUNO (PUBLIC MODE) for market data")
         except Exception as e:
             logger.warning(f"Luno init failed: {e}")
         
         try:
-            # Binance
+            # Binance - PUBLIC MODE
             if not self.binance_exchange:
                 self.binance_exchange = ccxt.binance({
                     'enableRateLimit': True,
-                    'options': {'defaultType': 'spot'}
+                    'options': {'defaultType': 'spot'},
+                    'apiKey': None,  # Explicitly no API key - public mode
+                    'secret': None
                 })
-                logger.info("✅ Binance ready")
+                logger.info("✅ Binance ready (PUBLIC MODE)")
         except Exception as e:
             logger.warning(f"Binance init failed: {e}")
         
         try:
-            # KuCoin
+            # KuCoin - PUBLIC MODE
             if not self.kucoin_exchange:
                 self.kucoin_exchange = ccxt.kucoin({
                     'enableRateLimit': True,
-                    'timeout': 30000
+                    'timeout': 30000,
+                    'apiKey': None,  # Explicitly no API key - public mode
+                    'secret': None
                 })
-                logger.info("✅ KuCoin ready")
+                logger.info("✅ KuCoin ready (PUBLIC MODE)")
         except Exception as e:
             logger.warning(f"KuCoin init failed: {e}")
     
@@ -144,23 +150,60 @@ class PaperTradingEngine:
         return self.BINANCE_PAIRS
     
     async def get_real_price(self, symbol: str, exchange: str = 'luno') -> float:
-        """Fetch REAL price - accurate to live trading"""
+        """Fetch REAL price using PUBLIC endpoints - no API keys required"""
         try:
             if not self.luno_exchange and not self.binance_exchange:
                 await self.init_exchanges()
             
-            exchange_obj = self.luno_exchange if exchange == 'luno' else self.binance_exchange
+            # Select exchange
+            if exchange == 'luno':
+                exchange_obj = self.luno_exchange
+            elif exchange == 'binance':
+                exchange_obj = self.binance_exchange
+            elif exchange == 'kucoin':
+                exchange_obj = self.kucoin_exchange
+            else:
+                exchange_obj = self.luno_exchange  # Default to Luno
             
             if exchange_obj:
+                # Use fetch_ticker which is PUBLIC on most exchanges
                 ticker = await exchange_obj.fetch_ticker(symbol)
-                price = ticker['last']
-                self.price_cache[symbol] = price
-                return price
+                price = ticker.get('last') or ticker.get('close') or ticker.get('bid')
+                
+                # Guard against None price
+                if price is not None and price > 0:
+                    self.price_cache[symbol] = float(price)
+                    return float(price)
+                else:
+                    logger.warning(f"Price for {symbol} is None or invalid, using cache or fallback")
+                    
         except Exception as e:
-            logger.debug(f"Price fetch for {symbol}: {e}")
+            logger.debug(f"Price fetch for {symbol} on {exchange}: {e}")
         
-        # Fallback to cache
-        return self.price_cache.get(symbol, 50000.0 if 'BTC' in symbol else 1.0)
+        # Fallback 1: Try cache
+        if symbol in self.price_cache:
+            cached_price = self.price_cache[symbol]
+            if cached_price is not None and cached_price > 0:
+                logger.info(f"Using cached price for {symbol}: {cached_price}")
+                return float(cached_price)
+        
+        # Fallback 2: Default safe prices (never None)
+        if 'BTC' in symbol:
+            fallback_price = 50000.0
+        elif 'ETH' in symbol:
+            fallback_price = 3000.0
+        elif 'BNB' in symbol:
+            fallback_price = 300.0
+        elif 'SOL' in symbol:
+            fallback_price = 100.0
+        elif 'XRP' in symbol:
+            fallback_price = 0.5
+        else:
+            fallback_price = 1.0
+        
+        logger.warning(f"Using fallback price for {symbol}: {fallback_price}")
+        self.price_cache[symbol] = fallback_price
+        return fallback_price
     
     async def analyze_trend(self, symbol: str, exchange: str = 'luno') -> str:
         """Analyze REAL market trend"""
@@ -214,8 +257,14 @@ class PaperTradingEngine:
             available_pairs = await self.get_available_pairs(exchange)
             symbol = random.choice(available_pairs)
             
-            # Get REAL price
+            # Get REAL price with safety check
             current_price = await self.get_real_price(symbol, exchange)
+            
+            # CRITICAL: Guard against None or invalid price
+            if current_price is None or current_price <= 0:
+                logger.error(f"Invalid price for {symbol}: {current_price}, skipping trade")
+                self.last_error = f"Invalid price: {current_price}"
+                return {"success": False, "bot_id": bot_id, "error": f"Invalid price for {symbol}"}
             
             # 2. AI INTELLIGENCE: Check market regime
             from market_regime import market_regime_detector
@@ -322,6 +371,12 @@ class PaperTradingEngine:
                 logger.warning(f"Risk block: {bot_data['name'][:15]} - {risk_reason}")
                 return {"success": False, "bot_id": bot_id, "error": risk_reason}
             
+            # Guard against invalid current_price before calculations
+            if current_price is None or current_price <= 0:
+                logger.error(f"Invalid current_price before trade: {current_price}")
+                self.last_error = f"Invalid price: {current_price}"
+                return {"success": False, "bot_id": bot_id, "error": "Invalid price before trade"}
+            
             crypto_amount = trade_amount / current_price
             entry_price = current_price
             
@@ -376,6 +431,12 @@ class PaperTradingEngine:
             exit_multiplier = base_multiplier
             
             exit_price = entry_price * exit_multiplier
+            
+            # Guard against invalid exit_price
+            if exit_price is None or exit_price <= 0:
+                logger.error(f"Invalid exit_price after multiplier: {exit_price}")
+                self.last_error = f"Invalid exit_price: {exit_price}"
+                return {"success": False, "bot_id": bot_id, "error": "Invalid exit price"}
             
             # Calculate GROSS P&L
             gross_profit = (exit_price - entry_price) * crypto_amount
