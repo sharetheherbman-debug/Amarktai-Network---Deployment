@@ -67,11 +67,11 @@ export const CreateBotSection = ({ token, onBotCreated }) => {
           <div className="form-group">
             <label>Exchange</label>
             <select value={botExchange} onChange={(e) => setBotExchange(e.target.value)}>
-              <option value="luno">🇿🇦 Luno (Max 5 bots)</option>
-              <option value="binance">🟡 Binance (Max 10 bots)</option>
-              <option value="kucoin">🟢 KuCoin (Max 10 bots)</option>
-              <option value="ovex">🟠 OVEX (Max 10 bots)</option>
-              <option value="valr">🔵 VALR (Max 10 bots)</option>
+              {platformOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </div>
         </div>
