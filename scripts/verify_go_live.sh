@@ -383,10 +383,191 @@ fi
 echo ""
 
 ###############################################################################
-# TEST 8: File Structure Check
+# TEST 8: Dashboard PlatformSelector Check
 ###############################################################################
-echo "📁 Test 8: File Structure"
-echo "-------------------------"
+echo "🔍 Test 8: Dashboard PlatformSelector Duplication"
+echo "--------------------------------------------------"
+
+# Count PlatformSelector usages in Dashboard.js
+PLATFORM_SELECTOR_COUNT=$(grep -c "PlatformSelector" frontend/src/pages/Dashboard.js || echo "0")
+echo "Found $PLATFORM_SELECTOR_COUNT PlatformSelector references in Dashboard.js"
+
+# Should be exactly 2: 1 import and 1 usage
+if [ "$PLATFORM_SELECTOR_COUNT" -eq "2" ]; then
+    pass "Dashboard has no duplicate PlatformSelector (1 import + 1 usage)"
+elif [ "$PLATFORM_SELECTOR_COUNT" -lt "2" ]; then
+    fail "Dashboard is missing PlatformSelector"
+else
+    fail "Dashboard has duplicate PlatformSelector instances (found $PLATFORM_SELECTOR_COUNT, expected 2)"
+fi
+
+echo ""
+
+###############################################################################
+# TEST 9: Kraken References Check
+###############################################################################
+echo "🔎 Test 9: Kraken References (Should be 0)"
+echo "-------------------------------------------"
+
+# Check entire repo for Kraken references (case insensitive)
+KRAKEN_COUNT=$(grep -ri "kraken" . --include="*.js" --include="*.py" --include="*.jsx" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=build --exclude-dir=dist --exclude="verify_go_live.sh" 2>/dev/null | wc -l || echo "0")
+
+if [ "$KRAKEN_COUNT" -eq "0" ]; then
+    pass "No Kraken references found in codebase"
+else
+    echo ""
+    echo "Found Kraken references:"
+    grep -ri "kraken" . --include="*.js" --include="*.py" --include="*.jsx" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=build --exclude-dir=dist --exclude="verify_go_live.sh" 2>/dev/null | head -10
+    echo ""
+    fail "Found $KRAKEN_COUNT Kraken references - should be 0"
+fi
+
+echo ""
+
+###############################################################################
+# TEST 10: Hardcoded Platform Arrays Check
+###############################################################################
+echo "📝 Test 10: Hardcoded Platform Arrays in Dashboard"
+echo "---------------------------------------------------"
+
+# Check for hardcoded platform arrays (not sourced from constants)
+if grep -q "const allPlatforms = \[" frontend/src/pages/Dashboard.js 2>/dev/null; then
+    # Check if it's using the constants properly
+    if grep -q "SUPPORTED_PLATFORMS.map" frontend/src/pages/Dashboard.js 2>/dev/null; then
+        pass "Dashboard uses platform constants (SUPPORTED_PLATFORMS.map)"
+    else
+        fail "Dashboard has hardcoded platform array not sourced from constants"
+    fi
+else
+    pass "No hardcoded platform arrays found in Dashboard"
+fi
+
+echo ""
+
+###############################################################################
+# TEST 11: Frontend Build and Bundle Verification
+###############################################################################
+echo "🏗️ Test 11: Frontend Build & Bundle Verification"
+echo "--------------------------------------------------"
+
+# Check if node_modules exists
+if [ ! -d "frontend/node_modules" ]; then
+    warn "node_modules not found, running npm ci..."
+    cd frontend && npm ci --silent && cd ..
+fi
+
+# Build frontend
+echo "Building frontend..."
+cd frontend
+if npm run build > /tmp/build.log 2>&1; then
+    pass "Frontend build successful"
+    
+    # Check if build directory exists
+    if [ -d "build" ]; then
+        pass "Build directory created"
+        
+        # Find main JS bundle
+        MAIN_JS=$(find build/static/js -name "main.*.js" 2>/dev/null | head -1)
+        
+        if [ -n "$MAIN_JS" ]; then
+            pass "Found main JS bundle: $(basename $MAIN_JS)"
+            
+            # Check for required strings in bundle
+            echo "Checking bundle for required strings..."
+            
+            if grep -q "OVEX" "$MAIN_JS"; then
+                pass "Bundle contains 'OVEX'"
+            else
+                fail "Bundle missing 'OVEX' string"
+            fi
+            
+            if grep -q "Win Rate\|WIN RATE" "$MAIN_JS"; then
+                pass "Bundle contains 'Win Rate'"
+            else
+                fail "Bundle missing 'Win Rate' string"
+            fi
+            
+            if grep -q "Trade Count\|TRADES" "$MAIN_JS"; then
+                pass "Bundle contains 'Trade Count/TRADES'"
+            else
+                fail "Bundle missing 'Trade Count' string"
+            fi
+            
+            if grep -q "Platform Comparison\|Platform Performance" "$MAIN_JS"; then
+                pass "Bundle contains platform comparison text"
+            else
+                warn "Bundle might be missing platform comparison text"
+            fi
+            
+            # Verify Kraken is NOT in bundle
+            if grep -qi "kraken" "$MAIN_JS"; then
+                fail "Bundle contains 'Kraken' - should be removed"
+            else
+                pass "Bundle does not contain Kraken"
+            fi
+            
+        else
+            fail "Main JS bundle not found in build/static/js"
+        fi
+    else
+        fail "Build directory not created"
+    fi
+else
+    fail "Frontend build failed - check /tmp/build.log for details"
+    cat /tmp/build.log | tail -20
+fi
+
+cd ..
+
+echo ""
+
+###############################################################################
+# TEST 12: Platform Constants Validation
+###############################################################################
+echo "⚙️ Test 12: Platform Constants Validation"
+echo "------------------------------------------"
+
+# Check frontend constants
+if [ -f "frontend/src/constants/platforms.js" ]; then
+    PLATFORM_COUNT=$(grep -o "'luno'\|'binance'\|'kucoin'\|'ovex'\|'valr'" frontend/src/constants/platforms.js | sort -u | wc -l)
+    if [ "$PLATFORM_COUNT" -eq "5" ]; then
+        pass "Frontend constants have exactly 5 platforms"
+    else
+        fail "Frontend constants have $PLATFORM_COUNT platforms (expected 5)"
+    fi
+    
+    # Check TOTAL_BOT_CAPACITY
+    if grep -q "TOTAL_BOT_CAPACITY.*45" frontend/src/constants/platforms.js; then
+        pass "Frontend TOTAL_BOT_CAPACITY is 45"
+    else
+        fail "Frontend TOTAL_BOT_CAPACITY is not 45"
+    fi
+fi
+
+# Check backend constants
+if [ -f "backend/platform_constants.py" ]; then
+    BACKEND_PLATFORM_COUNT=$(grep -o "'luno'\|'binance'\|'kucoin'\|'ovex'\|'valr'" backend/platform_constants.py | sort -u | wc -l)
+    if [ "$BACKEND_PLATFORM_COUNT" -eq "5" ]; then
+        pass "Backend constants have exactly 5 platforms"
+    else
+        fail "Backend constants have $BACKEND_PLATFORM_COUNT platforms (expected 5)"
+    fi
+    
+    # Check total bot capacity
+    if grep -q "TOTAL_BOT_CAPACITY.*45" backend/platform_constants.py; then
+        pass "Backend TOTAL_BOT_CAPACITY is 45"
+    else
+        fail "Backend TOTAL_BOT_CAPACITY is not 45"
+    fi
+fi
+
+echo ""
+
+###############################################################################
+# TEST 13: File Structure Check
+###############################################################################
+echo "📁 Test 13: File Structure"
+echo "--------------------------"
 
 required_files=(
     "backend/exchange_limits.py"
@@ -403,8 +584,11 @@ required_files=(
     "frontend/src/constants/platforms.js"
     "frontend/src/components/Dashboard/CreateBotSection.js"
     "frontend/src/components/Dashboard/APISetupSection.js"
-    "frontend/src/components/LiveTradesView.js"
 )
+
+# Note: LiveTradesView.js should NOT exist (it was removed as unused)
+
+# Note: LiveTradesView.js should NOT exist (it was removed as unused)
 
 for file in "${required_files[@]}"; do
     if [ -f "$file" ]; then
@@ -413,6 +597,13 @@ for file in "${required_files[@]}"; do
         fail "File missing: $file"
     fi
 done
+
+# Verify LiveTradesView was removed
+if [ -f "frontend/src/components/LiveTradesView.js" ]; then
+    fail "LiveTradesView.js still exists - should be removed (unused component)"
+else
+    pass "LiveTradesView.js correctly removed (was unused)"
+fi
 
 echo ""
 
