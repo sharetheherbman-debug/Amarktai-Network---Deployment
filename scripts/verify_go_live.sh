@@ -743,20 +743,14 @@ echo ""
 ###############################################################################
 # TEST 19: Paper Trading Onboarding Note
 ###############################################################################
-echo "📝 Test 19: Paper Trading Onboarding"
-echo "-------------------------------------"
+echo "📝 Test 19: Paper Trading Onboarding Removal"
+echo "--------------------------------------------"
 
-if grep -q "Getting Started with Paper Trading" frontend/src/pages/Dashboard.js; then
-    pass "Paper trading onboarding note exists in Dashboard"
-    
-    if grep -q "OpenAI API Key" frontend/src/pages/Dashboard.js && \
-       grep -q "Exchange API Keys" frontend/src/pages/Dashboard.js; then
-        pass "Onboarding note mentions required API keys"
-    else
-        warn "Onboarding note may not mention all required keys"
-    fi
+# Per production blocker fixes, this block was intentionally removed
+if ! grep -q "Getting Started with Paper Trading" frontend/src/pages/Dashboard.js; then
+    pass "Paper trading onboarding note correctly removed (per production blocker fixes)"
 else
-    fail "Paper trading onboarding note not found"
+    fail "Paper trading onboarding note should be removed"
 fi
 
 echo ""
@@ -767,6 +761,121 @@ echo ""
 echo "=========================================="
 echo "📊 VERIFICATION SUMMARY"
 echo "=========================================="
+echo ""
+
+###############################################################################
+# TEST: PRODUCTION BLOCKER FIXES
+###############################################################################
+echo "🚨 Production Blocker Fixes Verification"
+echo "----------------------------------------"
+
+# Test 1: Show/Hide Admin Command
+echo "Checking show/hide admin command handler..."
+if grep -q "msgLower === 'show admin'" frontend/src/pages/Dashboard.js && \
+   grep -q "msgLower === 'hide admin'" frontend/src/pages/Dashboard.js; then
+    pass "Show/hide admin commands exist"
+else
+    fail "Show/hide admin commands not found"
+fi
+
+if grep -q "originalInput.toLowerCase().trim()" frontend/src/pages/Dashboard.js || \
+   grep -q "msgLower = originalInput.toLowerCase().trim()" frontend/src/pages/Dashboard.js; then
+    pass "Admin command parsing is case-insensitive and trims whitespace"
+else
+    fail "Admin command parsing not properly implemented"
+fi
+
+if grep -q "/admin/unlock" frontend/src/pages/Dashboard.js; then
+    pass "Admin unlock endpoint is called"
+else
+    fail "Admin unlock endpoint not called"
+fi
+
+# Test 2: Welcome Block Removed
+echo "Checking welcome block removal..."
+if ! grep -q "Getting Started with Paper Trading" frontend/src/pages/Dashboard.js; then
+    pass "Unwanted welcome block removed"
+else
+    fail "Welcome block still present - should be deleted"
+fi
+
+# Test 3: API Keys Authorization Header
+echo "Checking API keys authorization header..."
+if grep -q 'Authorization: `Bearer \${token}`' frontend/src/components/Dashboard/APISetupSection.js; then
+    pass "APISetupSection Authorization header is correct"
+else
+    fail "APISetupSection Authorization header is corrupted or incorrect"
+fi
+
+# Test 4: DecisionTrace filteredDecisions Fix
+echo "Checking DecisionTrace component..."
+if grep -q "useMemo" frontend/src/components/DecisionTrace.js; then
+    if grep -A5 "const filteredDecisions = useMemo" frontend/src/components/DecisionTrace.js | grep -q "decisions.filter"; then
+        pass "DecisionTrace uses useMemo for filteredDecisions"
+    else
+        fail "DecisionTrace useMemo implementation incorrect"
+    fi
+else
+    fail "DecisionTrace does not use useMemo"
+fi
+
+# Test 5: Profit Graph Height
+echo "Checking profit graph height..."
+if grep -q "minHeight: '350px'" frontend/src/pages/Dashboard.js || \
+   grep -q "height: '350px'" frontend/src/pages/Dashboard.js; then
+    pass "Profit graph height increased to 350px"
+else
+    warn "Profit graph height may not be properly increased (looking for 350px)"
+fi
+
+# Test 6: Live Trades Single Selector
+echo "Checking Live Trades platform selector..."
+selector_count=$(grep -c "PlatformSelector" frontend/src/pages/Dashboard.js | head -1)
+if [ "$selector_count" -le 3 ]; then
+    pass "Live Trades section has controlled platform selectors"
+else
+    warn "Multiple PlatformSelector instances found ($selector_count) - verify no duplicates in Live Trades"
+fi
+
+# Test 7: Admin Endpoints
+echo "Checking admin panel endpoints..."
+if grep -q "def get_system_stats_extended" backend/routes/admin_endpoints.py || \
+   grep -q "/api/admin/system-stats" backend/routes/admin_endpoints.py; then
+    pass "Admin system-stats endpoint exists"
+else
+    fail "Admin system-stats endpoint not found"
+fi
+
+if grep -q "def get_user_storage_usage" backend/routes/admin_endpoints.py || \
+   grep -q "/api/admin/user-storage" backend/routes/admin_endpoints.py; then
+    pass "Admin user-storage endpoint exists"
+else
+    fail "Admin user-storage endpoint not found"
+fi
+
+# Test 8: Bot Override Endpoint
+echo "Checking bot override endpoint..."
+if grep -q "def override_bot_to_live" backend/routes/admin_endpoints.py || \
+   grep -q "/api/admin/bots/{bot_id}/override-live" backend/routes/admin_endpoints.py; then
+    pass "Admin bot override endpoint exists"
+else
+    fail "Admin bot override endpoint not found"
+fi
+
+if grep -q "handleBotOverrideLive" frontend/src/pages/Dashboard.js; then
+    pass "Frontend bot override handler exists"
+else
+    fail "Frontend bot override handler not found"
+fi
+
+# Test 9: ErrorBoundary Wrapping
+echo "Checking ErrorBoundary usage in metrics..."
+if grep -A10 "metricsTab === 'decision-trace'" frontend/src/pages/Dashboard.js | grep -q "ErrorBoundary"; then
+    pass "Decision Trace wrapped in ErrorBoundary"
+else
+    fail "Decision Trace not wrapped in ErrorBoundary"
+fi
+
 echo ""
 echo -e "${GREEN}Passed: $PASSED${NC}"
 echo -e "${RED}Failed: $FAILED${NC}"

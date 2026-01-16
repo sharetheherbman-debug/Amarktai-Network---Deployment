@@ -1831,6 +1831,37 @@ export default function Dashboard() {
     }
   };
 
+  const handleBotOverrideLive = async (botId, botName) => {
+    const confirm = window.confirm(
+      `⚠️ ADMIN OVERRIDE: Promote Bot to Live Trading?\n\n` +
+      `Bot: ${botName}\n` +
+      `ID: ${botId}\n\n` +
+      `This will:\n` +
+      `- Skip the 7-day paper trading requirement\n` +
+      `- Enable REAL trading with REAL money\n` +
+      `- Be logged in the audit trail\n\n` +
+      `Only use this for testing purposes.\n\n` +
+      `Are you sure you want to proceed?`
+    );
+    
+    if (!confirm) return;
+    
+    try {
+      const res = await axios.post(
+        `${API}/admin/bots/${botId}/override-live`,
+        {},
+        axiosConfig
+      );
+      showNotification(`✅ ${res.data.message}`, 'success');
+      loadBots(); // Refresh bot list
+      toast.success('Bot promoted to live trading (admin override)');
+    } catch (err) {
+      const errorMsg = err.response?.data?.detail || err.message || 'Failed to override bot';
+      showNotification(`❌ ${errorMsg}`, 'error');
+      console.error('Bot override error:', err);
+    }
+  };
+
   const renderWelcome = () => (
     <section className="section active">
       <div className="card welcome-container">
@@ -3087,6 +3118,72 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+          
+          {/* Bot Override for Testing */}
+          <div style={{marginTop: '24px', padding: '20px', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.05) 100%)', borderRadius: '8px', border: '2px solid #f59e0b'}}>
+            <h3 style={{marginBottom: '16px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '8px'}}>
+              ⚡ Bot Override (Testing Only)
+            </h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '16px'}}>
+              Promote bots to live trading before they complete the 7-day paper trading period. For testing purposes only.
+            </p>
+            
+            {/* Show paper bots that can be overridden */}
+            <div style={{maxHeight: '300px', overflowY: 'auto'}}>
+              {bots.filter(bot => bot.trading_mode === 'paper' || bot.mode === 'paper').length === 0 ? (
+                <div style={{textAlign: 'center', padding: '20px', color: 'var(--muted)'}}>
+                  No paper trading bots available to override
+                </div>
+              ) : (
+                bots
+                  .filter(bot => bot.trading_mode === 'paper' || bot.mode === 'paper')
+                  .map(bot => (
+                    <div key={bot.id} style={{
+                      padding: '12px',
+                      marginBottom: '8px',
+                      background: 'var(--panel)',
+                      borderRadius: '6px',
+                      border: '1px solid var(--line)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <div style={{flex: 1}}>
+                        <div style={{fontWeight: 600, fontSize: '0.9rem'}}>{bot.name}</div>
+                        <div style={{fontSize: '0.75rem', color: 'var(--muted)'}}>
+                          {bot.exchange?.toUpperCase()} • Capital: R{bot.current_capital?.toFixed(2) || '0.00'} • Profit: R{bot.total_profit?.toFixed(2) || '0.00'}
+                        </div>
+                        {bot.paper_start_date && (
+                          <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginTop: '4px'}}>
+                            Paper trading since: {new Date(bot.paper_start_date).toLocaleDateString()}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleBotOverrideLive(bot.id, bot.name)}
+                        style={{
+                          padding: '8px 16px',
+                          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                          fontSize: '0.85rem',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        ⚡ Override to Live
+                      </button>
+                    </div>
+                  ))
+              )}
+            </div>
+            
+            <div style={{marginTop: '12px', padding: '12px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '6px', fontSize: '0.75rem', color: 'var(--muted)'}}>
+              ⚠️ <strong>Warning:</strong> Overridden bots will trade with REAL money immediately. All actions are logged in the audit trail with your admin ID.
+            </div>
+          </div>
           
           {/* Admin Tools - All in One Section */}
           <div style={{marginTop: '24px', padding: '20px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--accent)'}}>
