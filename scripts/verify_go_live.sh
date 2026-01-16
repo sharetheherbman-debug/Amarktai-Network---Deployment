@@ -393,13 +393,13 @@ echo "--------------------------------------------------"
 PLATFORM_SELECTOR_COUNT=$(grep -c "PlatformSelector" frontend/src/pages/Dashboard.js || echo "0")
 echo "Found $PLATFORM_SELECTOR_COUNT PlatformSelector references in Dashboard.js"
 
-# Should be exactly 2: 1 import and 1 usage
-if [ "$PLATFORM_SELECTOR_COUNT" -eq "2" ]; then
-    pass "Dashboard has no duplicate PlatformSelector (1 import + 1 usage)"
-elif [ "$PLATFORM_SELECTOR_COUNT" -lt "2" ]; then
+# Should be exactly 3: 1 import and 2 usage (Bot Management + Live Trades)
+if [ "$PLATFORM_SELECTOR_COUNT" -eq "3" ]; then
+    pass "Dashboard has no duplicate PlatformSelector (1 import + 2 usage)"
+elif [ "$PLATFORM_SELECTOR_COUNT" -lt "3" ]; then
     fail "Dashboard is missing PlatformSelector"
 else
-    fail "Dashboard has duplicate PlatformSelector instances (found $PLATFORM_SELECTOR_COUNT, expected 2)"
+    fail "Dashboard has duplicate PlatformSelector instances (found $PLATFORM_SELECTOR_COUNT, expected 3)"
 fi
 
 echo ""
@@ -610,6 +610,153 @@ if [ -f "frontend/src/components/LiveTradesView.js" ]; then
     fail "LiveTradesView.js still exists - should be removed (unused component)"
 else
     pass "LiveTradesView.js correctly removed (was unused)"
+fi
+
+echo ""
+
+###############################################################################
+# TEST 14: ErrorBoundary Component Check
+###############################################################################
+echo "🛡️ Test 14: ErrorBoundary Component"
+echo "------------------------------------"
+
+if [ -f "frontend/src/components/ErrorBoundary.js" ]; then
+    pass "ErrorBoundary component exists"
+    
+    # Check if it has key methods
+    if grep -q "componentDidCatch" frontend/src/components/ErrorBoundary.js && \
+       grep -q "getDerivedStateFromError" frontend/src/components/ErrorBoundary.js; then
+        pass "ErrorBoundary has required error handling methods"
+    else
+        fail "ErrorBoundary missing required error handling methods"
+    fi
+    
+    # Check if Dashboard uses ErrorBoundary
+    if grep -q "import.*ErrorBoundary" frontend/src/pages/Dashboard.js && \
+       grep -q "<ErrorBoundary" frontend/src/pages/Dashboard.js; then
+        pass "Dashboard uses ErrorBoundary component"
+    else
+        fail "Dashboard does not use ErrorBoundary"
+    fi
+else
+    fail "ErrorBoundary component not found"
+fi
+
+echo ""
+
+###############################################################################
+# TEST 15: UI Layout Verification (50/50 splits)
+###############################################################################
+echo "📐 Test 15: UI Layout Verification"
+echo "-----------------------------------"
+
+# Check for 50/50 split patterns in Dashboard
+if grep -q "flex: '0 0 50%'" frontend/src/pages/Dashboard.js || \
+   grep -q "flex: 0 0 50%" frontend/src/pages/Dashboard.js; then
+    pass "Dashboard has 50/50 split layouts"
+else
+    warn "Could not verify 50/50 split layouts in Dashboard"
+fi
+
+# Check that PlatformSelector is only used in correct locations
+# Count actual JSX usage (not import statement)
+SELECTOR_COUNT=$(grep -c "<PlatformSelector" frontend/src/pages/Dashboard.js || echo "0")
+# Should be exactly 2 usage instances: Bot Management right panel + Live Trades right panel
+if [ "$SELECTOR_COUNT" -eq "2" ]; then
+    pass "PlatformSelector usage count correct (2 usage: Bot Management + Live Trades)"
+else
+    fail "PlatformSelector usage count: $SELECTOR_COUNT (expected 2: Bot Management + Live Trades)"
+fi
+
+echo ""
+
+###############################################################################
+# TEST 16: Graph Height Verification
+###############################################################################
+echo "📊 Test 16: Profit Graph Height"
+echo "--------------------------------"
+
+# Check if graph height is 310px
+if grep -q "height: '310px'" frontend/src/pages/Dashboard.js; then
+    pass "Profit graph height increased to 310px"
+elif grep -q "height: '280px'" frontend/src/pages/Dashboard.js; then
+    fail "Profit graph still at old height (280px)"
+else
+    warn "Could not verify profit graph height"
+fi
+
+echo ""
+
+###############################################################################
+# TEST 17: Deployment Script Verification
+###############################################################################
+echo "🚀 Test 17: Deployment Script"
+echo "------------------------------"
+
+if [ -f "scripts/deploy.sh" ]; then
+    pass "Deployment script exists"
+    
+    # Check if executable
+    if [ -x "scripts/deploy.sh" ]; then
+        pass "Deployment script is executable"
+    else
+        warn "Deployment script is not executable (run: chmod +x scripts/deploy.sh)"
+    fi
+    
+    # Check for key deployment steps
+    if grep -q "npm ci" scripts/deploy.sh && \
+       grep -q "npm run build" scripts/deploy.sh && \
+       grep -q "rsync" scripts/deploy.sh; then
+        pass "Deployment script has required build and sync steps"
+    else
+        fail "Deployment script missing required steps"
+    fi
+else
+    fail "Deployment script not found at scripts/deploy.sh"
+fi
+
+echo ""
+
+###############################################################################
+# TEST 18: GO_LIVE.md Documentation
+###############################################################################
+echo "📖 Test 18: GO_LIVE Documentation"
+echo "----------------------------------"
+
+if [ -f "docs/GO_LIVE.md" ]; then
+    pass "GO_LIVE.md documentation exists"
+    
+    # Check for key sections
+    if grep -q "VPS" docs/GO_LIVE.md && \
+       grep -q "nginx" docs/GO_LIVE.md && \
+       grep -q "deployment" docs/GO_LIVE.md; then
+        pass "GO_LIVE.md has required deployment sections"
+    else
+        warn "GO_LIVE.md may be missing some sections"
+    fi
+else
+    fail "GO_LIVE.md documentation not found"
+fi
+
+echo ""
+
+###############################################################################
+# TEST 19: Paper Trading Onboarding Note
+###############################################################################
+echo "📝 Test 19: Paper Trading Onboarding"
+echo "-------------------------------------"
+
+if grep -q "Getting Started with Paper Trading" frontend/src/pages/Dashboard.js; then
+    pass "Paper trading onboarding note exists in Dashboard"
+    
+    if grep -q "OpenAI API Key" frontend/src/pages/Dashboard.js && \
+       grep -q "Exchange API Keys" frontend/src/pages/Dashboard.js; then
+        pass "Onboarding note mentions required API keys"
+    else
+        warn "Onboarding note may not mention all required keys"
+    fi
+else
+    fail "Paper trading onboarding note not found"
 fi
 
 echo ""
