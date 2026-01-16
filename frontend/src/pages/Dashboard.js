@@ -1802,6 +1802,60 @@ export default function Dashboard() {
           <p>Control your AI trading system with natural language.</p>
         </div>
         
+        {/* Paper Trading Onboarding Note */}
+        <div style={{
+          marginBottom: '20px',
+          padding: '20px',
+          background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(16, 185, 129, 0.1) 100%)',
+          border: '2px solid rgba(59, 130, 246, 0.3)',
+          borderRadius: '12px',
+          boxShadow: '0 4px 12px rgba(59, 130, 246, 0.2)'
+        }}>
+          <h3 style={{
+            fontSize: '1.1rem',
+            fontWeight: 700,
+            color: 'var(--accent)',
+            marginBottom: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            🎯 Getting Started with Paper Trading
+          </h3>
+          
+          <div style={{fontSize: '0.9rem', lineHeight: '1.6', color: 'var(--text)'}}>
+            <p style={{marginBottom: '12px'}}>
+              <strong>Minimum Requirements:</strong>
+            </p>
+            <ul style={{marginLeft: '20px', marginBottom: '12px', color: 'var(--muted)'}}>
+              <li>✅ <strong>OpenAI API Key</strong> (Required) - Powers AI trading decisions</li>
+              <li>⚡ <strong>Exchange API Keys</strong> (Optional) - For real market prices</li>
+            </ul>
+            
+            <div style={{
+              padding: '12px',
+              background: 'rgba(16, 185, 129, 0.1)',
+              borderRadius: '8px',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              marginBottom: '12px'
+            }}>
+              <p style={{marginBottom: '8px', fontWeight: 600, color: 'var(--success)'}}>
+                💡 Two Paper Trading Modes:
+              </p>
+              <p style={{fontSize: '0.85rem', marginBottom: '6px', color: 'var(--muted)'}}>
+                <strong>1. Without Exchange Keys:</strong> Uses simulated prices (clearly labeled as SIMULATED)
+              </p>
+              <p style={{fontSize: '0.85rem', color: 'var(--muted)'}}>
+                <strong>2. With Exchange Keys:</strong> Uses real market prices with simulated order execution (higher accuracy)
+              </p>
+            </div>
+            
+            <p style={{fontSize: '0.85rem', color: 'var(--muted)'}}>
+              📚 Configure your API keys in the <strong>API Setup</strong> section to get started.
+            </p>
+          </div>
+        </div>
+        
         {/* AI Tools Toggle Button */}
         <div style={{marginBottom: '16px'}}>
           <button 
