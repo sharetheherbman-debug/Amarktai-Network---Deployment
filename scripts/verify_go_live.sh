@@ -659,15 +659,13 @@ else
 fi
 
 # Check that PlatformSelector is only used in correct locations
+# Count actual JSX usage (not import statement)
 SELECTOR_COUNT=$(grep -c "<PlatformSelector" frontend/src/pages/Dashboard.js || echo "0")
-# Should be 2 usage instances: one in Bot Management (right panel) and one in Live Trades (right panel)
-# Note: grep -c also counts the import line, so total will be 3 (1 import + 2 usage)
-if [ "$SELECTOR_COUNT" -eq "3" ]; then
-    pass "PlatformSelector usage count correct (1 import + 2 usage: Bot Management + Live Trades)"
-elif [ "$SELECTOR_COUNT" -eq "2" ]; then
-    pass "PlatformSelector usage count correct (2 instances)"
+# Should be exactly 2 usage instances: Bot Management right panel + Live Trades right panel
+if [ "$SELECTOR_COUNT" -eq "2" ]; then
+    pass "PlatformSelector usage count correct (2 usage: Bot Management + Live Trades)"
 else
-    warn "PlatformSelector usage count: $SELECTOR_COUNT (expected 2-3)"
+    fail "PlatformSelector usage count: $SELECTOR_COUNT (expected 2: Bot Management + Live Trades)"
 fi
 
 echo ""
