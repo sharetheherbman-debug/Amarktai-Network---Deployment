@@ -430,6 +430,189 @@ async def delete_user(
         logger.error(f"Delete user error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/system-stats")
+async def get_system_stats_extended(admin_user_id: str = Depends(verify_admin)):
+    """
+    Get comprehensive system statistics including VPS resources
+    Returns CPU, RAM, disk usage, and system health
+    """
+    import psutil
+    import shutil
+    
+    try:
+        # Get user statistics
+        total_users = await db.users_collection.count_documents({})
+        active_users = await db.users_collection.count_documents({"status": "active"})
+        blocked_users = await db.users_collection.count_documents({"status": "blocked"})
+        
+        total_bots = await db.bots_collection.count_documents({})
+        active_bots = await db.bots_collection.count_documents({"status": "active"})
+        live_bots = await db.bots_collection.count_documents({"mode": "live"})
+        
+        total_trades = await db.trades_collection.count_documents({})
+        live_trades = await db.trades_collection.count_documents({"is_paper": False})
+        
+        # Calculate total profit across all users
+        all_bots = await db.bots_collection.find(
+            {},
+            {"_id": 0, "total_profit": 1}
+        ).to_list(10000)
+        total_profit = sum(b.get('total_profit', 0) for b in all_bots)
+        
+        # VPS Resource metrics
+        # CPU usage
+        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_count = psutil.cpu_count()
+        
+        # Memory usage
+        memory = psutil.virtual_memory()
+        memory_total_gb = memory.total / (1024**3)
+        memory_used_gb = memory.used / (1024**3)
+        memory_free_gb = memory.available / (1024**3)
+        memory_percent = memory.percent
+        
+        # Disk usage
+        disk = shutil.disk_usage("/")
+        disk_total_gb = disk.total / (1024**3)
+        disk_used_gb = disk.used / (1024**3)
+        disk_free_gb = disk.free / (1024**3)
+        disk_percent = round((disk.used / disk.total) * 100, 2)
+        
+        # Load average (if available)
+        try:
+            load_avg = psutil.getloadavg()
+            load_info = {
+                "1min": round(load_avg[0], 2),
+                "5min": round(load_avg[1], 2),
+                "15min": round(load_avg[2], 2)
+            }
+        except (AttributeError, OSError):
+            load_info = None
+        
+        return {
+            "users": {
+                "total": total_users,
+                "active": active_users,
+                "blocked": blocked_users
+            },
+            "bots": {
+                "total": total_bots,
+                "active": active_bots,
+                "live": live_bots,
+                "paper": total_bots - live_bots
+            },
+            "trades": {
+                "total": total_trades,
+                "live": live_trades,
+                "paper": total_trades - live_trades
+            },
+            "profit": {
+                "total": round(total_profit, 2)
+            },
+            "vps_resources": {
+                "cpu": {
+                    "usage_percent": round(cpu_percent, 2),
+                    "count": cpu_count,
+                    "load_average": load_info
+                },
+                "memory": {
+                    "total_gb": round(memory_total_gb, 2),
+                    "used_gb": round(memory_used_gb, 2),
+                    "free_gb": round(memory_free_gb, 2),
+                    "usage_percent": round(memory_percent, 2)
+                },
+                "disk": {
+                    "total_gb": round(disk_total_gb, 2),
+                    "used_gb": round(disk_used_gb, 2),
+                    "free_gb": round(disk_free_gb, 2),
+                    "usage_percent": disk_percent
+                }
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Get system stats error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/user-storage")
+async def get_user_storage_usage(admin_user_id: str = Depends(verify_admin)):
+    """
+    Get per-user storage usage
+    Calculates storage consumed by each user (logs, uploads, reports, bot data)
+    """
+    import os
+    from pathlib import Path
+    
+    try:
+        users = await db.users_collection.find({}, {"id": 1, "email": 1, "first_name": 1}).to_list(1000)
+        
+        user_storage = []
+        
+        for user in users:
+            user_id = user.get('id') or str(user.get('_id'))
+            email = user.get('email', 'Unknown')
+            first_name = user.get('first_name', 'Unknown')
+            
+            # Define user-specific storage directories
+            user_dirs = [
+                f"/var/log/amarktai/users/{user_id}",
+                f"/opt/amarktai/uploads/{user_id}",
+                f"/opt/amarktai/reports/{user_id}",
+                f"logs/users/{user_id}",
+                f"uploads/{user_id}",
+                f"reports/{user_id}"
+            ]
+            
+            total_bytes = 0
+            
+            for dir_path in user_dirs:
+                if os.path.exists(dir_path):
+                    try:
+                        # Calculate directory size
+                        for dirpath, dirnames, filenames in os.walk(dir_path):
+                            for filename in filenames:
+                                filepath = os.path.join(dirpath, filename)
+                                try:
+                                    total_bytes += os.path.getsize(filepath)
+                                except (OSError, FileNotFoundError):
+                                    continue
+                    except Exception as e:
+                        logger.warning(f"Could not calculate size for {dir_path}: {e}")
+            
+            # Convert bytes to MB
+            total_mb = round(total_bytes / (1024**2), 2)
+            
+            user_storage.append({
+                "user_id": user_id,
+                "email": email,
+                "name": first_name,
+                "storage_bytes": total_bytes,
+                "storage_mb": total_mb,
+                "storage_gb": round(total_mb / 1024, 3)
+            })
+        
+        # Sort by storage usage (descending)
+        user_storage.sort(key=lambda x: x['storage_bytes'], reverse=True)
+        
+        total_storage_bytes = sum(u['storage_bytes'] for u in user_storage)
+        total_storage_mb = round(total_storage_bytes / (1024**2), 2)
+        
+        return {
+            "users": user_storage,
+            "total_storage_bytes": total_storage_bytes,
+            "total_storage_mb": total_storage_mb,
+            "total_storage_gb": round(total_storage_mb / 1024, 3),
+            "user_count": len(user_storage),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Get user storage error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/stats")
 async def get_system_stats(admin_user_id: str = Depends(verify_admin)):
     """Get overall system statistics"""
@@ -783,5 +966,73 @@ async def get_user_api_keys_status(
         raise
     except Exception as e:
         logger.error(f"Get user API keys status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/bots/{bot_id}/override-live")
+async def override_bot_to_live(
+    bot_id: str,
+    admin_user_id: str = Depends(verify_admin)
+):
+    """
+    Admin override to promote a bot to live trading before normal rules are met
+    For testing purposes only - bypasses 7-day paper trading requirement
+    All actions are audited with admin user ID and timestamp
+    """
+    try:
+        # Find bot
+        bot = await db.bots_collection.find_one({"id": bot_id})
+        
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Update bot to live mode with admin override flag
+        result = await db.bots_collection.update_one(
+            {"id": bot_id},
+            {
+                "$set": {
+                    "trading_mode": "live",
+                    "mode": "live",
+                    "is_paper": False,
+                    "admin_override": True,
+                    "admin_override_by": admin_user_id,
+                    "admin_override_at": datetime.now(timezone.utc).isoformat(),
+                    "learning_complete": True  # Mark as ready
+                }
+            }
+        )
+        
+        if result.modified_count == 0:
+            raise HTTPException(status_code=400, detail="Failed to update bot")
+        
+        # Log audit event
+        await audit_logger.log_event(
+            event_type="bot_override_to_live",
+            user_id=admin_user_id,
+            details={
+                "bot_id": bot_id,
+                "bot_name": bot.get('name'),
+                "bot_user_id": bot.get('user_id'),
+                "overridden_by": admin_user_id,
+                "reason": "Admin override for testing",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            severity="warning"
+        )
+        
+        logger.warning(f"Bot {bot_id} overridden to live by admin {admin_user_id}")
+        
+        return {
+            "success": True,
+            "message": f"Bot '{bot.get('name')}' promoted to live trading (admin override)",
+            "bot_id": bot_id,
+            "overridden_by": admin_user_id,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Bot override error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 

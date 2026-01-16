@@ -9,7 +9,7 @@ const API = API_BASE;
 export const APISetupSection = ({ apiKeys, token, onKeysUpdate }) => {
   const [showForm, setShowForm] = useState(null);
   const [formData, setFormData] = useState({});
-  const axiosConfig = { headers: { Authorization: `****** } };
+  const axiosConfig = { headers: { Authorization: `Bearer ${token}` } };
 
   const providers = [
     { id: 'openai', name: 'OpenAI', fields: ['api_key'] },
@@ -41,7 +41,9 @@ export const APISetupSection = ({ apiKeys, token, onKeysUpdate }) => {
       setFormData({});
       onKeysUpdate();
     } catch (err) {
-      toast.error(`Failed to save ${provider.name} key`);
+      const errorMsg = err.response?.data?.detail || err.message || 'Failed to save API key';
+      console.error(`Failed to save ${provider.name} key:`, err);
+      toast.error(`Failed to save ${provider.name} key: ${errorMsg}`);
     }
   };
 
@@ -54,7 +56,9 @@ export const APISetupSection = ({ apiKeys, token, onKeysUpdate }) => {
         toast.error(`${providerId} connection failed`);
       }
     } catch (err) {
-      toast.error('Connection test failed');
+      const errorMsg = err.response?.data?.detail || err.message || 'Connection test failed';
+      console.error('Connection test error:', err);
+      toast.error(`Connection test failed: ${errorMsg}`);
     }
   };
 

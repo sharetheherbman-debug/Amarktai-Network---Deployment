@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRealtimeEvent, useLastUpdate } from '../hooks/useRealtime';
 import { get } from '../lib/apiClient';
 import { Card } from './ui/card';
@@ -47,6 +47,14 @@ export default function DecisionTrace() {
     });
   }, []);
 
+  // Use useMemo to declare filteredDecisions BEFORE it's used in useEffect
+  const filteredDecisions = useMemo(() => {
+    return decisions.filter(d => {
+      if (filter === 'all') return true;
+      return d.decision?.toLowerCase() === filter;
+    });
+  }, [decisions, filter]);
+
   // DVR playback functionality
   useEffect(() => {
     if (isPlaying && filteredDecisions.length > 0) {
@@ -72,11 +80,6 @@ export default function DecisionTrace() {
       }
     };
   }, [isPlaying, filteredDecisions]);
-
-  const filteredDecisions = decisions.filter(d => {
-    if (filter === 'all') return true;
-    return d.decision?.toLowerCase() === filter;
-  });
 
   const handlePlayPause = () => {
     setIsPlaying(!isPlaying);
