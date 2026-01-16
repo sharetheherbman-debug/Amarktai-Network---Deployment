@@ -877,8 +877,8 @@ export default function Dashboard() {
 
     const userMsg = { role: 'user', content: chatInput };
     setChatMessages(prev => [...prev, userMsg]);
-    const msgLower = chatInput.toLowerCase();
-    const originalInput = chatInput;
+    const originalInput = chatInput.trim(); // Preserve original with whitespace removed
+    const msgLower = originalInput.toLowerCase().trim(); // Case-insensitive and whitespace-trimmed for command matching
     setChatInput('');
 
     // PHASE 12: Save user message to backend
@@ -898,13 +898,15 @@ export default function Dashboard() {
         // Verify password with backend
         const result = await post('/admin/unlock', { password: originalInput });
         
-        setChatMessages(prev => [...prev, { role: 'assistant', content: '✅ Password correct!' }]);
-        
         if (adminAction === 'show') {
           console.log('🔓 SHOWING ADMIN - Setting state to TRUE');
           setShowAdmin(true);
           sessionStorage.setItem('adminPanelVisible', 'true');
           sessionStorage.setItem('adminUnlockToken', result.unlock_token);
+          
+          // Success feedback message
+          const successMsg = { role: 'assistant', content: '✅ Admin panel unlocked successfully! Switching to admin section...' };
+          setChatMessages(prev => [...prev, successMsg]);
           
           // Auto-hide after 1 hour
           setTimeout(() => {
@@ -914,50 +916,85 @@ export default function Dashboard() {
             toast.info('Admin session expired');
           }, 3600000);
           
+          // Auto-switch to admin section
           setTimeout(() => {
             setActiveSection('admin');
             console.log('Admin section activated, showAdmin:', true);
           }, 100);
+          
+          // Save success message
+          try {
+            await post('/chat/message', {
+              role: 'assistant',
+              content: successMsg.content,
+              metadata: { timestamp: new Date().toISOString() }
+            });
+          } catch (error) {
+            console.error('Failed to save assistant message:', error);
+          }
         } else if (adminAction === 'hide') {
           console.log('🔒 HIDING ADMIN - Setting state to FALSE');
+          const currentlyInAdmin = activeSection === 'admin';
+          
           setShowAdmin(false);
           sessionStorage.removeItem('adminPanelVisible');
           sessionStorage.removeItem('adminUnlockToken');
-          setActiveSection('welcome');
+          
+          // If currently viewing admin, switch to welcome
+          if (currentlyInAdmin) {
+            setActiveSection('welcome');
+          }
+          
+          // Success feedback message
+          const successMsg = { role: 'assistant', content: '✅ Admin panel hidden successfully.' };
+          setChatMessages(prev => [...prev, successMsg]);
           console.log('Admin section deactivated, showAdmin:', false);
+          
+          // Save success message
+          try {
+            await post('/chat/message', {
+              role: 'assistant',
+              content: successMsg.content,
+              metadata: { timestamp: new Date().toISOString() }
+            });
+          } catch (error) {
+            console.error('Failed to save assistant message:', error);
+          }
         }
         
         setAwaitingPassword(false);
         setAdminAction(null);
       } catch (error) {
         console.log('❌ WRONG PASSWORD:', originalInput);
-        setChatMessages(prev => [...prev, { 
+        const errorMsg = { 
           role: 'assistant', 
-          content: `❌ Invalid admin password. ${error.message || 'Access denied.'}` 
-        }]);
+          content: '❌ Invalid admin password. Access denied. Please try again with the correct password.' 
+        };
+        setChatMessages(prev => [...prev, errorMsg]);
+        
         setAwaitingPassword(false);
         setAdminAction(null);
-      }
-      
-      // Save assistant response
-      try {
-        await post('/chat/message', {
-          role: 'assistant',
-          content: awaitingPassword ? '✅ Password verified' : '❌ Invalid password',
-          metadata: { timestamp: new Date().toISOString() }
-        });
-      } catch (error) {
-        console.error('Failed to save assistant message:', error);
+        
+        // Save error message
+        try {
+          await post('/chat/message', {
+            role: 'assistant',
+            content: errorMsg.content,
+            metadata: { timestamp: new Date().toISOString(), error: true }
+          });
+        } catch (error) {
+          console.error('Failed to save assistant message:', error);
+        }
       }
       
       return;
     }
 
-    // Handle show/hide admin commands
-    if (msgLower === 'show admin' || msgLower === 'show admn') {
+    // Handle show/hide admin commands - CASE-INSENSITIVE and WHITESPACE-TOLERANT
+    if (msgLower === 'show admin' || msgLower === 'showadmin' || msgLower === 'show admn') {
       setAwaitingPassword(true);
       setAdminAction('show');
-      const assistantMsg = { role: 'assistant', content: '🔐 Please enter the admin password:' };
+      const assistantMsg = { role: 'assistant', content: '🔐 Please enter the admin password (Ashmor12@):' };
       setChatMessages(prev => [...prev, assistantMsg]);
       
       // Save assistant message
@@ -974,10 +1011,10 @@ export default function Dashboard() {
       return;
     }
 
-    if (msgLower === 'hide admin') {
+    if (msgLower === 'hide admin' || msgLower === 'hideadmin') {
       setAwaitingPassword(true);
       setAdminAction('hide');
-      const assistantMsg = { role: 'assistant', content: '🔐 Please enter the admin password:' };
+      const assistantMsg = { role: 'assistant', content: '🔐 Please enter the admin password to hide admin panel:' };
       setChatMessages(prev => [...prev, assistantMsg]);
       
       // Save assistant message
@@ -1794,66 +1831,43 @@ export default function Dashboard() {
     }
   };
 
+  const handleBotOverrideLive = async (botId, botName) => {
+    const confirm = window.confirm(
+      `⚠️ ADMIN OVERRIDE: Promote Bot to Live Trading?\n\n` +
+      `Bot: ${botName}\n` +
+      `ID: ${botId}\n\n` +
+      `This will:\n` +
+      `- Skip the 7-day paper trading requirement\n` +
+      `- Enable REAL trading with REAL money\n` +
+      `- Be logged in the audit trail\n\n` +
+      `Only use this for testing purposes.\n\n` +
+      `Are you sure you want to proceed?`
+    );
+    
+    if (!confirm) return;
+    
+    try {
+      const res = await axios.post(
+        `${API}/admin/bots/${botId}/override-live`,
+        {},
+        axiosConfig
+      );
+      showNotification(`✅ ${res.data.message}`, 'success');
+      loadBots(); // Refresh bot list
+      toast.success('Bot promoted to live trading (admin override)');
+    } catch (err) {
+      const errorMsg = err.response?.data?.detail || err.message || 'Failed to override bot';
+      showNotification(`❌ ${errorMsg}`, 'error');
+      console.error('Bot override error:', err);
+    }
+  };
+
   const renderWelcome = () => (
     <section className="section active">
       <div className="card welcome-container">
         <div className="welcome-header">
           <h2>Welcome, {user?.first_name || 'User'}</h2>
           <p>Control your AI trading system with natural language.</p>
-        </div>
-        
-        {/* Paper Trading Onboarding Note */}
-        <div style={{
-          marginBottom: '20px',
-          padding: '20px',
-          background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(16, 185, 129, 0.1) 100%)',
-          border: '2px solid rgba(59, 130, 246, 0.3)',
-          borderRadius: '12px',
-          boxShadow: '0 4px 12px rgba(59, 130, 246, 0.2)'
-        }}>
-          <h3 style={{
-            fontSize: '1.1rem',
-            fontWeight: 700,
-            color: 'var(--accent)',
-            marginBottom: '12px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}>
-            🎯 Getting Started with Paper Trading
-          </h3>
-          
-          <div style={{fontSize: '0.9rem', lineHeight: '1.6', color: 'var(--text)'}}>
-            <p style={{marginBottom: '12px'}}>
-              <strong>Minimum Requirements:</strong>
-            </p>
-            <ul style={{marginLeft: '20px', marginBottom: '12px', color: 'var(--muted)'}}>
-              <li>✅ <strong>OpenAI API Key</strong> (Required) - Powers AI trading decisions</li>
-              <li>⚡ <strong>Exchange API Keys</strong> (Optional) - For real market prices</li>
-            </ul>
-            
-            <div style={{
-              padding: '12px',
-              background: 'rgba(16, 185, 129, 0.1)',
-              borderRadius: '8px',
-              border: '1px solid rgba(16, 185, 129, 0.3)',
-              marginBottom: '12px'
-            }}>
-              <p style={{marginBottom: '8px', fontWeight: 600, color: 'var(--success)'}}>
-                💡 Two Paper Trading Modes:
-              </p>
-              <p style={{fontSize: '0.85rem', marginBottom: '6px', color: 'var(--muted)'}}>
-                <strong>1. Without Exchange Keys:</strong> Uses simulated prices (clearly labeled as SIMULATED)
-              </p>
-              <p style={{fontSize: '0.85rem', color: 'var(--muted)'}}>
-                <strong>2. With Exchange Keys:</strong> Uses real market prices with simulated order execution (higher accuracy)
-              </p>
-            </div>
-            
-            <p style={{fontSize: '0.85rem', color: 'var(--muted)'}}>
-              📚 Configure your API keys in the <strong>API Setup</strong> section to get started.
-            </p>
-          </div>
         </div>
         
         {/* AI Tools Toggle Button */}
@@ -2778,24 +2792,102 @@ export default function Dashboard() {
         <div className="card">
           <h2>🔧 Admin Panel (God Mode)</h2>
           
+          {/* VPS Resource Summary */}
+          {systemStats?.vps_resources && (
+            <div style={{marginBottom: '24px'}}>
+              <h3 style={{marginBottom: '12px', color: 'var(--accent)'}}>🖥️ VPS Resources</h3>
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px'}}>
+                <div style={{padding: '16px', background: 'var(--panel)', borderRadius: '6px', border: '1px solid var(--line)'}}>
+                  <div style={{fontSize: '0.75rem', color: 'var(--muted)', marginBottom: '4px'}}>CPU Usage</div>
+                  <div style={{fontSize: '1.8rem', fontWeight: 700, color: systemStats.vps_resources.cpu.usage_percent > 80 ? 'var(--error)' : 'var(--success)'}}>
+                    {systemStats.vps_resources.cpu.usage_percent}%
+                  </div>
+                  <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginTop: '4px'}}>
+                    {systemStats.vps_resources.cpu.count} cores
+                    {systemStats.vps_resources.cpu.load_average && 
+                      ` • Load: ${systemStats.vps_resources.cpu.load_average['1min']}`
+                    }
+                  </div>
+                </div>
+                <div style={{padding: '16px', background: 'var(--panel)', borderRadius: '6px', border: '1px solid var(--line)'}}>
+                  <div style={{fontSize: '0.75rem', color: 'var(--muted)', marginBottom: '4px'}}>RAM Usage</div>
+                  <div style={{fontSize: '1.8rem', fontWeight: 700, color: systemStats.vps_resources.memory.usage_percent > 85 ? 'var(--error)' : 'var(--success)'}}>
+                    {systemStats.vps_resources.memory.usage_percent}%
+                  </div>
+                  <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginTop: '4px'}}>
+                    {systemStats.vps_resources.memory.used_gb} / {systemStats.vps_resources.memory.total_gb} GB used
+                  </div>
+                </div>
+                <div style={{padding: '16px', background: 'var(--panel)', borderRadius: '6px', border: '1px solid var(--line)'}}>
+                  <div style={{fontSize: '0.75rem', color: 'var(--muted)', marginBottom: '4px'}}>Disk Usage</div>
+                  <div style={{fontSize: '1.8rem', fontWeight: 700, color: systemStats.vps_resources.disk.usage_percent > 85 ? 'var(--error)' : 'var(--success)'}}>
+                    {systemStats.vps_resources.disk.usage_percent}%
+                  </div>
+                  <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginTop: '4px'}}>
+                    {systemStats.vps_resources.disk.free_gb} GB free
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* System Stats */}
           {systemStats && (
             <div style={{marginBottom: '24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px'}}>
               <div style={{padding: '16px', background: 'var(--panel)', borderRadius: '6px', border: '1px solid var(--line)', textAlign: 'center'}}>
-                <div style={{fontSize: '2rem', fontWeight: 700, color: 'var(--success)'}}>{systemStats.total_users || 0}</div>
+                <div style={{fontSize: '2rem', fontWeight: 700, color: 'var(--success)'}}>{systemStats.users?.total || 0}</div>
                 <div style={{fontSize: '0.85rem', color: 'var(--muted)', marginTop: '4px'}}>Total Users</div>
               </div>
               <div style={{padding: '16px', background: 'var(--panel)', borderRadius: '6px', border: '1px solid var(--line)', textAlign: 'center'}}>
-                <div style={{fontSize: '2rem', fontWeight: 700, color: 'var(--success)'}}>{systemStats.active_bots || 0}</div>
+                <div style={{fontSize: '2rem', fontWeight: 700, color: 'var(--success)'}}>{systemStats.bots?.active || 0}</div>
                 <div style={{fontSize: '0.85rem', color: 'var(--muted)', marginTop: '4px'}}>Active Bots</div>
               </div>
               <div style={{padding: '16px', background: 'var(--panel)', borderRadius: '6px', border: '1px solid var(--line)', textAlign: 'center'}}>
-                <div style={{fontSize: '2rem', fontWeight: 700, color: 'var(--success)'}}>{systemStats.cpu_usage || 0}%</div>
-                <div style={{fontSize: '0.85rem', color: 'var(--muted)', marginTop: '4px'}}>CPU Usage</div>
+                <div style={{fontSize: '2rem', fontWeight: 700, color: 'var(--success)'}}>{systemStats.trades?.total || 0}</div>
+                <div style={{fontSize: '0.85rem', color: 'var(--muted)', marginTop: '4px'}}>Total Trades</div>
               </div>
               <div style={{padding: '16px', background: 'var(--panel)', borderRadius: '6px', border: '1px solid var(--line)', textAlign: 'center'}}>
-                <div style={{fontSize: '2rem', fontWeight: 700, color: 'var(--success)'}}>{systemStats.memory_usage || 0}MB</div>
-                <div style={{fontSize: '0.85rem', color: 'var(--muted)', marginTop: '4px'}}>Memory Usage</div>
+                <div style={{fontSize: '2rem', fontWeight: 700, color: 'var(--success)'}}>R{systemStats.profit?.total?.toFixed(2) || '0.00'}</div>
+                <div style={{fontSize: '0.85rem', color: 'var(--muted)', marginTop: '4px'}}>Total Profit</div>
+              </div>
+            </div>
+          )}
+          
+          {/* Per-User Storage Usage */}
+          {storageData && (
+            <div style={{marginBottom: '24px', padding: '16px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--line)'}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px'}}>
+                <h3 style={{margin: 0, color: 'var(--accent)'}}>💾 User Storage Usage</h3>
+                <div style={{fontSize: '0.9rem', color: 'var(--muted)'}}>
+                  Total: {storageData.total_storage_mb} MB ({storageData.total_storage_gb} GB)
+                </div>
+              </div>
+              <div style={{maxHeight: '200px', overflowY: 'auto'}}>
+                {storageData.users && storageData.users.length > 0 ? (
+                  storageData.users.map((userStorage) => (
+                    <div key={userStorage.user_id} style={{
+                      padding: '8px 12px',
+                      marginBottom: '6px',
+                      background: 'var(--glass)',
+                      borderRadius: '4px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <div style={{flex: 1}}>
+                        <div style={{fontWeight: 600, fontSize: '0.9rem'}}>{userStorage.name || 'Unknown'}</div>
+                        <div style={{fontSize: '0.75rem', color: 'var(--muted)'}}>{userStorage.email}</div>
+                      </div>
+                      <div style={{fontWeight: 700, fontSize: '0.95rem', color: userStorage.storage_mb > 100 ? 'var(--error)' : 'var(--success)'}}>
+                        {userStorage.storage_mb} MB
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div style={{textAlign: 'center', padding: '20px', color: 'var(--muted)'}}>
+                    No storage data available
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2808,8 +2900,6 @@ export default function Dashboard() {
                   <th style={{padding: '12px', textAlign: 'left', color: 'var(--muted)', fontWeight: 600}}>User</th>
                   <th style={{padding: '12px', textAlign: 'left', color: 'var(--muted)', fontWeight: 600}}>Email</th>
                   <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Bots</th>
-                  <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>CPU</th>
-                  <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>RAM</th>
                   <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Status</th>
                   <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Actions</th>
                 </tr>
@@ -2817,7 +2907,7 @@ export default function Dashboard() {
               <tbody>
                 {allUsers.length === 0 ? (
                   <tr>
-                    <td colSpan="7" style={{padding: '40px', textAlign: 'center', color: 'var(--muted)'}}>
+                    <td colSpan="5" style={{padding: '40px', textAlign: 'center', color: 'var(--muted)'}}>
                       No users found
                     </td>
                   </tr>
@@ -2827,13 +2917,7 @@ export default function Dashboard() {
                       <td style={{padding: '12px'}}>{usr.first_name || 'N/A'}</td>
                       <td style={{padding: '12px'}}>{usr.email}</td>
                       <td style={{padding: '12px', textAlign: 'center'}}>
-                        {systemStats ? Math.floor(systemStats.active_bots / systemStats.total_users) : 0}
-                      </td>
-                      <td style={{padding: '12px', textAlign: 'center'}}>
-                        {systemStats ? Math.floor(systemStats.cpu_usage / systemStats.total_users) : 0}%
-                      </td>
-                      <td style={{padding: '12px', textAlign: 'center'}}>
-                        {systemStats ? Math.floor(systemStats.memory_usage / systemStats.total_users) : 0}MB
+                        {usr.stats?.total_bots || 0}
                       </td>
                       <td style={{padding: '12px', textAlign: 'center'}}>
                         <span style={{
@@ -2841,10 +2925,10 @@ export default function Dashboard() {
                           borderRadius: '4px',
                           fontSize: '0.75rem',
                           fontWeight: 600,
-                          background: usr.blocked ? 'var(--error)' : 'var(--success)',
+                          background: usr.status === 'blocked' ? 'var(--error)' : 'var(--success)',
                           color: 'white'
                         }}>
-                          {usr.blocked ? 'Blocked' : 'Active'}
+                          {usr.status === 'blocked' ? 'Blocked' : 'Active'}
                         </span>
                       </td>
                       <td style={{padding: '12px', textAlign: 'center'}}>
@@ -2865,11 +2949,11 @@ export default function Dashboard() {
                             Change PW
                           </button>
                           <button 
-                            onClick={() => handleBlockUser(usr.id, usr.blocked)}
+                            onClick={() => handleBlockUser(usr.id, usr.status === 'blocked')}
                             style={{
                               padding: '4px 8px',
                               fontSize: '0.75rem',
-                              background: usr.blocked ? 'var(--success)' : '#f59e0b',
+                              background: usr.status === 'blocked' ? 'var(--success)' : '#f59e0b',
                               color: 'white',
                               border: 'none',
                               borderRadius: '4px',
@@ -2877,7 +2961,7 @@ export default function Dashboard() {
                               fontWeight: 600
                             }}
                           >
-                            {usr.blocked ? 'Unblock' : 'Block'}
+                            {usr.status === 'blocked' ? 'Unblock' : 'Block'}
                           </button>
                           <button 
                             onClick={() => handleDeleteUser(usr.id)}
@@ -3034,6 +3118,72 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+          
+          {/* Bot Override for Testing */}
+          <div style={{marginTop: '24px', padding: '20px', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.05) 100%)', borderRadius: '8px', border: '2px solid #f59e0b'}}>
+            <h3 style={{marginBottom: '16px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '8px'}}>
+              ⚡ Bot Override (Testing Only)
+            </h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '16px'}}>
+              Promote bots to live trading before they complete the 7-day paper trading period. For testing purposes only.
+            </p>
+            
+            {/* Show paper bots that can be overridden */}
+            <div style={{maxHeight: '300px', overflowY: 'auto'}}>
+              {bots.filter(bot => bot.trading_mode === 'paper' || bot.mode === 'paper').length === 0 ? (
+                <div style={{textAlign: 'center', padding: '20px', color: 'var(--muted)'}}>
+                  No paper trading bots available to override
+                </div>
+              ) : (
+                bots
+                  .filter(bot => bot.trading_mode === 'paper' || bot.mode === 'paper')
+                  .map(bot => (
+                    <div key={bot.id} style={{
+                      padding: '12px',
+                      marginBottom: '8px',
+                      background: 'var(--panel)',
+                      borderRadius: '6px',
+                      border: '1px solid var(--line)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <div style={{flex: 1}}>
+                        <div style={{fontWeight: 600, fontSize: '0.9rem'}}>{bot.name}</div>
+                        <div style={{fontSize: '0.75rem', color: 'var(--muted)'}}>
+                          {bot.exchange?.toUpperCase()} • Capital: R{bot.current_capital?.toFixed(2) || '0.00'} • Profit: R{bot.total_profit?.toFixed(2) || '0.00'}
+                        </div>
+                        {bot.paper_start_date && (
+                          <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginTop: '4px'}}>
+                            Paper trading since: {new Date(bot.paper_start_date).toLocaleDateString()}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleBotOverrideLive(bot.id, bot.name)}
+                        style={{
+                          padding: '8px 16px',
+                          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                          fontSize: '0.85rem',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        ⚡ Override to Live
+                      </button>
+                    </div>
+                  ))
+              )}
+            </div>
+            
+            <div style={{marginTop: '12px', padding: '12px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '6px', fontSize: '0.75rem', color: 'var(--muted)'}}>
+              ⚠️ <strong>Warning:</strong> Overridden bots will trade with REAL money immediately. All actions are logged in the audit trail with your admin ID.
+            </div>
+          </div>
           
           {/* Admin Tools - All in One Section */}
           <div style={{marginTop: '24px', padding: '20px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--accent)'}}>
@@ -3542,12 +3692,15 @@ export default function Dashboard() {
           
           {/* Chart */}
           <div style={{
-            height: '310px', 
+            minHeight: '350px', 
+            height: '350px',
             padding: '20px',
             background: 'linear-gradient(135deg, rgba(0, 0, 42, 0.4) 0%, rgba(0, 0, 20, 0.6) 100%)',
             borderRadius: '10px',
             border: '1px solid rgba(16, 185, 129, 0.2)',
-            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            display: 'flex',
+            flexDirection: 'column'
           }}>
             {typeof window !== 'undefined' && (
               <Line data={chartData} options={chartOptions} />
