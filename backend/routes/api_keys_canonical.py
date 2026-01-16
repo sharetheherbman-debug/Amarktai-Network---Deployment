@@ -42,10 +42,14 @@ async def list_api_keys(user_id: str = Depends(get_current_user)):
     """
     List all API keys for the current user (masked, encrypted at rest)
     Never returns plaintext keys
+    Returns test status and metadata
     """
     try:
+        # Ensure user_id is string
+        user_id_str = str(user_id)
+        
         keys_cursor = db.api_keys_collection.find(
-            {"user_id": user_id},
+            {"user_id": user_id_str},
             {"_id": 0, "api_key_encrypted": 0, "api_secret_encrypted": 0}
         )
         keys = await keys_cursor.to_list(100)
@@ -58,6 +62,20 @@ async def list_api_keys(user_id: str = Depends(get_current_user)):
                 del key['api_key']
             if 'secret' in key:
                 key['secret'] = '***'
+            
+            # Add test status
+            last_test_ok = key.get("last_test_ok")
+            last_tested_at = key.get("last_tested_at")
+            
+            if last_test_ok is True and last_tested_at:
+                key["status"] = "saved_tested"
+                key["status_display"] = "Saved & Tested ✅"
+            elif last_test_ok is False:
+                key["status"] = "test_failed"
+                key["status_display"] = "Test Failed ❌"
+            else:
+                key["status"] = "saved_untested"
+                key["status_display"] = "Saved (untested)"
         
         return {
             "success": True,
@@ -78,15 +96,20 @@ async def save_api_key(
     """
     Save an API key with encryption at rest
     Keys are encrypted using Fernet symmetric encryption
+    Accepts both api_key/api_secret and apiKey/apiSecret variants
     """
     try:
+        # Normalize from Pydantic model and dict variants
         provider = data.provider
         api_key = data.api_key
         api_secret = data.api_secret
-        exchange = data.exchange
+        exchange = data.exchange or provider
         
         if not provider or not api_key:
             raise HTTPException(status_code=400, detail="Provider and API key required")
+        
+        # Ensure user_id is always stored as string
+        user_id_str = str(user_id)
         
         # Encrypt keys before storage
         encrypted_key = encrypt_api_key(api_key)
@@ -94,42 +117,45 @@ async def save_api_key(
         
         # Check if key already exists
         existing = await db.api_keys_collection.find_one({
-            "user_id": user_id,
+            "user_id": user_id_str,
             "provider": provider
         })
         
+        timestamp = datetime.now(timezone.utc).isoformat()
+        
         key_data = {
-            "user_id": user_id,
+            "user_id": user_id_str,  # Force string
             "provider": provider,
             "api_key_encrypted": encrypted_key,
             "api_secret_encrypted": encrypted_secret,
             "exchange": exchange,
-            "created_at": existing.get("created_at") if existing else None,
-            "updated_at": None
+            "created_at": existing.get("created_at") if existing else timestamp,
+            "updated_at": timestamp if existing else None,
+            "last_saved_at": timestamp,
+            "last_tested_at": existing.get("last_tested_at") if existing else None,
+            "last_test_ok": existing.get("last_test_ok") if existing else None,
+            "last_test_error": existing.get("last_test_error") if existing else None
         }
-        
-        timestamp = datetime.now(timezone.utc).isoformat()
         
         if existing:
             # Update existing key
-            key_data["updated_at"] = timestamp
             await db.api_keys_collection.update_one(
-                {"user_id": user_id, "provider": provider},
+                {"user_id": user_id_str, "provider": provider},
                 {"$set": key_data}
             )
             message = f"Updated {provider.upper()} API key"
         else:
             # Create new key
-            key_data["created_at"] = timestamp
             await db.api_keys_collection.insert_one(key_data)
             message = f"Saved {provider.upper()} API key"
         
-        logger.info(f"✅ {message} for user {user_id[:8]}")
+        logger.info(f"✅ {message} for user {user_id_str[:8]}")
         
         return {
             "success": True,
             "message": message,
             "provider": provider,
+            "status": "saved_untested" if not key_data.get("last_test_ok") else "saved_tested",
             "masked_key": f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "****",
         }
         
@@ -178,13 +204,20 @@ async def test_api_key(
     """
     Test an API key before saving
     Makes a lightweight API call to verify credentials
+    Persists test results to database
     """
     try:
-        api_key = data.get("api_key")
-        api_secret = data.get("api_secret")
+        # Normalize payload - accept multiple field name variants
+        api_key = data.get("api_key") or data.get("apiKey")
+        api_secret = data.get("api_secret") or data.get("apiSecret")
         
         if not api_key:
             raise HTTPException(status_code=400, detail="API key required")
+        
+        # Ensure user_id is string
+        user_id_str = str(user_id)
+        
+        timestamp = datetime.now(timezone.utc).isoformat()
         
         # Test based on provider type
         if provider in ["binance", "luno", "kucoin", "ovex", "valr"]:
@@ -209,6 +242,16 @@ async def test_api_key(
                 # Get currency count
                 currencies_found = len([c for c, amt in balance.get('total', {}).items() if amt > 0])
                 
+                # Update test metadata if key exists in database
+                await db.api_keys_collection.update_one(
+                    {"user_id": user_id_str, "provider": provider},
+                    {"$set": {
+                        "last_tested_at": timestamp,
+                        "last_test_ok": True,
+                        "last_test_error": None
+                    }}
+                )
+                
                 return {
                     "success": True,
                     "message": f"✅ {provider.upper()} API key validated successfully",
@@ -218,6 +261,17 @@ async def test_api_key(
             except Exception as e:
                 await exchange_instance.close()
                 error_msg = str(e)
+                
+                # Update test metadata with error
+                await db.api_keys_collection.update_one(
+                    {"user_id": user_id_str, "provider": provider},
+                    {"$set": {
+                        "last_tested_at": timestamp,
+                        "last_test_ok": False,
+                        "last_test_error": error_msg[:500]
+                    }}
+                )
+                
                 if "Invalid API-key" in error_msg or "authentication" in error_msg.lower():
                     return {
                         "success": False,
@@ -233,6 +287,15 @@ async def test_api_key(
         
         else:
             # Generic success for other providers (OpenAI, etc.)
+            await db.api_keys_collection.update_one(
+                {"user_id": user_id_str, "provider": provider},
+                {"$set": {
+                    "last_tested_at": timestamp,
+                    "last_test_ok": True,
+                    "last_test_error": None
+                }}
+            )
+            
             return {
                 "success": True,
                 "message": f"✅ {provider.upper()} API key format validated",

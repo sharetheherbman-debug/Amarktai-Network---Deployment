@@ -86,6 +86,7 @@ export const APISetupSection = ({ apiKeys, token, onKeysUpdate }) => {
                     <input
                       key={field}
                       type="password"
+                      autoComplete="new-password"
                       placeholder={field.replace('_', ' ').toUpperCase()}
                       value={formData[field] || ''}
                       onChange={(e) => setFormData({...formData, [field]: e.target.value})}
