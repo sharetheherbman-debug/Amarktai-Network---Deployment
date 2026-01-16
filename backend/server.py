@@ -2969,6 +2969,7 @@ try:
     from routes.api_keys_canonical import router as api_keys_canonical_router  # Canonical API Keys
     from routes.dashboard_aliases import router as dashboard_aliases_router  # Dashboard Aliases
     from routes.decision_trace import router as decision_trace_router  # Decision Trace for AI reasoning
+    from routes.system_status import router as system_status_router  # System Status
     
     app.include_router(phase5_router)
     app.include_router(phase6_router)
@@ -2990,6 +2991,7 @@ try:
     app.include_router(api_keys_canonical_router)  # Canonical /api/api-keys/*
     app.include_router(dashboard_aliases_router)  # Dashboard aliases (whale-flow, decision-trace, metrics/summary)
     app.include_router(decision_trace_router)  # Decision trace and AI reasoning
+    app.include_router(system_status_router)  # System status
     app.include_router(daily_report_router)
     app.include_router(ledger_router)  # Phase 1: Ledger endpoints
     app.include_router(order_router)  # Phase 2: Order pipeline endpoints
@@ -3002,7 +3004,7 @@ try:
     # Start daily report scheduler
     daily_report_service.start()
     
-    logger.info("✅ All endpoints loaded: Canonical API Keys, Dashboard Aliases, Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Bot Lifecycle, System Limits, Live Gate, Analytics, AI Chat, 2FA, Genetic Algorithm, Dashboard, API Keys, Daily Reports, Ledger, Orders, Limits Management, Alerts")
+    logger.info("✅ All endpoints loaded: System Status, Canonical API Keys, Dashboard Aliases, Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Bot Lifecycle, System Limits, Live Gate, Analytics, AI Chat, 2FA, Genetic Algorithm, Dashboard, API Keys, Daily Reports, Ledger, Orders, Limits Management, Alerts")
 except Exception as e:
     logger.warning(f"Could not load endpoints: {e}")
 

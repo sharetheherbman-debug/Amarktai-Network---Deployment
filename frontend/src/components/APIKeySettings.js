@@ -225,6 +225,7 @@ const APIKeySettings = () => {
         <div className="input-group">
           <input
             type="password"
+            autoComplete="new-password"
             placeholder="sk-..."
             value={apiKeys.openai}
             onChange={(e) => setApiKeys(prev => ({ ...prev, openai: e.target.value }))}
@@ -261,6 +262,7 @@ const APIKeySettings = () => {
         <div className="input-group">
           <input
             type="password"
+            autoComplete="new-password"
             placeholder="flock_..."
             value={apiKeys.flock}
             onChange={(e) => setApiKeys(prev => ({ ...prev, flock: e.target.value }))}

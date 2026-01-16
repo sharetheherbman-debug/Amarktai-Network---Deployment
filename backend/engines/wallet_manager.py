@@ -35,20 +35,19 @@ class WalletManager:
     async def get_master_balance(self, user_id: str) -> Dict:
         """Get balance from Luno (master wallet)"""
         try:
-            # Get Luno API keys
-            luno_key = await db.api_keys_collection.find_one({
-                "user_id": user_id,
-                "exchange": "luno"
-            }, {"_id": 0})
+            # Get Luno API keys using decrypted key helper
+            from routes.api_key_management import get_decrypted_key
             
-            if not luno_key:
-                return {"error": "Luno API keys not configured"}
+            luno_creds = await get_decrypted_key(user_id, "luno")
+            
+            if not luno_creds:
+                return {"error": "Luno API keys not configured. Please add Luno API keys in Settings."}
             
             # Initialize Luno exchange
             exchange = self.ccxt_service.init_exchange(
                 'luno',
-                luno_key['api_key'],
-                luno_key['api_secret']
+                luno_creds['api_key'],
+                luno_creds['api_secret']
             )
             
             # Fetch balances
@@ -76,12 +75,17 @@ class WalletManager:
             
         except Exception as e:
             logger.error(f"Failed to get Luno balance: {e}")
-            return {"error": str(e)}
+            error_detail = str(e)
+            if "authentication" in error_detail.lower() or "invalid" in error_detail.lower():
+                return {"error": f"Luno authentication failed. Please check your API credentials: {error_detail}"}
+            else:
+                return {"error": f"Failed to fetch Luno balance: {error_detail}"}
     
     async def get_btc_price_zar(self, exchange) -> Optional[float]:
-        """Get BTC/ZAR price"""
+        """Get BTC/ZAR price - uses XBTZAR for Luno"""
         try:
-            ticker = await asyncio.to_thread(exchange.fetch_ticker, 'XBTZAR')
+            # Luno uses XBTZAR, not BTC/ZAR
+            ticker = await asyncio.to_thread(exchange.fetch_ticker, 'XBT/ZAR')
             return ticker.get('last', 0)
         except:
             return None
@@ -90,19 +94,38 @@ class WalletManager:
         """Get balances from all configured exchanges"""
         balances = {}
         
+        from routes.api_key_management import get_decrypted_key
+        
+        # Get all API keys for user
         api_keys = await db.api_keys_collection.find(
-            {"user_id": user_id},
-            {"_id": 0}
+            {"user_id": str(user_id)},
+            {"_id": 0, "provider": 1, "exchange": 1}
         ).to_list(100)
         
         for key_doc in api_keys:
-            exchange_name = key_doc['exchange'].lower()
+            provider = key_doc.get('provider') or key_doc.get('exchange')
+            if not provider:
+                continue
+                
+            exchange_name = provider.lower()
+            
+            # Skip non-exchange providers
+            if exchange_name not in self.supported_exchanges:
+                continue
+            
             try:
+                # Get decrypted credentials
+                creds = await get_decrypted_key(user_id, provider)
+                if not creds:
+                    logger.warning(f"Could not decrypt keys for {exchange_name}")
+                    balances[exchange_name] = {"error": "Could not decrypt API keys"}
+                    continue
+                
                 exchange = self.ccxt_service.init_exchange(
                     exchange_name,
-                    key_doc['api_key'],
-                    key_doc['api_secret'],
-                    passphrase=key_doc.get('passphrase')
+                    creds['api_key'],
+                    creds['api_secret'],
+                    passphrase=creds.get('passphrase')
                 )
                 
                 balance = await asyncio.to_thread(exchange.fetch_balance)
@@ -117,7 +140,11 @@ class WalletManager:
                 
             except Exception as e:
                 logger.error(f"Failed to get balance for {exchange_name}: {e}")
-                balances[exchange_name] = {"error": str(e)}
+                error_detail = str(e)
+                if "authentication" in error_detail.lower() or "invalid" in error_detail.lower():
+                    balances[exchange_name] = {"error": f"Authentication failed: {error_detail}"}
+                else:
+                    balances[exchange_name] = {"error": f"Failed to fetch balance: {error_detail}"}
         
         return balances
     
