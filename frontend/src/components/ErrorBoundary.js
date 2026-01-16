@@ -60,7 +60,7 @@ class ErrorBoundary extends React.Component {
             {this.props.message || 'This section encountered an error and couldn\'t load.'}
           </p>
           
-          {process.env.NODE_ENV === 'development' && this.state.error && (
+          {process.env.NODE_ENV === 'development' && process.env.REACT_APP_DEBUG === 'true' && this.state.error && (
             <details style={{
               marginBottom: '16px',
               padding: '12px',
@@ -71,7 +71,7 @@ class ErrorBoundary extends React.Component {
               color: 'var(--muted)'
             }}>
               <summary style={{cursor: 'pointer', fontWeight: 600, marginBottom: '8px'}}>
-                Error Details (Development Only)
+                Error Details (Debug Mode Only)
               </summary>
               <pre style={{whiteSpace: 'pre-wrap', wordBreak: 'break-word'}}>
                 {this.state.error.toString()}

@@ -3262,7 +3262,7 @@ export default function Dashboard() {
                       const profitIcon = isWin ? '🟢' : '🔴';
                       
                       return (
-                        <div key={idx} style={{
+                        <div key={trade.id || `trade-${idx}`} style={{
                           background: 'var(--bg)',
                           border: '1px solid ' + (isWin ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'),
                           borderRadius: '8px',

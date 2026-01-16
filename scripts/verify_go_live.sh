@@ -658,11 +658,14 @@ else
     warn "Could not verify 50/50 split layouts in Dashboard"
 fi
 
-# Check that PlatformSelector is only used once in Bot Management section
+# Check that PlatformSelector is only used in correct locations
 SELECTOR_COUNT=$(grep -c "<PlatformSelector" frontend/src/pages/Dashboard.js || echo "0")
-# Should be 2: one in Bot Management (right panel) and one in Live Trades (right panel)
-if [ "$SELECTOR_COUNT" -eq "2" ] || [ "$SELECTOR_COUNT" -eq "3" ]; then
-    pass "PlatformSelector usage count correct ($SELECTOR_COUNT instances)"
+# Should be 2 usage instances: one in Bot Management (right panel) and one in Live Trades (right panel)
+# Note: grep -c also counts the import line, so total will be 3 (1 import + 2 usage)
+if [ "$SELECTOR_COUNT" -eq "3" ]; then
+    pass "PlatformSelector usage count correct (1 import + 2 usage: Bot Management + Live Trades)"
+elif [ "$SELECTOR_COUNT" -eq "2" ]; then
+    pass "PlatformSelector usage count correct (2 instances)"
 else
     warn "PlatformSelector usage count: $SELECTOR_COUNT (expected 2-3)"
 fi

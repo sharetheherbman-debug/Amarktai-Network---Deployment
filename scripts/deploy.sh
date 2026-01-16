@@ -39,15 +39,25 @@ if [ -d "build" ]; then
     rm -rf build
 fi
 
-if [ -d "node_modules" ]; then
-    echo "  Removing node_modules for clean install..."
-    rm -rf node_modules
+# Only remove node_modules if CLEAN_INSTALL flag is set
+if [ "${CLEAN_INSTALL:-false}" = "true" ]; then
+    if [ -d "node_modules" ]; then
+        echo "  Removing node_modules for clean install (CLEAN_INSTALL=true)..."
+        rm -rf node_modules
+    fi
 fi
 
 # Step 2: Install dependencies
 echo ""
 echo "📦 Step 2: Installing dependencies..."
-npm ci --silent
+# Use npm ci with cache for faster installs
+# Only remove node_modules if corrupted or on explicit clean flag
+if [ "${CLEAN_INSTALL:-false}" = "true" ]; then
+    echo "  Performing clean install (CLEAN_INSTALL=true)..."
+    rm -rf node_modules
+fi
+
+npm ci --prefer-offline --no-audit
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}✗ FAIL: npm ci failed${NC}"
