@@ -22,6 +22,7 @@ import WhaleFlowHeatmap from '../components/WhaleFlowHeatmap';
 import PrometheusMetrics from '../components/PrometheusMetrics';
 import APIKeySettings from '../components/APIKeySettings';
 import PlatformSelector from '../components/PlatformSelector';
+import ErrorBoundary from '../components/ErrorBoundary';
 import { API_BASE, wsUrl } from '../lib/api.js';
 import { useRealtimeEvent } from '../hooks/useRealtime';
 import { post, get } from '../lib/apiClient';
@@ -2149,14 +2150,7 @@ export default function Dashboard() {
   const renderBots = () => (
       <section className="section active">
         <div className="card">
-          <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px'}}>
-            <h2 style={{margin: 0}}>Bot Management</h2>
-            <PlatformSelector 
-              value={platformFilter} 
-              onChange={setPlatformFilter}
-              includeAll={true}
-            />
-          </div>
+          <h2 style={{marginBottom: '16px'}}>Bot Management</h2>
           <div className="bot-container">
             <div className="bot-left">
               <div className="bot-tabs">
@@ -2454,8 +2448,13 @@ export default function Dashboard() {
               )}
             </div>
           <div className="bot-right">
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px'}}>
-              <h3>Running Bots ({bots.length})</h3>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '12px'}}>
+              <h3 style={{margin: 0}}>Running Bots ({bots.length})</h3>
+              <PlatformSelector 
+                value={platformFilter} 
+                onChange={setPlatformFilter}
+                includeAll={true}
+              />
             </div>
             
             <div className="bot-list">
@@ -3183,116 +3182,144 @@ export default function Dashboard() {
             Real-time trade feed showing all 5 supported platforms (Luno, Binance, KuCoin, OVEX, VALR)
           </p>
           
-          {/* Platform Comparison Cards */}
-          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '20px'}}>
-            {allPlatforms.map(platform => {
-              const stats = getExchangeStats(tradesByExchange[platform.id]);
-              const hasData = stats.count > 0;
+          {/* 50/50 Split Layout: LEFT = Trade Feed | RIGHT = Platform Selector + Comparison */}
+          <div style={{display: 'flex', gap: '16px', alignItems: 'stretch', minHeight: '600px'}}>
+            
+            {/* LEFT: Real-time Trade Feed */}
+            <div style={{flex: '0 0 50%', display: 'flex', flexDirection: 'column'}}>
+              <h3 style={{marginBottom: '12px', fontSize: '1.1rem'}}>Real-Time Trade Feed</h3>
+              <div style={{
+                flex: 1,
+                background: 'var(--panel)', 
+                borderRadius: '8px', 
+                padding: '16px', 
+                overflowY: 'auto',
+                border: '1px solid var(--line)'
+              }}>
+                {recentTrades.length === 0 ? (
+                  <div style={{textAlign: 'center', padding: '40px', color: 'var(--muted)'}}>
+                    <p>📭 No trades yet. Trades will appear here in real-time.</p>
+                  </div>
+                ) : (
+                  <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
+                    {recentTrades.slice(0, 30).map((trade, idx) => {
+                      const isWin = trade.is_profitable || trade.profit_loss > 0;
+                      const profitColor = isWin ? 'var(--success)' : 'var(--error)';
+                      const profitIcon = isWin ? '🟢' : '🔴';
+                      
+                      return (
+                        <div key={idx} style={{
+                          background: 'var(--bg)',
+                          border: '1px solid ' + (isWin ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'),
+                          borderRadius: '8px',
+                          padding: '12px',
+                          transition: 'all 0.2s'
+                        }}>
+                          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'}}>
+                            <div style={{fontWeight: 600, color: 'var(--text)', fontSize: '0.95rem'}}>
+                              🤖 {trade.bot_name || 'Bot'}
+                            </div>
+                            <div style={{fontSize: '0.75rem', color: 'var(--muted)'}}>
+                              {new Date(trade.timestamp).toLocaleTimeString()}
+                            </div>
+                          </div>
+                          
+                          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                            <div style={{fontSize: '0.85rem', color: 'var(--muted)'}}>
+                              {trade.symbol} • {trade.exchange?.toUpperCase()}
+                            </div>
+                            <div style={{textAlign: 'right'}}>
+                              <div style={{fontSize: '0.9rem', fontWeight: 700, color: profitColor}}>
+                                {profitIcon} {isWin ? 'WIN' : 'LOSS'}
+                              </div>
+                              <div style={{fontSize: '0.85rem', color: profitColor, fontWeight: 600}}>
+                                R{trade.profit_loss?.toFixed(2) || '0.00'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* RIGHT: Platform Selector + Comparison Cards */}
+            <div style={{flex: '0 0 50%', display: 'flex', flexDirection: 'column'}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px'}}>
+                <h3 style={{margin: 0, fontSize: '1.1rem'}}>Platform Performance</h3>
+                <PlatformSelector 
+                  value={platformFilter} 
+                  onChange={setPlatformFilter}
+                  includeAll={true}
+                />
+              </div>
               
-              return (
-                <div key={platform.id} style={{
-                  background: 'var(--glass)',
-                  border: '1px solid var(--line)',
-                  borderRadius: '12px',
-                  padding: '20px',
-                  transition: 'all 0.3s',
-                  opacity: 1
-                }}>
-                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px'}}>
-                    <h3 style={{margin: 0, textTransform: 'uppercase', fontSize: '1.1rem', color: 'var(--accent)'}}>
-                      {platform.icon} {platform.name}
-                    </h3>
-                    <span style={{
-                      padding: '4px 12px',
-                      background: hasData ? 'rgba(16, 185, 129, 0.2)' : 'rgba(139, 139, 139, 0.2)',
-                      color: hasData ? '#10b981' : '#8b8b8b',
-                      borderRadius: '12px',
-                      fontSize: '0.75rem',
-                      fontWeight: 600
-                    }}>
-                      {hasData ? 'ACTIVE' : 'NO DATA'}
-                    </span>
-                  </div>
-                  
-                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px'}}>
-                    <div style={{textAlign: 'center'}}>
-                      <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>TRADES</div>
-                      <div style={{fontSize: '1.4rem', fontWeight: 700, color: 'var(--text)'}}>{stats.count}</div>
-                    </div>
-                    <div style={{textAlign: 'center'}}>
-                      <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>WIN RATE</div>
-                      <div style={{fontSize: '1.4rem', fontWeight: 700, color: hasData ? 'var(--success)' : 'var(--muted)'}}>{stats.winRate}%</div>
-                    </div>
-                    <div style={{textAlign: 'center'}}>
-                      <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>PROFIT</div>
-                      <div style={{fontSize: '1.2rem', fontWeight: 700, color: parseFloat(stats.profit) >= 0 ? 'var(--success)' : 'var(--error)'}}>
-                        R{stats.profit}
+              <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}>
+                {allPlatforms
+                  .filter(p => platformFilter === 'all' || p.id === platformFilter)
+                  .map(platform => {
+                    const stats = getExchangeStats(tradesByExchange[platform.id]);
+                    const hasData = stats.count > 0;
+                    
+                    return (
+                      <div key={platform.id} style={{
+                        background: 'var(--glass)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '12px',
+                        padding: '20px',
+                        transition: 'all 0.3s'
+                      }}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px'}}>
+                          <h3 style={{margin: 0, textTransform: 'uppercase', fontSize: '1.1rem', color: 'var(--accent)'}}>
+                            {platform.icon} {platform.name}
+                          </h3>
+                          <span style={{
+                            padding: '4px 12px',
+                            background: hasData ? 'rgba(16, 185, 129, 0.2)' : 'rgba(139, 139, 139, 0.2)',
+                            color: hasData ? '#10b981' : '#8b8b8b',
+                            borderRadius: '12px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600
+                          }}>
+                            {hasData ? 'ACTIVE' : 'NO DATA'}
+                          </span>
+                        </div>
+                        
+                        <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px'}}>
+                          <div style={{textAlign: 'center'}}>
+                            <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>TRADES</div>
+                            <div style={{fontSize: '1.4rem', fontWeight: 700, color: 'var(--text)'}}>{stats.count}</div>
+                          </div>
+                          <div style={{textAlign: 'center'}}>
+                            <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>WIN RATE</div>
+                            <div style={{fontSize: '1.4rem', fontWeight: 700, color: hasData ? 'var(--success)' : 'var(--muted)'}}>{stats.winRate}%</div>
+                          </div>
+                          <div style={{textAlign: 'center'}}>
+                            <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginBottom: '4px'}}>PROFIT</div>
+                            <div style={{fontSize: '1.2rem', fontWeight: 700, color: parseFloat(stats.profit) >= 0 ? 'var(--success)' : 'var(--error)'}}>
+                              R{stats.profit}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {!hasData && (
+                          <div style={{marginTop: '12px', padding: '8px', background: 'rgba(139, 139, 139, 0.1)', borderRadius: '6px', textAlign: 'center', fontSize: '0.8rem', color: 'var(--muted)'}}>
+                            No trades yet for this platform
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  </div>
-                  
-                  {!hasData && (
-                    <div style={{marginTop: '12px', padding: '8px', background: 'rgba(139, 139, 139, 0.1)', borderRadius: '6px', textAlign: 'center', fontSize: '0.8rem', color: 'var(--muted)'}}>
-                      No trades yet for this platform
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Recent Trades List */}
-          <h3 style={{marginTop: '24px', marginBottom: '12px'}}>Recent Trade Feed</h3>
-          <div style={{background: 'var(--panel)', borderRadius: '8px', padding: '16px', maxHeight: '400px', overflowY: 'auto'}}>
-            {recentTrades.length === 0 ? (
-              <div style={{textAlign: 'center', padding: '40px', color: 'var(--muted)'}}>
-                <p>📭 No trades yet. Trades will appear here in real-time.</p>
+                    );
+                  })}
               </div>
-            ) : (
-              <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
-                {recentTrades.slice(0, 20).map((trade, idx) => {
-                  const isWin = trade.is_profitable || trade.profit_loss > 0;
-                  const profitColor = isWin ? 'var(--success)' : 'var(--error)';
-                  const profitIcon = isWin ? '🟢' : '🔴';
-                  
-                  return (
-                    <div key={idx} style={{
-                      background: 'var(--bg)',
-                      border: '1px solid ' + (isWin ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'),
-                      borderRadius: '8px',
-                      padding: '12px 16px',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                      gap: '12px'
-                    }}>
-                      <div style={{flex: '1 1 200px'}}>
-                        <div style={{fontWeight: 600, color: 'var(--text)', marginBottom: '4px'}}>
-                          🤖 {trade.bot_name || 'Bot'}
-                        </div>
-                        <div style={{fontSize: '0.85rem', color: 'var(--muted)'}}>
-                          {trade.symbol} • {trade.exchange?.toUpperCase()}
-                        </div>
-                      </div>
-                      
-                      <div style={{flex: '0 0 auto', textAlign: 'center'}}>
-                        <div style={{fontSize: '1.1rem', fontWeight: 700, color: profitColor}}>
-                          {profitIcon} {isWin ? 'WIN' : 'LOSS'}
-                        </div>
-                        <div style={{fontSize: '0.9rem', color: profitColor, fontWeight: 600}}>
-                          R{trade.profit_loss?.toFixed(2) || '0.00'}
-                        </div>
-                      </div>
-                      
-                      <div style={{flex: '0 0 auto', textAlign: 'right', fontSize: '0.8rem', color: 'var(--muted)'}}>
-                        {new Date(trade.timestamp).toLocaleTimeString()}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            </div>
           </div>
         </div>
       </section>
@@ -3461,7 +3488,7 @@ export default function Dashboard() {
           
           {/* Chart */}
           <div style={{
-            height: '280px', 
+            height: '310px', 
             padding: '20px',
             background: 'linear-gradient(135deg, rgba(0, 0, 42, 0.4) 0%, rgba(0, 0, 20, 0.6) 100%)',
             borderRadius: '10px',
@@ -3854,108 +3881,122 @@ export default function Dashboard() {
           {/* Tab Content */}
           <div style={{marginTop: '20px'}}>
             {metricsTab === 'flokx' && (
-              <div>
-                {!isFlokxActive && (
-                  <div style={{padding: '40px', textAlign: 'center', background: 'var(--panel)', borderRadius: '6px', border: '1px solid var(--line)'}}>
-                    <p style={{color: 'var(--muted)', marginBottom: '12px'}}>
-                      ⚠️ Flokx alerts are not active. Configure your Flokx API key in the API Setup section to enable real-time alerts.
-                    </p>
-                    <button 
-                      onClick={() => showSection('api')}
-                      style={{
-                        padding: '8px 16px',
-                        background: 'var(--accent2)',
-                        color: 'var(--text)',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Configure Flokx API
-                    </button>
-                  </div>
-                )}
-                
-                {isFlokxActive && (
-                  <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
-                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                      <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
-                        <div style={{width: '8px', height: '8px', borderRadius: '50%', background: 'var(--success)'}}></div>
-                        <span style={{fontSize: '0.85rem', color: 'var(--muted)'}}>Flokx Connected</span>
-                      </div>
+              <ErrorBoundary title="Flokx Alerts Error" message="Unable to load Flokx alerts. Please check your API configuration.">
+                <div>
+                  {!isFlokxActive && (
+                    <div style={{padding: '40px', textAlign: 'center', background: 'var(--panel)', borderRadius: '6px', border: '1px solid var(--line)'}}>
+                      <p style={{color: 'var(--muted)', marginBottom: '12px'}}>
+                        ⚠️ Flokx alerts are not active. Configure your Flokx API key in the API Setup section to enable real-time alerts.
+                      </p>
                       <button 
-                        onClick={loadFlokxAlerts} 
+                        onClick={() => showSection('api')}
                         style={{
-                          padding: '6px 12px',
-                          borderRadius: '6px',
+                          padding: '8px 16px',
                           background: 'var(--accent2)',
                           color: 'var(--text)',
                           border: 'none',
+                          borderRadius: '6px',
                           fontWeight: 600,
-                          fontSize: '0.85rem',
                           cursor: 'pointer'
                         }}
                       >
-                        Refresh Alerts
+                        Configure Flokx API
                       </button>
                     </div>
-                    
-                    <div style={{background: 'var(--glass)', padding: '12px', borderRadius: '6px', border: '1px solid var(--line)'}}>
-                      {!Array.isArray(flokxAlerts) || flokxAlerts.length === 0 ? (
-                        <p style={{color: 'var(--muted)', padding: '20px', textAlign: 'center'}}>
-                          ✓ No alerts at this time - System running smoothly
-                        </p>
-                      ) : (
-                        <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
-                          {Array.isArray(flokxAlerts) && flokxAlerts.map((alert, idx) => (
-                            <div 
-                              key={idx}
-                              style={{
-                                padding: '12px',
-                                background: 'var(--panel)',
-                                borderRadius: '6px',
-                                borderLeft: '4px solid ' + getAlertColor(alert.priority || alert.type || 'info'),
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center'
-                              }}
-                            >
-                              <div>
-                                <div style={{fontWeight: 600, marginBottom: '4px'}}>
-                                  {alert.title || alert.pair || 'Alert'}
-                                </div>
-                                <div style={{fontSize: '0.85rem', color: 'var(--muted)'}}>
-                                  {alert.message || 'No details available'}
-                                </div>
-                                <div style={{fontSize: '0.75rem', color: 'var(--muted)', marginTop: '4px'}}>
-                                  {alert.timestamp ? new Date(alert.timestamp).toLocaleString() : 'No timestamp'}
-                                </div>
-                              </div>
-                              {(alert.priority || alert.type) && (
-                                <div style={{
-                                  padding: '4px 8px',
-                                  borderRadius: '4px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 600,
-                                  background: getAlertColor(alert.priority || alert.type || 'info'),
-                                  color: 'white'
-                                }}>
-                                  {(alert.priority || alert.type || 'INFO').toUpperCase()}
-                                </div>
-                              )}
-                            </div>
-                          ))}
+                  )}
+                  
+                  {isFlokxActive && (
+                    <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                        <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                          <div style={{width: '8px', height: '8px', borderRadius: '50%', background: 'var(--success)'}}></div>
+                          <span style={{fontSize: '0.85rem', color: 'var(--muted)'}}>Flokx Connected</span>
                         </div>
-                      )}
+                        <button 
+                          onClick={loadFlokxAlerts} 
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            background: 'var(--accent2)',
+                            color: 'var(--text)',
+                            border: 'none',
+                            fontWeight: 600,
+                            fontSize: '0.85rem',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Refresh Alerts
+                        </button>
+                      </div>
+                      
+                      <div style={{background: 'var(--glass)', padding: '12px', borderRadius: '6px', border: '1px solid var(--line)'}}>
+                        {!Array.isArray(flokxAlerts) || flokxAlerts.length === 0 ? (
+                          <p style={{color: 'var(--muted)', padding: '20px', textAlign: 'center'}}>
+                            ✓ No alerts at this time - System running smoothly
+                          </p>
+                        ) : (
+                          <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
+                            {Array.isArray(flokxAlerts) && flokxAlerts.map((alert, idx) => (
+                              <div 
+                                key={idx}
+                                style={{
+                                  padding: '12px',
+                                  background: 'var(--panel)',
+                                  borderRadius: '6px',
+                                  borderLeft: '4px solid ' + getAlertColor(alert.priority || alert.type || 'info'),
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center'
+                                }}
+                              >
+                                <div>
+                                  <div style={{fontWeight: 600, marginBottom: '4px'}}>
+                                    {alert.title || alert.pair || 'Alert'}
+                                  </div>
+                                  <div style={{fontSize: '0.85rem', color: 'var(--muted)'}}>
+                                    {alert.message || 'No details available'}
+                                  </div>
+                                  <div style={{fontSize: '0.75rem', color: 'var(--muted)', marginTop: '4px'}}>
+                                    {alert.timestamp ? new Date(alert.timestamp).toLocaleString() : 'No timestamp'}
+                                  </div>
+                                </div>
+                                {(alert.priority || alert.type) && (
+                                  <div style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '4px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    background: getAlertColor(alert.priority || alert.type || 'info'),
+                                    color: 'white'
+                                  }}>
+                                    {(alert.priority || alert.type || 'INFO').toUpperCase()}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              </ErrorBoundary>
             )}
-            {metricsTab === 'decision-trace' && <DecisionTrace />}
-            {metricsTab === 'whale-flow' && <WhaleFlowHeatmap />}
-            {metricsTab === 'system-metrics' && <PrometheusMetrics />}
+            {metricsTab === 'decision-trace' && (
+              <ErrorBoundary title="Decision Trace Error" message="Unable to load decision trace. The service may be unavailable.">
+                <DecisionTrace />
+              </ErrorBoundary>
+            )}
+            {metricsTab === 'whale-flow' && (
+              <ErrorBoundary title="Whale Flow Error" message="Unable to load whale flow heatmap. Data may be unavailable.">
+                <WhaleFlowHeatmap />
+              </ErrorBoundary>
+            )}
+            {metricsTab === 'system-metrics' && (
+              <ErrorBoundary title="System Metrics Error" message="Unable to load system metrics. Prometheus may not be configured.">
+                <PrometheusMetrics />
+              </ErrorBoundary>
+            )}
           </div>
         </div>
       </section>
