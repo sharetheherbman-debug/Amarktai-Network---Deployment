@@ -25,13 +25,29 @@ POST /api/auth/register
 **Request Body:**
 ```json
 {
-  "id": "user_uuid",
-  "email": "user@example.com",
-  "password_hash": "password123",
   "first_name": "John",
-  "last_name": "Doe"
+  "email": "user@example.com",
+  "password": "password123",
+  "invite_code": "optional_invite_code"
 }
 ```
+**Notes:**
+- `password` is preferred (sent as plain text, hashed server-side)
+- `password_hash` is supported for backward compatibility (also treated as plain password)
+- Exactly one of `password` or `password_hash` must be provided
+- `invite_code` can also be provided via `X-Invite-Code` header
+- Email is normalized to lowercase
+
+**Response:**
+```json
+{
+  "access_token": "jwt_token_here",
+  "token_type": "bearer",
+  "token": "jwt_token_here",
+  "user": { "id": "...", "email": "...", "first_name": "..." }
+}
+```
+**Note:** Both `access_token` (standard) and `token` (legacy) are provided for backward compatibility.
 
 ### Login
 ```http
@@ -47,10 +63,13 @@ POST /api/auth/login
 **Response:**
 ```json
 {
+  "access_token": "jwt_token_here",
+  "token_type": "bearer",
   "token": "jwt_token_here",
   "user": { "id": "...", "email": "..." }
 }
 ```
+**Note:** Both `access_token` (standard) and `token` (legacy) are provided for backward compatibility.
 
 ### Get Current User
 ```http

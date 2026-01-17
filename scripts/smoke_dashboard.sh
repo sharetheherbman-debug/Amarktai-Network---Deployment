@@ -53,7 +53,7 @@ echo ""
 echo "Test 2: User Registration (Email Normalization)"
 REGISTER_RESPONSE=$(curl -s -X POST "$API_BASE/api/auth/register" \
     -H "Content-Type: application/json" \
-    -d "{\"email\":\"${TEST_EMAIL^^}\",\"password_hash\":\"$TEST_PASSWORD\",\"first_name\":\"Smoke\",\"last_name\":\"Test\"}")
+    -d "{\"email\":\"${TEST_EMAIL^^}\",\"password\":\"$TEST_PASSWORD\",\"first_name\":\"Smoke\",\"last_name\":\"Test\"}")
 
 if echo "$REGISTER_RESPONSE" | grep -q "token"; then
     pass_test "User registration successful"

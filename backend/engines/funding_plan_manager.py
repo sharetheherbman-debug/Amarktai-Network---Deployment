@@ -15,14 +15,18 @@ from engines.ai_model_router import ai_model_router
 
 logger = logging.getLogger(__name__)
 
-# Create funding_plans collection
-funding_plans_collection = db.funding_plans
 
 class FundingPlanManager:
     """Manages cross-exchange funding requirements"""
     
     def __init__(self):
         self.plan_types = ['bot_creation', 'capital_reallocation', 'autopilot_spawning']
+    
+    def _get_collection(self):
+        """Get funding_plans collection with safety check"""
+        if db.funding_plans_collection is None:
+            raise RuntimeError("funding_plans_collection not initialized; ensure db.connect() was called")
+        return db.funding_plans_collection
     
     async def create_funding_plan(self, user_id: str, target_exchange: str, 
                                   required_amount: float, reason: str, 
@@ -92,7 +96,7 @@ class FundingPlanManager:
             }
             
             # Store plan
-            await funding_plans_collection.insert_one(plan)
+            await self._get_collection().insert_one(plan)
             
             logger.info(f"📋 Created funding plan {plan_id[:8]} for {user_id[:8]}: R{required_amount} to {target_exchange}")
             
@@ -159,7 +163,7 @@ I'll notify you once I detect the deposit.
             if status:
                 query["status"] = status
             
-            plans = await funding_plans_collection.find(
+            plans = await self._get_collection().find(
                 query,
                 {"_id": 0}
             ).sort("created_at", -1).limit(50).to_list(50)
@@ -173,7 +177,7 @@ I'll notify you once I detect the deposit.
     async def get_funding_plan(self, plan_id: str) -> Dict:
         """Get specific funding plan"""
         try:
-            plan = await funding_plans_collection.find_one(
+            plan = await self._get_collection().find_one(
                 {"plan_id": plan_id},
                 {"_id": 0}
             )
@@ -187,7 +191,7 @@ I'll notify you once I detect the deposit.
     async def cancel_funding_plan(self, plan_id: str) -> bool:
         """Cancel a funding plan"""
         try:
-            await funding_plans_collection.update_one(
+            await self._get_collection().update_one(
                 {"plan_id": plan_id},
                 {
                     "$set": {
@@ -206,7 +210,7 @@ I'll notify you once I detect the deposit.
     async def mark_plan_executed(self, plan_id: str) -> bool:
         """Mark funding plan as executed"""
         try:
-            await funding_plans_collection.update_one(
+            await self._get_collection().update_one(
                 {"plan_id": plan_id},
                 {
                     "$set": {

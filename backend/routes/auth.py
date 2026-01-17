@@ -3,8 +3,9 @@ import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 import logging
+from uuid import uuid4
 
-from models import User, UserLogin, Bot, BotCreate, APIKey, APIKeyCreate, Trade, SystemMode, Alert, ChatMessage, BotRiskMode
+from models import User, UserLogin, UserRegister, Bot, BotCreate, APIKey, APIKeyCreate, Trade, SystemMode, Alert, ChatMessage, BotRiskMode
 import database as db
 from auth import create_access_token, get_current_user, get_password_hash, verify_password
 
@@ -13,11 +14,24 @@ router = APIRouter()
 
 
 @router.post("/auth/register")
-async def register(request: Request, user: User):
+async def register(request: Request, user: UserRegister):
+    # Check invite code from header or body
     expected = (os.getenv("INVITE_CODE") or "").strip()
-    provided = (request.headers.get("X-Invite-Code") or "").strip()
+    provided_header = (request.headers.get("X-Invite-Code") or "").strip()
+    provided_body = (user.invite_code or "").strip()
+    provided = provided_header or provided_body
+    
     if expected and provided != expected:
         raise HTTPException(status_code=403, detail="Invalid invite code")
+    
+    # Validate password: exactly one of password or password_hash must be provided
+    if not user.password and not user.password_hash:
+        raise HTTPException(status_code=400, detail="Either password or password_hash is required")
+    if user.password and user.password_hash:
+        raise HTTPException(status_code=400, detail="Provide either password or password_hash, not both")
+    
+    # Get plain password (prefer password field, treat password_hash as plain password for legacy)
+    plain_password = user.password if user.password else user.password_hash
 
     # Normalize email to lowercase for consistency
     normalized_email = user.email.lower().strip()
@@ -26,17 +40,37 @@ async def register(request: Request, user: User):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    user_dict = user.model_dump()
-    user_dict["email"] = normalized_email  # Store normalized email
-    user_dict["password_hash"] = get_password_hash(user_dict["password_hash"])
-    user_dict["created_at"] = datetime.now(timezone.utc).isoformat()
+    # Create user dict
+    user_id = str(uuid4())
+    user_dict = {
+        "id": user_id,
+        "first_name": user.first_name,
+        "email": normalized_email,
+        "password_hash": get_password_hash(plain_password),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "currency": "ZAR",
+        "system_mode": "testing",
+        "autopilot_enabled": True,
+        "bodyguard_enabled": True,
+        "learning_enabled": True,
+        "emergency_stop": False,
+        "blocked": False,
+        "two_factor_enabled": False
+    }
 
-    res = await db.users_collection.insert_one(user_dict)
-    user_dict["id"] = user_dict.get("id") or str(res.inserted_id)
+    await db.users_collection.insert_one(user_dict)
     user_dict.pop("_id", None)
 
-    token = create_access_token({"user_id": user_dict["id"]})
-    return {"token": token, "user": {k: v for k, v in user_dict.items() if k != "password_hash"}}
+    # Create token
+    access_token = create_access_token({"user_id": user_id})
+    
+    # Return with both new and legacy fields
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "token": access_token,  # Legacy field for backward compatibility
+        "user": {k: v for k, v in user_dict.items() if k != "password_hash"}
+    }
 
 
 
@@ -51,8 +85,15 @@ async def login(credentials: UserLogin):
     if not user or not verify_password(credentials.password, user['password_hash']):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
-    token = create_access_token({"user_id": user['id']})
-    return {"token": token, "user": {k: v for k, v in user.items() if k != 'password_hash'}}
+    access_token = create_access_token({"user_id": user['id']})
+    
+    # Return with both new and legacy fields
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "token": access_token,  # Legacy field for backward compatibility
+        "user": {k: v for k, v in user.items() if k != 'password_hash'}
+    }
 
 
 @router.get("/auth/me")
@@ -103,7 +144,7 @@ async def update_profile(update: dict, user_id: str = Depends(get_current_user))
             logger.info(f"Cleared AI chat cache for user {user_id} after name update")
         
         user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
-        return {"message": "Profile updated", "user": {k: v for k, v in user.items() if k != 'password'}}
+        return {"message": "Profile updated", "user": {k: v for k, v in user.items() if k != 'password_hash'}}
     except Exception as e:
         logger.error(f"Profile update error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
