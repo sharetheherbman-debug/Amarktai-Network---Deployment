@@ -19,14 +19,12 @@ router = APIRouter(prefix="/api/system", tags=["Emergency Stop"])
 @router.post("/emergency-stop")
 async def activate_emergency_stop(
     reason: str = "User initiated",
-    current_user: Dict = Depends(get_current_user)
+    user_id: str = Depends(get_current_user)
 ):
     """
     Activate emergency stop - immediately halt all trading
     """
     try:
-        user_id = current_user['id']
-        
         # Set emergency stop flag
         await db.system_modes_collection.update_one(
             {"user_id": user_id},
@@ -72,13 +70,11 @@ async def activate_emergency_stop(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/emergency-stop/disable")
-async def deactivate_emergency_stop(current_user: Dict = Depends(get_current_user)):
+async def deactivate_emergency_stop(user_id: str = Depends(get_current_user)):
     """
     Deactivate emergency stop - resume normal operations
     """
     try:
-        user_id = current_user['id']
-        
         # Check if emergency stop is active
         modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
         
@@ -127,13 +123,11 @@ async def deactivate_emergency_stop(current_user: Dict = Depends(get_current_use
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/emergency-stop/status")
-async def get_emergency_stop_status(current_user: Dict = Depends(get_current_user)):
+async def get_emergency_stop_status(user_id: str = Depends(get_current_user)):
     """
     Get current emergency stop status
     """
     try:
-        user_id = current_user['id']
-        
         modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
         
         if not modes:

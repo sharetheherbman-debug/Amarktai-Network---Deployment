@@ -123,12 +123,14 @@ async def get_capital_requirements(user_id: str = Depends(get_current_user)):
         if db.bots_collection is None:
             logger.warning("bots_collection not initialized")
             return {
+                "user_id": user_id,
                 "requirements": {},
                 "summary": {
                     "total_required": 0,
                     "total_available": 0,
                     "overall_health": "unknown"
                 },
+                "timestamp": None,
                 "note": "Collections not initialized"
             }
         
@@ -156,6 +158,9 @@ async def get_capital_requirements(user_id: str = Depends(get_current_user)):
             
             requirements[exchange]['required'] += capital
             requirements[exchange]['bots'] += 1
+        
+        # Initialize balances to None
+        balances = None
         
         # Get actual balances (safe check for collection)
         if wallet_balances_collection is not None:
@@ -191,7 +196,18 @@ async def get_capital_requirements(user_id: str = Depends(get_current_user)):
         
     except Exception as e:
         logger.error(f"Get capital requirements error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return safe default instead of 500
+        return {
+            "user_id": user_id,
+            "requirements": {},
+            "summary": {
+                "total_required": 0,
+                "total_available": 0,
+                "overall_health": "error"
+            },
+            "timestamp": None,
+            "error": str(e)
+        }
 
 @router.get("/funding-plans")
 async def get_funding_plans(

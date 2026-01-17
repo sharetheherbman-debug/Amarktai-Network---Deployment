@@ -185,14 +185,22 @@ async def test_api_key(
                     }
         
         elif provider == "openai":
-            # Test OpenAI API key
-            import openai
-            openai.api_key = api_key
+            # Test OpenAI API key with openai>=1.x
+            import os
             
             try:
+                # Use AsyncOpenAI client (openai>=1.x)
+                from openai import AsyncOpenAI
+                
+                # Get test model from env or use default
+                test_model = os.getenv("OPENAI_TEST_MODEL", "gpt-4o-mini")
+                
+                # Create client with provided API key
+                client = AsyncOpenAI(api_key=api_key)
+                
                 # Simple test call
-                response = await openai.ChatCompletion.acreate(
-                    model="gpt-3.5-turbo",
+                response = await client.chat.completions.create(
+                    model=test_model,
                     messages=[{"role": "user", "content": "test"}],
                     max_tokens=5
                 )
@@ -213,8 +221,25 @@ async def test_api_key(
                     "provider": provider,
                     "test_data": {
                         "model_accessible": True,
-                        "models": ["gpt-3.5-turbo", "gpt-4"]
+                        "test_model": test_model,
+                        "models": ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo", "gpt-4"]
                     }
+                }
+            except ImportError as e:
+                # Fallback error for missing openai library
+                error_msg = "OpenAI library not installed or version incompatible"
+                await db.api_keys_collection.update_one(
+                    {"user_id": user_id_str, "provider": provider},
+                    {"$set": {
+                        "last_tested_at": timestamp,
+                        "last_test_ok": False,
+                        "last_test_error": error_msg
+                    }}
+                )
+                return {
+                    "success": False,
+                    "message": "❌ OpenAI library configuration error",
+                    "error": error_msg
                 }
             except Exception as e:
                 error_msg = str(e)
@@ -229,11 +254,12 @@ async def test_api_key(
                     }}
                 )
                 
-                if "Invalid" in error_msg or "Incorrect" in error_msg:
+                # Check for authentication errors
+                if "invalid" in error_msg.lower() or "incorrect" in error_msg.lower() or "authentication" in error_msg.lower():
                     return {
                         "success": False,
                         "message": "❌ Invalid OpenAI API key",
-                        "error": "Authentication failed"
+                        "error": "Authentication failed - check your API key"
                     }
                 else:
                     return {

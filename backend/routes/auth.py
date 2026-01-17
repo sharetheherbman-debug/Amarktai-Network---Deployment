@@ -64,12 +64,16 @@ async def register(request: Request, user: UserRegister):
     # Create token
     access_token = create_access_token({"user_id": user_id})
     
+    # Sanitize user object - NEVER return sensitive fields
+    sensitive_fields = {'password_hash', 'hashed_password', 'new_password', 'password', '_id'}
+    sanitized_user = {k: v for k, v in user_dict.items() if k not in sensitive_fields}
+    
     # Return with both new and legacy fields
     return {
         "access_token": access_token,
         "token_type": "bearer",
         "token": access_token,  # Legacy field for backward compatibility
-        "user": {k: v for k, v in user_dict.items() if k != "password_hash"}
+        "user": sanitized_user
     }
 
 
@@ -87,12 +91,16 @@ async def login(credentials: UserLogin):
     
     access_token = create_access_token({"user_id": user['id']})
     
+    # Sanitize user object - NEVER return sensitive fields
+    sensitive_fields = {'password_hash', 'hashed_password', 'new_password', 'password', '_id'}
+    sanitized_user = {k: v for k, v in user.items() if k not in sensitive_fields}
+    
     # Return with both new and legacy fields
     return {
         "access_token": access_token,
         "token_type": "bearer",
         "token": access_token,  # Legacy field for backward compatibility
-        "user": {k: v for k, v in user.items() if k != 'password_hash'}
+        "user": sanitized_user
     }
 
 
@@ -123,30 +131,56 @@ async def get_current_user_profile(user_id: str = Depends(get_current_user)):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    return {k: v for k, v in user.items() if k != 'password_hash'}
+    # Sanitize - never return sensitive fields
+    sensitive_fields = {'password_hash', 'hashed_password', 'new_password', 'password', '_id'}
+    return {k: v for k, v in user.items() if k not in sensitive_fields}
 
 
 @router.put("/auth/profile")
 async def update_profile(update: dict, user_id: str = Depends(get_current_user)):
-    """Update user profile - FIXED"""
+    """Update user profile - sanitized and validated"""
     try:
-        update_data = {k: v for k, v in update.items() if v is not None}
+        # Prevent updating sensitive fields
+        forbidden_fields = {'password_hash', 'hashed_password', 'new_password', 'password', 'id', '_id', 'email'}
+        update_data = {k: v for k, v in update.items() if v is not None and k not in forbidden_fields}
         
-        if update_data:
-            await db.users_collection.update_one(
-                {"id": user_id},
-                {"$set": update_data}
-            )
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No valid fields to update")
         
-        # Clear AI chat cache to use new name
-        if 'first_name' in update_data and user_id in ai_service.chats:
-            del ai_service.chats[user_id]
-            logger.info(f"Cleared AI chat cache for user {user_id} after name update")
+        # Update user profile
+        result = await db.users_collection.update_one(
+            {"id": user_id},
+            {"$set": update_data}
+        )
         
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Clear AI chat cache to use new name if name changed
+        if 'first_name' in update_data:
+            from ai_service import ai_service
+            if user_id in ai_service.chats:
+                del ai_service.chats[user_id]
+                logger.info(f"Cleared AI chat cache for user {user_id} after name update")
+        
+        # Fetch and return updated user
         user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
-        return {"message": "Profile updated", "user": {k: v for k, v in user.items() if k != 'password_hash'}}
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found after update")
+        
+        # Sanitize - never return sensitive fields
+        sensitive_fields = {'password_hash', 'hashed_password', 'new_password', 'password', '_id'}
+        sanitized_user = {k: v for k, v in user.items() if k not in sensitive_fields}
+        
+        return {
+            "success": True,
+            "message": "Profile updated successfully",
+            "user": sanitized_user
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Profile update error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Profile update failed: {str(e)}")
 
 
