@@ -2,7 +2,10 @@
 """
 Verify Dashboard Endpoint Compatibility
 Tests that all required endpoints are present in OpenAPI spec and accessible
-Run this with the server running: python3 verify_dashboard_endpoints.py [backend_url]
+
+Usage:
+    python3 verify_dashboard_endpoints.py [backend_url]
+    BACKEND_URL=http://production:8001 python3 verify_dashboard_endpoints.py
 """
 
 import requests
@@ -10,9 +13,28 @@ import json
 import sys
 import os
 from typing import List, Tuple
+from urllib.parse import urlparse
 
-# Backend URL - from command line arg or environment variable or default
-BACKEND_URL = sys.argv[1] if len(sys.argv) > 1 else os.getenv("BACKEND_URL", "http://localhost:8001")
+# Parse backend URL from command line, environment, or default
+def get_backend_url() -> str:
+    """Get backend URL from CLI arg, env var, or use default"""
+    url = sys.argv[1] if len(sys.argv) > 1 else os.getenv("BACKEND_URL", "http://localhost:8001")
+    
+    # Basic URL validation
+    try:
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError("Invalid URL format")
+        # Ensure no trailing slash
+        url = url.rstrip("/")
+        return url
+    except Exception as e:
+        print(f"Error: Invalid backend URL '{url}': {e}")
+        print("Usage: python3 verify_dashboard_endpoints.py [backend_url]")
+        print("Example: python3 verify_dashboard_endpoints.py http://localhost:8001")
+        sys.exit(1)
+
+BACKEND_URL = get_backend_url()
 
 def check_openapi_paths() -> Tuple[bool, List[str]]:
     """Check if all required paths are in OpenAPI spec"""

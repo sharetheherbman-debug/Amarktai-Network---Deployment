@@ -35,7 +35,7 @@ This fixes the server startup warning and allows routers using `Depends(get_data
 **File Modified:** `backend/routes/wallet_endpoints.py`
 
 **Enhancements:**
-- Added helper functions `_get_required_fields()` and `_get_deposit_requirements()`
+- Added helper functions `get_required_fields()` and `get_deposit_requirements()` in `config/exchange_config.py`
 - Enhanced response to include:
   - Required exchanges list with per-exchange data
   - Required fields for each exchange (API key, secret, notes)
