@@ -13,6 +13,7 @@ from engines.wallet_manager import wallet_manager
 from engines.funding_plan_manager import funding_plan_manager
 from jobs.wallet_balance_monitor import wallet_balances_collection
 import database as db
+from config.exchange_config import get_required_fields, get_deposit_requirements
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,11 @@ async def get_wallet_balances(user_id: str = Depends(get_current_user)):
 
 @router.get("/requirements")
 async def get_capital_requirements(user_id: str = Depends(get_current_user)):
-    """Get capital requirements per exchange based on active bots"""
+    """
+    Get capital requirements per exchange based on active bots.
+    Returns required exchanges, required fields per exchange, whether keys are present,
+    and deposit requirements if applicable.
+    """
     try:
         # Safe check for collection initialization
         if db.bots_collection is None:
@@ -130,7 +135,7 @@ async def get_capital_requirements(user_id: str = Depends(get_current_user)):
                     "total_available": 0,
                     "overall_health": "unknown"
                 },
-                "timestamp": None,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "note": "Collections not initialized"
             }
         
@@ -140,24 +145,43 @@ async def get_capital_requirements(user_id: str = Depends(get_current_user)):
             {"_id": 0}
         ).to_list(1000)
         
+        # Get user's API keys to check what's configured
+        api_keys_present = {}
+        try:
+            user_keys = await db.api_keys_collection.find(
+                {"user_id": user_id},
+                {"_id": 0, "provider": 1, "exchange": 1}
+            ).to_list(100)
+            
+            for key in user_keys:
+                provider = key.get('provider') or key.get('exchange')
+                if provider:
+                    api_keys_present[provider.lower()] = True
+        except Exception as e:
+            logger.warning(f"Could not fetch API keys: {e}")
+        
         # Calculate required capital per exchange
         requirements = {}
         
         for bot in bots:
-            exchange = bot.get('exchange', 'unknown')
+            exchange = bot.get('exchange', 'unknown').lower()
             capital = bot.get('current_capital', 0)
             
             if exchange not in requirements:
                 requirements[exchange] = {
-                    "required": 0,
-                    "bots": 0,
-                    "available": 0,
+                    "exchange": exchange,
+                    "required_capital": 0,
+                    "bots_count": 0,
+                    "available_capital": 0,
                     "surplus_deficit": 0,
-                    "health": "unknown"
+                    "health": "unknown",
+                    "api_key_present": api_keys_present.get(exchange, False),
+                    "required_fields": get_required_fields(exchange),
+                    "deposit_requirements": get_deposit_requirements(exchange)
                 }
             
-            requirements[exchange]['required'] += capital
-            requirements[exchange]['bots'] += 1
+            requirements[exchange]['required_capital'] += capital
+            requirements[exchange]['bots_count'] += 1
         
         # Initialize balances to None
         balances = None
@@ -173,8 +197,8 @@ async def get_capital_requirements(user_id: str = Depends(get_current_user)):
                 for exchange, req in requirements.items():
                     exchange_balance = balances.get('exchanges', {}).get(exchange, {})
                     available = exchange_balance.get('zar_balance', 0)
-                    req['available'] = available
-                    req['surplus_deficit'] = available - req['required']
+                    req['available_capital'] = available
+                    req['surplus_deficit'] = available - req['required_capital']
                     
                     # Determine health
                     if req['surplus_deficit'] >= 1000:
@@ -188,10 +212,21 @@ async def get_capital_requirements(user_id: str = Depends(get_current_user)):
         else:
             logger.warning("wallet_balances_collection not initialized")
         
+        # Calculate summary
+        total_required = sum(req['required_capital'] for req in requirements.values())
+        total_available = sum(req['available_capital'] for req in requirements.values())
+        
         return {
             "user_id": user_id,
             "requirements": requirements,
-            "timestamp": balances.get('timestamp') if balances else None
+            "summary": {
+                "total_required": round(total_required, 2),
+                "total_available": round(total_available, 2),
+                "overall_health": "healthy" if total_available >= total_required else "warning",
+                "exchanges_count": len(requirements),
+                "keys_configured": sum(1 for req in requirements.values() if req['api_key_present'])
+            },
+            "timestamp": balances.get('timestamp') if balances else datetime.now(timezone.utc).isoformat()
         }
         
     except Exception as e:
@@ -205,7 +240,7 @@ async def get_capital_requirements(user_id: str = Depends(get_current_user)):
                 "total_available": 0,
                 "overall_health": "error"
             },
-            "timestamp": None,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "error": str(e)
         }
 

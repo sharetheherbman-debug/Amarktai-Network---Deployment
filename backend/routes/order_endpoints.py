@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from auth import get_current_user
 import database as db
+from database import get_database
 from services.order_pipeline import get_order_pipeline
 
 router = APIRouter(prefix="/api", tags=["orders", "circuit-breaker"])

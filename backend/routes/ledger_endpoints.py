@@ -14,6 +14,7 @@ import logging
 
 from auth import get_current_user
 import database as db
+from database import get_database
 from services.ledger_service import get_ledger_service
 
 router = APIRouter(prefix="/api", tags=["ledger"])

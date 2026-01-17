@@ -2956,76 +2956,67 @@ async def get_prometheus_metrics():
 # Mount API router
 app.include_router(api_router, prefix="/api")
 
-# Mount Phase 5-8 routers + new systems
+# Mount routers individually with fail-safe loading
+# Each router is mounted separately so one failure doesn't block others
+routers_to_mount = [
+    ("routes.phase5_endpoints", "phase5_router", "Phase 5"),
+    ("routes.phase6_endpoints", "phase6_router", "Phase 6"),
+    ("routes.phase8_endpoints", "phase8_router", "Phase 8"),
+    ("routes.capital_tracking_endpoints", "capital_router", "Capital Tracking"),
+    ("routes.emergency_stop_endpoints", "emergency_router", "Emergency Stop"),
+    ("routes.wallet_endpoints", "wallet_router", "Wallet Hub"),
+    ("routes.system_health_endpoints", "health_router", "System Health"),
+    ("routes.admin_endpoints", "admin_router", "Admin"),
+    ("routes.bot_lifecycle", "bot_lifecycle_router", "Bot Lifecycle"),
+    ("routes.system_limits", "system_limits_router", "System Limits"),
+    ("routes.live_trading_gate", "live_gate_router", "Live Trading Gate"),
+    ("routes.analytics_api", "analytics_router", "Analytics API"),
+    ("routes.ai_chat", "ai_chat_router", "AI Chat"),
+    ("routes.two_factor_auth", "twofa_router", "2FA"),
+    ("routes.genetic_algorithm", "genetic_router", "Genetic Algorithm"),
+    ("routes.dashboard_endpoints", "dashboard_router", "Dashboard"),
+    ("routes.api_key_management", "api_key_mgmt_router", "API Key Management"),
+    ("routes.daily_report", "daily_report_router", "Daily Report"),
+    ("routes.ledger_endpoints", "ledger_router", "Ledger"),
+    ("routes.order_endpoints", "order_router", "Orders"),
+    ("routes.alerts", "alerts_router", "Alerts"),
+    ("routes.limits_management", "limits_router", "Limits Management"),
+    ("routes.advanced_trading_endpoints", "advanced_router", "Advanced Trading"),
+    ("routes.payment_agent_endpoints", "payment_router", "Payment Agent"),
+    ("routes.user_api_keys", "user_api_keys_router", "User API Keys"),
+    ("routes.api_keys_canonical", "api_keys_canonical_router", "Canonical API Keys"),
+    ("routes.dashboard_aliases", "dashboard_aliases_router", "Dashboard Aliases"),
+    ("routes.decision_trace", "decision_trace_router", "Decision Trace"),
+    ("routes.system_status", "system_status_router", "System Status"),
+    ("routes.compatibility_endpoints", "compatibility_router", "Compatibility"),
+]
+
+mounted_routers = []
+failed_routers = []
+
+for module_path, router_name, display_name in routers_to_mount:
+    try:
+        module = __import__(module_path, fromlist=[router_name])
+        router = getattr(module, router_name)
+        app.include_router(router)
+        mounted_routers.append(display_name)
+        logger.info(f"✅ Mounted: {display_name}")
+    except Exception as e:
+        failed_routers.append((display_name, str(e)))
+        logger.error(f"❌ Failed to mount {display_name}: {e}")
+
+# Start daily report scheduler if it was loaded
 try:
-    from routes.phase5_endpoints import router as phase5_router
-    from routes.phase6_endpoints import router as phase6_router
-    from routes.phase8_endpoints import router as phase8_router
-    from routes.capital_tracking_endpoints import router as capital_router
-    from routes.emergency_stop_endpoints import router as emergency_router
-    from routes.wallet_endpoints import router as wallet_router
-    from routes.system_health_endpoints import router as health_router
-    from routes.admin_endpoints import router as admin_router
-    from routes.bot_lifecycle import router as bot_lifecycle_router
-    from routes.system_limits import router as system_limits_router
-    from routes.live_trading_gate import router as live_gate_router
-    from routes.analytics_api import router as analytics_router
-    from routes.ai_chat import router as ai_chat_router
-    from routes.two_factor_auth import router as twofa_router
-    from routes.genetic_algorithm import router as genetic_router
-    from routes.dashboard_endpoints import router as dashboard_router
-    from routes.api_key_management import router as api_key_mgmt_router
-    from routes.daily_report import router as daily_report_router, daily_report_service
-    from routes.ledger_endpoints import router as ledger_router  # Phase 1: Ledger-first accounting
-    from routes.order_endpoints import router as order_router  # Phase 2: Order pipeline with guardrails
-    from routes.alerts import router as alerts_router
-    from routes.limits_management import router as limits_router  # NEW: Limits management
-    from routes.advanced_trading_endpoints import router as advanced_router  # Advanced Trading System
-    from routes.payment_agent_endpoints import router as payment_router  # Payment Agent
-    from routes.user_api_keys import router as user_api_keys_router  # Per-User API Key Management
-    from routes.api_keys_canonical import router as api_keys_canonical_router  # Canonical API Keys
-    from routes.dashboard_aliases import router as dashboard_aliases_router  # Dashboard Aliases
-    from routes.decision_trace import router as decision_trace_router  # Decision Trace for AI reasoning
-    from routes.system_status import router as system_status_router  # System Status
-    from routes.compatibility_endpoints import router as compatibility_router  # Compatibility endpoints for dashboard
-    
-    app.include_router(phase5_router)
-    app.include_router(phase6_router)
-    app.include_router(phase8_router)
-    app.include_router(capital_router)
-    app.include_router(emergency_router)
-    app.include_router(wallet_router)
-    app.include_router(health_router)
-    app.include_router(admin_router)
-    app.include_router(bot_lifecycle_router)
-    app.include_router(system_limits_router)
-    app.include_router(live_gate_router)
-    app.include_router(analytics_router)
-    app.include_router(ai_chat_router)
-    app.include_router(twofa_router)
-    app.include_router(genetic_router)
-    app.include_router(dashboard_router)
-    app.include_router(api_key_mgmt_router)  # Legacy /api/keys/*
-    app.include_router(api_keys_canonical_router)  # Canonical /api/api-keys/*
-    app.include_router(dashboard_aliases_router)  # Dashboard aliases (whale-flow, decision-trace, metrics/summary)
-    app.include_router(decision_trace_router)  # Decision trace and AI reasoning
-    app.include_router(system_status_router)  # System status
-    app.include_router(compatibility_router)  # Compatibility endpoints
-    app.include_router(daily_report_router)
-    app.include_router(ledger_router)  # Phase 1: Ledger endpoints
-    app.include_router(order_router)  # Phase 2: Order pipeline endpoints
-    app.include_router(limits_router)  # Limits management endpoints
-    app.include_router(advanced_router)  # Advanced Trading System endpoints
-    app.include_router(payment_router)  # Payment Agent endpoints
-    app.include_router(user_api_keys_router)  # Per-User API Key Management
-    app.include_router(alerts_router)
-    
-    # Start daily report scheduler
+    from routes.daily_report import daily_report_service
     daily_report_service.start()
-    
-    logger.info("✅ All endpoints loaded: System Status, Compatibility, Canonical API Keys, Dashboard Aliases, Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Bot Lifecycle, System Limits, Live Gate, Analytics, AI Chat, 2FA, Genetic Algorithm, Dashboard, API Keys, Daily Reports, Ledger, Orders, Limits Management, Alerts")
+    logger.info("✅ Daily report scheduler started")
 except Exception as e:
-    logger.warning(f"Could not load endpoints: {e}")
+    logger.warning(f"Could not start daily report scheduler: {e}")
+
+# Summary
+logger.info(f"📊 Router mounting complete: {len(mounted_routers)} mounted, {len(failed_routers)} failed")
+if failed_routers:
+    logger.warning(f"⚠️ Failed routers: {', '.join([f[0] for f in failed_routers])}")
 
 # --------------------------------------------------------------------------
 # Additional routers for system and trades ping endpoints
