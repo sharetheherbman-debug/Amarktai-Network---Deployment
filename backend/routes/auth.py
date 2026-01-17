@@ -58,7 +58,7 @@ async def register(request: Request, user: UserRegister):
         "two_factor_enabled": False
     }
 
-    res = await db.users_collection.insert_one(user_dict)
+    await db.users_collection.insert_one(user_dict)
     user_dict.pop("_id", None)
 
     # Create token
