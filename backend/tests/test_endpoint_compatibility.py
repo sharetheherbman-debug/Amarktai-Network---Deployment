@@ -15,6 +15,40 @@ from server import app
 import database as db
 
 
+def is_endpoint_in_paths(endpoint: str, paths: dict) -> bool:
+    """
+    Check if an endpoint is present in OpenAPI paths.
+    
+    Handles both exact matches and parameterized endpoints.
+    For example, "/api/ml/predict" should match even if the spec
+    only has "/api/ml/predict/{pair}" with parameters.
+    
+    Args:
+        endpoint: The endpoint path to check (e.g., "/api/ml/predict")
+        paths: Dictionary of paths from OpenAPI spec
+        
+    Returns:
+        bool: True if endpoint is found in paths
+    """
+    # Exact match
+    if endpoint in paths:
+        return True
+    
+    # Check if it's a parameterized endpoint by looking for similar paths
+    # that contain path parameters (indicated by curly braces)
+    if "{" not in endpoint:
+        # Check if any path in the spec matches this endpoint pattern
+        for path in paths.keys():
+            # Remove path parameters for comparison
+            path_without_params = path.split("{")[0].rstrip("/")
+            endpoint_normalized = endpoint.rstrip("/")
+            
+            if path_without_params == endpoint_normalized:
+                return True
+    
+    return False
+
+
 @pytest.fixture(scope="module")
 async def client():
     """Create test client"""
@@ -99,10 +133,8 @@ class TestEndpointExistence:
         
         missing_endpoints = []
         for endpoint in required_endpoints:
-            if endpoint not in paths:
-                # Check if it's a parameterized endpoint
-                if "{" not in endpoint and not any(endpoint in path for path in paths.keys()):
-                    missing_endpoints.append(endpoint)
+            if not is_endpoint_in_paths(endpoint, paths):
+                missing_endpoints.append(endpoint)
         
         assert len(missing_endpoints) == 0, f"Missing endpoints in OpenAPI: {missing_endpoints}"
     

@@ -2,16 +2,17 @@
 """
 Verify Dashboard Endpoint Compatibility
 Tests that all required endpoints are present in OpenAPI spec and accessible
-Run this with the server running: python3 verify_dashboard_endpoints.py
+Run this with the server running: python3 verify_dashboard_endpoints.py [backend_url]
 """
 
 import requests
 import json
 import sys
+import os
 from typing import List, Tuple
 
-# Backend URL - adjust if needed
-BACKEND_URL = "http://localhost:8001"
+# Backend URL - from command line arg or environment variable or default
+BACKEND_URL = sys.argv[1] if len(sys.argv) > 1 else os.getenv("BACKEND_URL", "http://localhost:8001")
 
 def check_openapi_paths() -> Tuple[bool, List[str]]:
     """Check if all required paths are in OpenAPI spec"""

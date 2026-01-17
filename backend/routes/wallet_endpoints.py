@@ -13,65 +13,11 @@ from engines.wallet_manager import wallet_manager
 from engines.funding_plan_manager import funding_plan_manager
 from jobs.wallet_balance_monitor import wallet_balances_collection
 import database as db
+from config.exchange_config import get_required_fields, get_deposit_requirements
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/wallet", tags=["Wallet Hub"])
-
-
-def _get_required_fields(exchange: str) -> dict:
-    """Get required fields for an exchange"""
-    common_fields = {
-        "api_key": "API Key (public)",
-        "api_secret": "API Secret (private)"
-    }
-    
-    exchange_specific = {
-        "luno": {**common_fields, "note": "Luno requires ZAR wallet for deposits"},
-        "binance": {**common_fields, "note": "Binance may require KYC verification"},
-        "kucoin": {**common_fields, "note": "KuCoin supports multiple trading pairs"},
-        "valr": {**common_fields, "note": "VALR is South African exchange"},
-        "ovex": {**common_fields, "note": "OVEX supports ZAR deposits"}
-    }
-    
-    return exchange_specific.get(exchange, common_fields)
-
-
-def _get_deposit_requirements(exchange: str) -> dict:
-    """Get deposit requirements for an exchange"""
-    requirements = {
-        "luno": {
-            "min_deposit_zar": 100,
-            "deposit_methods": ["EFT", "Card"],
-            "processing_time": "Instant to 2 hours"
-        },
-        "binance": {
-            "min_deposit_zar": 0,
-            "deposit_methods": ["Crypto", "Card", "P2P"],
-            "processing_time": "Instant to 30 minutes"
-        },
-        "kucoin": {
-            "min_deposit_zar": 0,
-            "deposit_methods": ["Crypto"],
-            "processing_time": "Network dependent"
-        },
-        "valr": {
-            "min_deposit_zar": 10,
-            "deposit_methods": ["EFT"],
-            "processing_time": "Instant to 2 hours"
-        },
-        "ovex": {
-            "min_deposit_zar": 50,
-            "deposit_methods": ["EFT"],
-            "processing_time": "Instant to 2 hours"
-        }
-    }
-    
-    return requirements.get(exchange, {
-        "min_deposit_zar": 0,
-        "deposit_methods": ["Various"],
-        "processing_time": "Varies"
-    })
 
 @router.get("/balances")
 async def get_wallet_balances(user_id: str = Depends(get_current_user)):
@@ -230,8 +176,8 @@ async def get_capital_requirements(user_id: str = Depends(get_current_user)):
                     "surplus_deficit": 0,
                     "health": "unknown",
                     "api_key_present": api_keys_present.get(exchange, False),
-                    "required_fields": _get_required_fields(exchange),
-                    "deposit_requirements": _get_deposit_requirements(exchange)
+                    "required_fields": get_required_fields(exchange),
+                    "deposit_requirements": get_deposit_requirements(exchange)
                 }
             
             requirements[exchange]['required_capital'] += capital
