@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 import logging
+from uuid import uuid4
 
 from models import User, UserLogin, UserRegister, Bot, BotCreate, APIKey, APIKeyCreate, Trade, SystemMode, Alert, ChatMessage, BotRiskMode
 import database as db
@@ -40,9 +41,6 @@ async def register(request: Request, user: UserRegister):
         raise HTTPException(status_code=400, detail="Email already registered")
 
     # Create user dict
-    from datetime import datetime, timezone
-    from uuid import uuid4
-    
     user_id = str(uuid4())
     user_dict = {
         "id": user_id,

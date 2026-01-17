@@ -36,7 +36,7 @@ async def bootstrap_admin():
     
     # Load environment variables
     mongo_url = os.getenv('MONGO_URL', 'mongodb://localhost:27017')
-    db_name = os.getenv('DB_NAME', 'amarktai_trading')
+    db_name = os.getenv('DB_NAME', 'amarktai_trading')  # Used by database.connect()
     jwt_secret = os.getenv('JWT_SECRET')
     admin_email = os.getenv('AMK_ADMIN_EMAIL', 'admin@amarktai.online').lower().strip()
     admin_password = os.getenv('AMK_ADMIN_PASS')

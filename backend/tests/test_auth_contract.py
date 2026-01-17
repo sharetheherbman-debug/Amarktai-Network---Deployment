@@ -197,6 +197,7 @@ async def test_login_returns_standard_fields(client):
     """Test that login returns both standard and legacy token fields"""
     from uuid import uuid4
     from auth import get_password_hash
+    from datetime import datetime, timezone
     
     test_email = f"test_login_{uuid4().hex[:8]}@example.com"
     test_user_id = str(uuid4())
@@ -207,7 +208,7 @@ async def test_login_returns_standard_fields(client):
         "email": test_email,
         "password_hash": get_password_hash("loginpass123"),
         "first_name": "Login",
-        "created_at": "2026-01-17T00:00:00Z"
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
     
     await db.users_collection.insert_one(user_data)
@@ -247,6 +248,7 @@ async def test_profile_excludes_password_hash(client):
     """Test that GET /auth/me excludes password_hash"""
     from uuid import uuid4
     from auth import get_password_hash, create_access_token
+    from datetime import datetime, timezone
     
     test_user_id = str(uuid4())
     test_email = f"test_profile_{uuid4().hex[:8]}@example.com"
@@ -257,7 +259,7 @@ async def test_profile_excludes_password_hash(client):
         "email": test_email,
         "password_hash": get_password_hash("profilepass123"),
         "first_name": "Profile",
-        "created_at": "2026-01-17T00:00:00Z"
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
     
     await db.users_collection.insert_one(user_data)

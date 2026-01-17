@@ -142,13 +142,15 @@ def test_response_structure():
     """Test that response structure is correct"""
     print("\nTesting response structure...")
     
+    from datetime import datetime, timezone
+    
     # Simulate the response
     access_token = "mock_jwt_token_here"
     user_data = {
         "id": "user123",
         "email": "test@example.com",
         "first_name": "Test",
-        "created_at": "2026-01-17T00:00:00Z"
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
     
     response = {

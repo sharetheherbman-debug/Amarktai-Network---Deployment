@@ -30,8 +30,9 @@ async def test_user_token():
     await db.connect()
     
     # Create test user
-    from auth import get_password_hash, create_access_token
+    from auth import get_password_hash
     from uuid import uuid4
+    from datetime import datetime, timezone
     
     test_user_id = str(uuid4())
     test_email = f"test_{test_user_id[:8]}@example.com"
@@ -43,7 +44,7 @@ async def test_user_token():
         "first_name": "Test",
         "last_name": "User",
         "is_admin": False,
-        "created_at": "2026-01-13T00:00:00Z"
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
     
     await db.users_collection.insert_one(user_data)

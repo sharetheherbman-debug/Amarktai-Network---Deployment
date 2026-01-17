@@ -25,7 +25,7 @@ class FundingPlanManager:
     def _get_collection(self):
         """Get funding_plans collection with safety check"""
         if db.funding_plans_collection is None:
-            raise RuntimeError("funding_plans_collection not initialized; ensure database.connect() ran")
+            raise RuntimeError("funding_plans_collection not initialized; ensure db.connect() was called")
         return db.funding_plans_collection
     
     async def create_funding_plan(self, user_id: str, target_exchange: str, 
