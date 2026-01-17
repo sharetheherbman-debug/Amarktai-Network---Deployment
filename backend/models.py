@@ -31,6 +31,14 @@ class UserCreate(BaseModel):
     password: str
     invite_code: str
 
+class UserRegister(BaseModel):
+    """Registration model with backward compatibility for password_hash"""
+    first_name: str
+    email: EmailStr
+    password: Optional[str] = None
+    password_hash: Optional[str] = None  # Legacy field, treated as plain password
+    invite_code: Optional[str] = None
+
 class UserLogin(BaseModel):
     email: EmailStr
     password: str

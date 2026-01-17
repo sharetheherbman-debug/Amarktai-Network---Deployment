@@ -58,6 +58,7 @@ capital_injections_collection = None
 wallets_collection = None
 ledger_collection = None
 profits_collection = None
+funding_plans_collection = None
 
 # Orders and positions
 orders_collection = None
@@ -69,6 +70,7 @@ performance_metrics_collection = None
 wallet_balances = None  # Alias for wallet_balances_collection
 capital_injections = None  # Alias for capital_injections_collection
 audit_logs = None  # Alias for audit_logs_collection
+funding_plans = None  # Alias for funding_plans_collection
 
 
 # ============================================================================
@@ -147,9 +149,9 @@ async def setup_collections():
     global notifications_collection, reports_collection, promotion_requests_collection
     global autopilot_actions_collection, rogue_detections_collection
     global wallet_balances_collection, capital_injections_collection
-    global wallets_collection, ledger_collection, profits_collection
+    global wallets_collection, ledger_collection, profits_collection, funding_plans_collection
     global orders_collection, positions_collection, balance_snapshots_collection, performance_metrics_collection
-    global wallet_balances, capital_injections, audit_logs
+    global wallet_balances, capital_injections, audit_logs, funding_plans
     
     if db is None:
         logger.warning("⚠️ Database not connected, cannot setup collections")
@@ -194,6 +196,7 @@ async def setup_collections():
     wallets_collection = db.wallets
     ledger_collection = db.ledger
     profits_collection = db.profits
+    funding_plans_collection = db.funding_plans
     
     # Orders and positions
     orders_collection = db.orders
@@ -205,6 +208,7 @@ async def setup_collections():
     wallet_balances = wallet_balances_collection
     capital_injections = capital_injections_collection
     audit_logs = audit_logs_collection
+    funding_plans = funding_plans_collection
     
     logger.info("✅ All collection references initialized")
 
