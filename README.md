@@ -47,6 +47,14 @@ nano backend/.env
 bash scripts/sanity_check.sh
 ```
 
+### Step 4.5: Bootstrap Admin User (Optional)
+```bash
+# Set admin credentials in .env:
+# AMK_ADMIN_EMAIL=admin@amarktai.online
+# AMK_ADMIN_PASS=your_secure_password
+python scripts/bootstrap_admin.py
+```
+
 ### Step 5: Start Service
 ```bash
 sudo bash tools/systemd_install.sh
