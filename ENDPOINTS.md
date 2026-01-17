@@ -1,9 +1,28 @@
 # Frontend API Endpoints - Final List
 
-**Last Updated:** 2026-01-14  
+**Last Updated:** 2026-01-17  
 **Status:** ✅ Production Ready
 
 This document lists all API endpoints used by the frontend and their implementation status.
+
+---
+
+## Production Compatibility Endpoints (Added 2026-01-17)
+
+These endpoints ensure dashboard compatibility and prevent 404 errors:
+
+| Endpoint | Method | Auth | Status | Description |
+|----------|--------|------|--------|-------------|
+| `/api/wallet/requirements` | GET | ✅ | ✅ | Get wallet requirements per exchange with deposit info |
+| `/api/system/emergency-stop` | POST | ✅ | ✅ | Activate emergency stop (admin/user gated) |
+| `/api/system/emergency-stop/status` | GET | ✅ | ✅ | Get emergency stop status |
+| `/api/system/emergency-stop/disable` | POST | ✅ | ✅ | Deactivate emergency stop |
+| `/api/ai/insights` | GET | ✅ | ✅ | Get AI-powered system insights |
+| `/api/ml/predict` | GET | ✅ | ✅ | ML prediction with query params (symbol, platform, timeframe) |
+| `/api/profits/reinvest` | POST | ✅ | ✅ | Trigger profit reinvestment |
+| `/api/advanced/decisions/recent` | GET | ✅ | ✅ | Get recent trading decisions |
+| `/api/keys/test` | POST | ✅ | ✅ | Test API key (supports OpenAI, exchanges) |
+| `/api/system/mode` | GET | ✅ | ✅ | Get current system mode |
 
 ---
 
