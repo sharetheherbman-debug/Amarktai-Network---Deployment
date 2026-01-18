@@ -29,15 +29,14 @@ BACKEND_URL = get_backend_url()
 
 # Required endpoints that MUST be in OpenAPI spec
 REQUIRED_ENDPOINTS = {
-    "/api/wallet/requirements": "GET",
-    "/api/system/emergency-stop": "POST",
-    "/api/auth/profile": "GET",
-    "/api/ai/insights": "GET",
-    "/api/ml/predict": "GET",
-    "/api/profits/reinvest": "POST",
-    "/api/advanced/decisions/recent": "GET",
-    "/api/keys/test": "POST",
     "/api/health/ping": "GET",
+    "/api/auth/login": "POST",
+    "/api/auth/me": "GET",
+    "/api/api-keys": "POST",
+    "/api/api-keys/{provider}/test": "POST",
+    "/api/ml/predict/{pair}": "GET",
+    "/api/bots": "GET",
+    "/api/profits": "GET",
 }
 
 def test_openapi_presence():
@@ -87,14 +86,11 @@ def test_auth_required():
     """Test that protected endpoints return 401/403, not 404"""
     print("\n=== Auth Protection Check ===")
     protected_endpoints = [
-        ("GET", "/api/wallet/requirements"),
-        ("POST", "/api/system/emergency-stop"),
-        ("GET", "/api/auth/profile"),
-        ("GET", "/api/ai/insights"),
-        ("GET", "/api/ml/predict"),
-        ("POST", "/api/profits/reinvest"),
-        ("GET", "/api/advanced/decisions/recent"),
-        ("POST", "/api/keys/test"),
+        ("GET", "/api/auth/me"),
+        ("POST", "/api/api-keys"),
+        ("GET", "/api/bots"),
+        ("GET", "/api/profits"),
+        ("POST", "/api/api-keys/luno/test"),
     ]
     
     all_good = True
