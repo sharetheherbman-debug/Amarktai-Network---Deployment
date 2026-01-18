@@ -7,7 +7,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import os
 
 JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")
-ALGORITHM = "HS256"
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")  # Allow override via env
+ALGORITHM = JWT_ALGORITHM  # Keep for backward compatibility
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

@@ -42,11 +42,19 @@ async def register(request: Request, user: UserRegister):
 
     # Create user dict
     user_id = str(uuid4())
+    hashed_pwd = get_password_hash(plain_password)
+    
+    # MIGRATION STRATEGY:
+    # Store hash in both hashed_password (canonical) and password_hash (legacy)
+    # This provides backward compatibility during transition period
+    # After all users have logged in at least once (auto-migration), 
+    # consider removing password_hash field in future version
     user_dict = {
         "id": user_id,
         "first_name": user.first_name,
         "email": normalized_email,
-        "password_hash": get_password_hash(plain_password),
+        "hashed_password": hashed_pwd,  # Canonical field (new standard)
+        "password_hash": hashed_pwd,     # Keep for backward compatibility
         "created_at": datetime.now(timezone.utc).isoformat(),
         "currency": "ZAR",
         "system_mode": "testing",
@@ -65,7 +73,7 @@ async def register(request: Request, user: UserRegister):
     access_token = create_access_token({"user_id": user_id})
     
     # Sanitize user object - NEVER return sensitive fields
-    sensitive_fields = {'password_hash', 'hashed_password', 'new_password', 'password', '_id'}
+    sensitive_fields = {'password_hash', 'hashed_password', 'hashedPassword', 'new_password', 'password', '_id'}
     sanitized_user = {k: v for k, v in user_dict.items() if k not in sensitive_fields}
     
     # Return with both new and legacy fields
@@ -86,13 +94,51 @@ async def login(credentials: UserLogin):
     
     user = await db.users_collection.find_one({"email": normalized_email}, {"_id": 0})
     
-    if not user or not verify_password(credentials.password, user['password_hash']):
+    if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Backward compatibility: check multiple password hash fields
+    # Priority: hashed_password (new standard) > password_hash > hashedPassword (legacy)
+    stored_hash = None
+    hash_field_used = None
+    
+    if 'hashed_password' in user and user['hashed_password']:
+        stored_hash = user['hashed_password']
+        hash_field_used = 'hashed_password'
+    elif 'password_hash' in user and user['password_hash']:
+        stored_hash = user['password_hash']
+        hash_field_used = 'password_hash'
+    elif 'hashedPassword' in user and user['hashedPassword']:
+        stored_hash = user['hashedPassword']
+        hash_field_used = 'hashedPassword'
+    
+    if not stored_hash:
+        logger.error(f"User {normalized_email} has no password hash field")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Verify password against stored hash
+    if not verify_password(credentials.password, stored_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Auto-migrate: ensure hashed_password is set to canonical field
+    # MIGRATION STRATEGY: After successful login, migrate legacy hash fields
+    # to canonical hashed_password field. Keep password_hash for compatibility.
+    # This allows gradual migration without breaking existing users.
+    if hash_field_used != 'hashed_password':
+        logger.info(f"Migrating user {normalized_email} from {hash_field_used} to hashed_password")
+        await db.users_collection.update_one(
+            {"email": normalized_email},
+            {"$set": {
+                "hashed_password": stored_hash,
+                # Keep password_hash for backward compatibility
+                "password_hash": stored_hash
+            }}
+        )
     
     access_token = create_access_token({"user_id": user['id']})
     
     # Sanitize user object - NEVER return sensitive fields
-    sensitive_fields = {'password_hash', 'hashed_password', 'new_password', 'password', '_id'}
+    sensitive_fields = {'password_hash', 'hashed_password', 'hashedPassword', 'new_password', 'password', '_id'}
     sanitized_user = {k: v for k, v in user.items() if k not in sensitive_fields}
     
     # Return with both new and legacy fields
@@ -132,7 +178,7 @@ async def get_current_user_profile(user_id: str = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="User not found")
     
     # Sanitize - never return sensitive fields
-    sensitive_fields = {'password_hash', 'hashed_password', 'new_password', 'password', '_id'}
+    sensitive_fields = {'password_hash', 'hashed_password', 'hashedPassword', 'new_password', 'password', '_id'}
     return {k: v for k, v in user.items() if k not in sensitive_fields}
 
 
@@ -141,7 +187,7 @@ async def update_profile(update: dict, user_id: str = Depends(get_current_user))
     """Update user profile - sanitized and validated"""
     try:
         # Prevent updating sensitive fields
-        forbidden_fields = {'password_hash', 'hashed_password', 'new_password', 'password', 'id', '_id', 'email'}
+        forbidden_fields = {'password_hash', 'hashed_password', 'hashedPassword', 'new_password', 'password', 'id', '_id', 'email'}
         update_data = {k: v for k, v in update.items() if v is not None and k not in forbidden_fields}
         
         if not update_data:
@@ -169,7 +215,7 @@ async def update_profile(update: dict, user_id: str = Depends(get_current_user))
             raise HTTPException(status_code=404, detail="User not found after update")
         
         # Sanitize - never return sensitive fields
-        sensitive_fields = {'password_hash', 'hashed_password', 'new_password', 'password', '_id'}
+        sensitive_fields = {'password_hash', 'hashed_password', 'hashedPassword', 'new_password', 'password', '_id'}
         sanitized_user = {k: v for k, v in user.items() if k not in sensitive_fields}
         
         return {
