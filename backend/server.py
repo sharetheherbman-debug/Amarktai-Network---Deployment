@@ -761,21 +761,47 @@ async def health_check():
 
 @api_router.get("/system/mode")
 async def get_system_modes(user_id: str = Depends(get_current_user)):
-    """Get current system mode states"""
-    modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
-    
-    if not modes:
-        # Create default modes
-        modes = {
+    """Get current system mode states - ROBUST: Never crashes, returns safe defaults"""
+    try:
+        modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
+        
+        if not modes:
+            # Create default modes
+            modes = {
+                "user_id": user_id,
+                "paperTrading": False,
+                "liveTrading": False,
+                "autopilot": False,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            try:
+                await db.system_modes_collection.insert_one(modes.copy())
+            except Exception as e:
+                logger.warning(f"Could not insert default modes: {e}")
+        
+        # Check emergency stop status safely
+        try:
+            if db.emergency_stop_collection:
+                emergency_status = await db.emergency_stop_collection.find_one({})
+                modes['emergency_stop_active'] = emergency_status.get('enabled', False) if emergency_status else False
+            else:
+                modes['emergency_stop_active'] = False
+        except Exception as e:
+            logger.warning(f"Could not read emergency stop status: {e}")
+            modes['emergency_stop_active'] = False
+        
+        return modes
+    except Exception as e:
+        logger.error(f"Error in get_system_modes: {e}")
+        # Return safe default, never crash
+        return {
             "user_id": user_id,
             "paperTrading": False,
             "liveTrading": False,
             "autopilot": False,
+            "emergency_stop_active": False,
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
-        await db.system_modes_collection.insert_one(modes)
-    
-    return modes
 
 @api_router.put("/system/mode")
 async def update_system_mode(data: dict, user_id: str = Depends(get_current_user)):

@@ -132,6 +132,7 @@ def test_prices_without_keys():
             f"{BACKEND_URL}/api/auth/register",
             json={
                 "first_name": "Test",
+                "last_name": "User",
                 "email": test_email,
                 "password": "TestPass123!"
             },
@@ -195,6 +196,7 @@ def test_live_trading_gate():
             f"{BACKEND_URL}/api/auth/register",
             json={
                 "first_name": "Test",
+                "last_name": "User",
                 "email": test_email,
                 "password": "TestPass123!"
             },

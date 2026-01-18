@@ -52,6 +52,9 @@ decisions_collection = None  # AI trading decisions and reasoning
 autopilot_actions_collection = None
 rogue_detections_collection = None
 
+# Emergency stop collection
+emergency_stop_collection = None
+
 # Financial tracking collections
 wallet_balances_collection = None
 capital_injections_collection = None
@@ -148,6 +151,7 @@ async def setup_collections():
     global learning_data_collection, learning_logs_collection, audit_logs_collection
     global notifications_collection, reports_collection, promotion_requests_collection
     global autopilot_actions_collection, rogue_detections_collection
+    global emergency_stop_collection
     global wallet_balances_collection, capital_injections_collection
     global wallets_collection, ledger_collection, profits_collection, funding_plans_collection
     global orders_collection, positions_collection, balance_snapshots_collection, performance_metrics_collection
@@ -189,6 +193,9 @@ async def setup_collections():
     # Autopilot and detection
     autopilot_actions_collection = db.autopilot_actions
     rogue_detections_collection = db.rogue_detections
+    
+    # Emergency stop
+    emergency_stop_collection = db.emergency_stop
     
     # Financial tracking
     wallet_balances_collection = db.wallet_balances

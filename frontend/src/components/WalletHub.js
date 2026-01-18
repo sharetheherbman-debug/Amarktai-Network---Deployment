@@ -159,7 +159,23 @@ const WalletHub = ({ platformFilter = 'all' }) => {
           Configure your exchange API keys to view your wallet balances and start trading.
         </p>
         <button 
-          onClick={() => window.location.hash = '#api'}
+          onClick={() => {
+            // Navigate to API key setup section
+            // Check if we're in a hash-based routing system or pathname-based
+            if (window.location.hash) {
+              // Hash-based routing (e.g., #dashboard, #api)
+              window.location.hash = 'api';
+            } else {
+              // Try pathname-based routing
+              const currentPath = window.location.pathname;
+              if (currentPath.includes('/dashboard')) {
+                window.location.pathname = '/dashboard/api-setup';
+              } else {
+                // Fallback: try hash
+                window.location.hash = 'api';
+              }
+            }
+          }}
           style={{
             padding: '12px 24px',
             background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',

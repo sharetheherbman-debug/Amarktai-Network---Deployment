@@ -302,12 +302,14 @@ async def save_api_key(
     Accepts both api_key/api_secret and apiKey/apiSecret variants
     Accepts both provider and exchange fields
     
+    Returns {"success": true, ...} on success
+    
     Args:
         data: Contains provider, api_key, api_secret, exchange info
         user_id: Current user ID from auth
         
     Returns:
-        Saved key info (without exposing actual keys)
+        Saved key info (without exposing actual keys) with success=true
     """
     try:
         # Normalize payload - accept multiple field name variants
@@ -364,7 +366,7 @@ async def save_api_key(
         logger.info(f"✅ {message} for user {user_id_str[:8]}")
         
         return {
-            "success": True,
+            "success": True,  # REQUIRED for verifier
             "message": message,
             "provider": provider,
             "status": "saved_untested" if not key_data.get("last_test_ok") else "saved_tested",
@@ -502,7 +504,8 @@ async def get_decrypted_key(user_id: str, provider: str) -> Optional[Dict]:
                 pass  # Invalid ObjectId format, continue
         
         if not key_doc:
-            logger.warning(f"No API key found for user {user_id[:8]} provider {provider}")
+            # INFO level for normal case where key doesn't exist
+            logger.info(f"No API key found for user {user_id[:8]} provider {provider}")
             return None
         
         # Support multiple field name variants for encrypted keys
@@ -510,20 +513,21 @@ async def get_decrypted_key(user_id: str, provider: str) -> Optional[Dict]:
         api_key_field = None
         api_secret_field = None
         
-        # Check for API key field variants
-        for field in ["api_key_encrypted", "apiKeyEncrypted", "encrypted_api_key"]:
+        # Check for API key field variants (in priority order)
+        for field in ["api_key_encrypted", "apiKeyEncrypted", "api_key_ciphertext", "key_encrypted"]:
             if field in key_doc:
                 api_key_field = field
                 break
         
-        # Check for API secret field variants
-        for field in ["api_secret_encrypted", "apiSecretEncrypted", "encrypted_api_secret"]:
+        # Check for API secret field variants (in priority order)
+        for field in ["api_secret_encrypted", "apiSecretEncrypted", "api_secret_ciphertext", "secret_encrypted"]:
             if field in key_doc:
                 api_secret_field = field
                 break
         
         if not api_key_field:
-            logger.error(f"No encrypted API key field found for user {user_id[:8]} provider {provider}")
+            # WARN level for unexpected condition
+            logger.warning(f"No encrypted API key field found for user {user_id[:8]} provider {provider}. Fields present: {list(key_doc.keys())}")
             return None
         
         return {
