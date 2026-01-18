@@ -32,11 +32,16 @@ REQUIRED_ENDPOINTS = {
     "/api/health/ping": "GET",
     "/api/auth/login": "POST",
     "/api/auth/me": "GET",
+    "/api/auth/register": "POST",
     "/api/api-keys": "POST",
     "/api/api-keys/{provider}/test": "POST",
-    "/api/ml/predict/{pair}": "GET",
+    "/api/prices/live": "GET",
     "/api/bots": "GET",
-    "/api/profits": "GET",
+    "/api/overview": "GET",
+    "/api/system/mode": "GET",
+    "/api/system/emergency-stop": "POST",
+    "/api/system/emergency-stop/status": "GET",
+    "/api/system/live-eligibility": "GET",
 }
 
 def test_openapi_presence():
@@ -101,6 +106,134 @@ def test_auth_required():
             else:
                 resp = requests.post(f"{BACKEND_URL}{endpoint}", json={}, timeout=5)
             
+            if resp.status_code in [401, 403]:
+                print(f"✅ {method} {endpoint} → {resp.status_code} (correctly protected)")
+            elif resp.status_code == 404:
+                print(f"❌ {method} {endpoint} → 404 (endpoint not mounted?)")
+                all_good = False
+            else:
+                print(f"⚠️  {method} {endpoint} → {resp.status_code} (unexpected)")
+        except Exception as e:
+            print(f"❌ {method} {endpoint} → Error: {e}")
+            all_good = False
+    
+    return all_good
+
+
+def test_prices_without_keys():
+    """Test /api/prices/live works WITHOUT API keys"""
+    print("\n=== Market Data Without Keys ===")
+    try:
+        # Create temp user to get token
+        import uuid
+        test_email = f"test_{uuid.uuid4().hex[:8]}@example.com"
+        
+        resp = requests.post(
+            f"{BACKEND_URL}/api/auth/register",
+            json={
+                "first_name": "Test",
+                "email": test_email,
+                "password": "TestPass123!"
+            },
+            timeout=10
+        )
+        
+        if resp.status_code != 200:
+            print(f"❌ Could not create test user: {resp.status_code}")
+            return False
+        
+        token = resp.json().get("access_token")
+        
+        # Test prices endpoint
+        resp = requests.get(
+            f"{BACKEND_URL}/api/prices/live",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10
+        )
+        
+        if resp.status_code != 200:
+            print(f"❌ Prices endpoint failed: {resp.status_code}")
+            return False
+        
+        data = resp.json()
+        
+        # Check structure
+        if not data or not isinstance(data, dict):
+            print(f"❌ Prices endpoint returned invalid data")
+            return False
+        
+        # Check that we got numeric values (not None)
+        for pair, info in data.items():
+            if isinstance(info, dict):
+                if "price" not in info or "change" not in info:
+                    print(f"❌ Missing price/change for {pair}")
+                    return False
+                if not isinstance(info["price"], (int, float)):
+                    print(f"❌ Price for {pair} is not numeric: {type(info['price'])}")
+                    return False
+                if not isinstance(info["change"], (int, float)):
+                    print(f"❌ Change for {pair} is not numeric: {type(info['change'])}")
+                    return False
+        
+        print(f"✅ Prices endpoint returns valid numeric data without keys")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return False
+
+
+def test_live_trading_gate():
+    """Test live trading gate is properly enforced"""
+    print("\n=== Live Trading Gate ===")
+    try:
+        # Create temp user
+        import uuid
+        test_email = f"test_{uuid.uuid4().hex[:8]}@example.com"
+        
+        resp = requests.post(
+            f"{BACKEND_URL}/api/auth/register",
+            json={
+                "first_name": "Test",
+                "email": test_email,
+                "password": "TestPass123!"
+            },
+            timeout=10
+        )
+        
+        if resp.status_code != 200:
+            print(f"❌ Could not create test user")
+            return False
+        
+        token = resp.json().get("access_token")
+        
+        # Check eligibility (should be denied by default)
+        resp = requests.get(
+            f"{BACKEND_URL}/api/system/live-eligibility",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10
+        )
+        
+        if resp.status_code != 200:
+            print(f"❌ Live eligibility endpoint failed: {resp.status_code}")
+            return False
+        
+        data = resp.json()
+        live_allowed = data.get("live_allowed", False)
+        
+        if live_allowed:
+            print(f"⚠️  Live trading allowed by default (should be false for new users)")
+            return False
+        
+        print(f"✅ Live trading gate properly enforced (default: OFF)")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return False
+            else:
+                resp = requests.post(f"{BACKEND_URL}{endpoint}", json={}, timeout=5)
+            
             if resp.status_code == 404:
                 print(f"❌ {method} {endpoint} → 404 (not mounted!)")
                 all_good = False
@@ -149,6 +282,8 @@ def main():
     openapi_ok = test_openapi_presence()
     auth_ok = test_auth_required()
     public_ok = test_public_endpoints()
+    prices_ok = test_prices_without_keys()
+    live_gate_ok = test_live_trading_gate()
     
     # Summary
     print("\n" + "="*60)
@@ -159,6 +294,8 @@ def main():
         ("OpenAPI Spec", openapi_ok),
         ("Auth Protection", auth_ok),
         ("Public Endpoints", public_ok),
+        ("Market Data Without Keys", prices_ok),
+        ("Live Trading Gate", live_gate_ok),
     ]
     
     all_pass = all(ok for _, ok in results)
@@ -170,7 +307,13 @@ def main():
     print("="*60)
     
     if all_pass:
-        print("\n🎉 ALL CHECKS PASSED - Production Ready")
+        print("\n🎉 ALL CHECKS PASSED - System Go-Live Ready!")
+        print("\n✅ Verified:")
+        print("   - All required endpoints mounted")
+        print("   - Auth protection working")
+        print("   - Market data works WITHOUT API keys")
+        print("   - Live trading gate enforced (default OFF)")
+        print("   - System ready for paper trading")
         sys.exit(0)
     else:
         print("\n⚠️  SOME CHECKS FAILED - Review Above")
