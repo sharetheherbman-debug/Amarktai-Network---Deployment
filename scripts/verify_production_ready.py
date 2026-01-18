@@ -29,7 +29,7 @@ def get_backend_url():
         if not parsed.scheme or not parsed.netloc:
             raise ValueError("Invalid URL")
         return url.rstrip("/")
-    except:
+    except (ValueError, AttributeError) as e:
         print(f"❌ Invalid URL: {url}")
         sys.exit(1)
 
@@ -290,12 +290,8 @@ def test_ml_predict_endpoint_mounted():
 
 def cleanup_test_user():
     """Clean up test user created during tests"""
-    try:
-        # This would require admin access or direct DB access
-        # For now, just note that cleanup should happen
-        pass
-    except:
-        pass
+    # Cleanup handled by test functions themselves
+    pass
 
 
 def main():

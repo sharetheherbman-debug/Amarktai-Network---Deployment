@@ -43,6 +43,12 @@ async def register(request: Request, user: UserRegister):
     # Create user dict
     user_id = str(uuid4())
     hashed_pwd = get_password_hash(plain_password)
+    
+    # MIGRATION STRATEGY:
+    # Store hash in both hashed_password (canonical) and password_hash (legacy)
+    # This provides backward compatibility during transition period
+    # After all users have logged in at least once (auto-migration), 
+    # consider removing password_hash field in future version
     user_dict = {
         "id": user_id,
         "first_name": user.first_name,
@@ -115,6 +121,9 @@ async def login(credentials: UserLogin):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
     # Auto-migrate: ensure hashed_password is set to canonical field
+    # MIGRATION STRATEGY: After successful login, migrate legacy hash fields
+    # to canonical hashed_password field. Keep password_hash for compatibility.
+    # This allows gradual migration without breaking existing users.
     if hash_field_used != 'hashed_password':
         logger.info(f"Migrating user {normalized_email} from {hash_field_used} to hashed_password")
         await db.users_collection.update_one(

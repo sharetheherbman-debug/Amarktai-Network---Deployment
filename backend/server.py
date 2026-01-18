@@ -10,6 +10,7 @@ import os
 import asyncio
 import json
 import random
+import time
 from collections import defaultdict
 
 from models import (
@@ -1877,7 +1878,6 @@ async def get_live_prices(user_id: str = Depends(get_current_user)):
     Returns safe response even when API keys are missing or exchange unavailable.
     """
     # Rate limit error logging to prevent spam
-    import time
     last_error_log_key = "_last_price_error_log"
     current_time = time.time()
     
@@ -1927,9 +1927,13 @@ async def get_live_prices(user_id: str = Depends(get_current_user)):
                     ohlcv = await paper_engine.luno_exchange.fetch_ohlcv(pair, '1d', limit=2)
                     
                     if ohlcv and len(ohlcv) >= 2:
+                        # Store OHLCV records to avoid repeated indexing
+                        yesterday_data = ohlcv[-2]
+                        current_data = ohlcv[-1]
+                        
                         # Get 24h ago open price and current close price
-                        yesterday_open = float(ohlcv[-2][1]) if ohlcv[-2][1] is not None else 0
-                        current_close = float(ohlcv[-1][4]) if ohlcv[-1][4] is not None else 0
+                        yesterday_open = float(yesterday_data[1]) if yesterday_data[1] is not None else 0
+                        current_close = float(current_data[4]) if current_data[4] is not None else 0
                         
                         if yesterday_open > 0 and current_close > 0:
                             change_pct = ((current_close - yesterday_open) / yesterday_open) * 100
