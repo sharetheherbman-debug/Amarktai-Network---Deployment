@@ -1034,12 +1034,14 @@ async def create_api_key(key: APIKeyCreate, user_id: str = Depends(get_current_u
     
     await db.api_keys_collection.insert_one(key_dict)
     
-    # Return sanitized key (without MongoDB _id)
-    return_key = {k: v for k, v in key_dict.items() if k != '_id'}
-    if 'api_secret' in return_key and return_key['api_secret']:
-        return_key['api_secret'] = '***' + return_key['api_secret'][-4:] if len(return_key.get('api_secret', '')) > 4 else '***'
-    
-    return return_key
+    # Return response with success=true contract required by verify_production_ready.py
+    return {
+        "success": True,
+        "provider": key.provider,
+        "connected": key_dict.get('connected', False),
+        "updated_at": key_dict.get('created_at'),
+        "message": f"Saved {key.provider.upper()} API key"
+    }
 
 @api_router.post("/api-keys/{provider}/test")
 async def test_api_key(provider: str, user_id: str = Depends(get_current_user)):

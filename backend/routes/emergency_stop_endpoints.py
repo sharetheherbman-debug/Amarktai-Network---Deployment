@@ -126,21 +126,35 @@ async def deactivate_emergency_stop(user_id: str = Depends(get_current_user)):
 async def get_emergency_stop_status(user_id: str = Depends(get_current_user)):
     """
     Get current emergency stop status
+    
+    Returns contract required by verify_production_ready.py with fields:
+    - success: true (operation success indicator)
+    - enabled/active: same value, both included for backward compatibility with different clients
+    - reason: reason for emergency stop if active
+    - updated_at: timestamp when emergency stop was last changed
+    - activated_by: user ID who activated (optional, for audit trail)
     """
     try:
         modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
         
         if not modes:
             return {
+                "success": True,
+                "enabled": False,
                 "active": False,
                 "reason": None,
-                "activated_at": None
+                "updated_at": None,
+                "activated_by": None
             }
         
+        is_active = modes.get('emergencyStop', False)
+        
         return {
-            "active": modes.get('emergencyStop', False),
+            "success": True,
+            "enabled": is_active,
+            "active": is_active,
             "reason": modes.get('emergency_stop_reason'),
-            "activated_at": modes.get('emergency_stop_at'),
+            "updated_at": modes.get('emergency_stop_at'),
             "activated_by": modes.get('emergency_stop_by')
         }
         
