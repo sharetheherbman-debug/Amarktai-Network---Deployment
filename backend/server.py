@@ -1909,13 +1909,14 @@ async def get_live_prices(user_id: str = Depends(get_current_user)):
         except Exception as e:
             logger.debug(f"Could not check API keys: {e}")
         
-        # Initialize exchange if needed
+        # Initialize exchange if needed (ALWAYS use public demo mode for prices endpoint)
+        # This ensures market data works WITHOUT requiring API keys
         if not paper_engine.luno_exchange:
             try:
-                await paper_engine.init_exchanges()
+                await paper_engine.init_exchanges(mode='demo', user_keys=None)
             except Exception as e:
                 if should_log_error("init"):
-                    logger.warning(f"Could not initialize exchanges (API keys may be missing): {e}")
+                    logger.warning(f"Could not initialize exchanges in demo mode: {e}")
         
         prices = {}
         pairs = ['BTC/ZAR', 'ETH/ZAR', 'XRP/ZAR']
@@ -2784,7 +2785,8 @@ async def sse_live_prices_stream(request: Request, user_id: str = Depends(get_cu
                             change_24h = 0.0
                             try:
                                 # Fetch full ticker for 24h percentage change
-                                exchange = paper_engine.exchanges.get('luno')
+                                # FIX: Use luno_exchange directly, not .exchanges['luno']
+                                exchange = paper_engine.luno_exchange
                                 if exchange:
                                     ticker = await asyncio.to_thread(exchange.fetch_ticker, pair)
                                     change_24h = ticker.get('percentage', 0.0) or 0.0

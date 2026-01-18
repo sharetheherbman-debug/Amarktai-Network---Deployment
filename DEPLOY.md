@@ -759,3 +759,445 @@ For issues, contact: admin@yourdomain.com
 
 **Last Updated:** 2026-01-14 14:50 UTC
 **Version:** 1.0.0
+
+---
+
+## ✅ GO-LIVE CHECKLIST
+
+### Fresh Deployment → Paper Trading → Keys Saved → Live Trading Enabled
+
+This checklist provides the exact steps to go from a fresh deployment to a fully operational production system.
+
+---
+
+### Phase 1: Fresh Deployment (30-60 minutes)
+
+**Prerequisites:**
+- [ ] Ubuntu 24.04 VPS with SSH access
+- [ ] Domain name pointed to server IP
+- [ ] MongoDB installed and running
+- [ ] Python 3.11+ and Node.js 20+ installed
+
+**Steps:**
+
+1. **Clone and Setup Repository**
+   ```bash
+   cd /var/www
+   sudo git clone https://github.com/sharetheherbman-debug/Amarktai-Network---Deployment.git amarktai
+   cd amarktai
+   ```
+
+2. **Configure Environment Variables**
+   ```bash
+   cd backend
+   cp .env.example .env
+   
+   # Generate JWT secret
+   openssl rand -hex 32
+   
+   # Edit .env and set:
+   nano .env
+   ```
+   
+   **Required Settings:**
+   - `JWT_SECRET=<generated-secret>`
+   - `MONGO_URL=mongodb://localhost:27017`
+   - `DB_NAME=amarktai_trading`
+   - `ENABLE_CCXT=true` (safe - needed for market data)
+   - `ENABLE_TRADING=false` (start disabled)
+   - `ENABLE_LIVE_TRADING=false` (start disabled)
+   - `ENABLE_AUTOPILOT=false` (start disabled)
+   - `ENABLE_SELF_LEARNING=true` (safe - improves strategy)
+   - `ENABLE_SELF_HEALING=true` (safe - protects against losses)
+   - `ENABLE_SCHEDULERS=false` (start disabled)
+
+3. **Install Backend Dependencies**
+   ```bash
+   python3.11 -m venv venv
+   source venv/bin/activate
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+
+4. **Install Frontend Dependencies**
+   ```bash
+   cd ../frontend
+   npm install
+   npm run build
+   ```
+
+5. **Setup systemd Service**
+   ```bash
+   sudo cp /var/www/amarktai/deployment/amarktai-api.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable amarktai-api
+   sudo systemctl start amarktai-api
+   ```
+
+6. **Setup Nginx**
+   ```bash
+   sudo cp /var/www/amarktai/deployment/nginx/amarktai.conf /etc/nginx/sites-available/
+   sudo ln -s /etc/nginx/sites-available/amarktai.conf /etc/nginx/sites-enabled/
+   sudo nginx -t
+   sudo systemctl reload nginx
+   ```
+
+7. **Setup SSL (Let's Encrypt)**
+   ```bash
+   sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
+   ```
+
+8. **Run Verification Script**
+   ```bash
+   cd /var/www/amarktai
+   python3 scripts/verify_production_ready.py
+   # MUST show: 🎉 ALL CHECKS PASSED - Production Ready
+   ```
+
+**Expected Result:**
+- ✅ Backend running on port 8001 (check: `curl http://localhost:8001/api/health/ping`)
+- ✅ Frontend accessible via https://yourdomain.com
+- ✅ All verification tests passing
+- ✅ No API keys required for market data
+- ✅ Paper trading ready (but not yet enabled)
+
+---
+
+### Phase 2: Enable Paper Trading (5-10 minutes)
+
+**Goal:** Enable paper trading to test the system with simulated funds.
+
+1. **Enable Paper Trading**
+   ```bash
+   cd /var/www/amarktai/backend
+   nano .env
+   ```
+   
+   **Update Settings:**
+   ```bash
+   ENABLE_TRADING=true        # Enable trading execution
+   ENABLE_CCXT=true          # Already true
+   ENABLE_SCHEDULERS=false   # Keep disabled for now
+   ```
+
+2. **Restart Backend**
+   ```bash
+   sudo systemctl restart amarktai-api
+   sudo systemctl status amarktai-api
+   ```
+
+3. **Register User via Dashboard**
+   - Open https://yourdomain.com
+   - Click "Register"
+   - Fill in details and register
+   - Login with your credentials
+
+4. **Create Paper Trading Bot**
+   - Go to "Bots" section
+   - Click "Create Bot"
+   - Set:
+     - Name: "My First Paper Bot"
+     - Initial Capital: R1000
+     - Risk Mode: Safe
+     - Exchange: Luno
+     - Trading Mode: **Paper** (default)
+   - Click "Create"
+
+5. **Verify Paper Trading**
+   ```bash
+   # Check logs
+   sudo journalctl -u amarktai-api -f | grep "Paper"
+   
+   # Should see paper trades executing
+   ```
+
+6. **Monitor Dashboard**
+   - Go to "Dashboard" → "Overview"
+   - Should see:
+     - Active bots: 1
+     - Mode: Paper Trading
+     - Trades executing (may take 5-15 min for first trade)
+     - No "luno requires apiKey" errors in logs
+
+**Expected Result:**
+- ✅ Paper trading bot created
+- ✅ Paper trades executing and recording to DB
+- ✅ Dashboard shows paper trading activity
+- ✅ No crashes or API key errors
+- ✅ System running with NO exchange API keys
+
+---
+
+### Phase 3: Save Exchange API Keys (10-15 minutes)
+
+**Goal:** Connect real exchange accounts for live market data and future live trading.
+
+**Recommended Exchange:** Luno (South African, ZAR support)
+
+1. **Get Luno API Keys**
+   - Login to https://www.luno.com
+   - Go to Settings → API Keys
+   - Create new API key with permissions:
+     - ✅ View balance
+     - ✅ Place orders
+     - ✅ Cancel orders
+     - ❌ Withdraw (NOT needed, keep disabled)
+   - Copy API Key and Secret
+
+2. **Save Keys via Dashboard**
+   - Login to dashboard
+   - Go to "Settings" → "API Keys"
+   - Select "Luno"
+   - Paste:
+     - API Key: `<your-luno-key>`
+     - API Secret: `<your-luno-secret>`
+   - Click "Save"
+   - Should see: "✅ Saved Luno API key"
+
+3. **Test API Keys**
+   - Click "Test Connection" next to saved key
+   - Should see: "✅ Luno connection successful"
+   - If error: "❌ Invalid credentials" - re-check keys
+
+4. **Verify Key Save in Backend**
+   ```bash
+   # Check logs
+   sudo journalctl -u amarktai-api -n 50 | grep "API key"
+   
+   # Should see: "✅ Saved LUNO API key for user..."
+   ```
+
+**Expected Result:**
+- ✅ Luno API keys saved and encrypted in database
+- ✅ Test connection successful
+- ✅ Dashboard shows "Saved & Tested ✅" status
+- ✅ No plaintext keys in logs or database
+- ✅ Keys work for both market data and future trading
+
+**Optional: Add More Exchanges**
+- Repeat steps for Binance, KuCoin, etc.
+- Each exchange requires separate API keys
+
+---
+
+### Phase 4: Monitor & Optimize Paper Trading (7 days)
+
+**Goal:** Let paper trading run for 7 days to build performance history.
+
+**Required for Live Trading:**
+- Minimum 7 days of paper trading
+- Minimum 25 trades executed
+- Minimum 52% win rate
+- Minimum 3% total profit
+
+1. **Monitor Performance Daily**
+   ```bash
+   # View bot performance
+   curl -H "Authorization: Bearer <your-token>" https://yourdomain.com/api/bots
+   
+   # View recent trades
+   curl -H "Authorization: Bearer <your-token>" https://yourdomain.com/api/trades/recent
+   ```
+
+2. **Check Live Eligibility**
+   - Dashboard → "Settings" → "Live Trading"
+   - Should show current status:
+     - Days elapsed: X/7
+     - Total trades: Y/25
+     - Win rate: Z%
+     - Profit: R###
+
+3. **Enable Autonomous Features (Optional)**
+   ```bash
+   cd /var/www/amarktai/backend
+   nano .env
+   ```
+   
+   **Update Settings:**
+   ```bash
+   ENABLE_SCHEDULERS=true     # Enable background jobs
+   ENABLE_SELF_LEARNING=true  # Already true
+   ENABLE_SELF_HEALING=true   # Already true
+   ```
+   
+   ```bash
+   sudo systemctl restart amarktai-api
+   ```
+
+**Expected Result:**
+- ✅ Paper trades executing consistently
+- ✅ No crashes or errors
+- ✅ Performance metrics improving
+- ✅ System stable for 7 days
+
+---
+
+### Phase 5: Enable Live Trading (CAREFUL!)
+
+**DANGER:** This uses REAL FUNDS. Proceed with extreme caution.
+
+**Prerequisites:**
+- [ ] 7+ days of successful paper trading
+- [ ] 52%+ win rate achieved
+- [ ] 3%+ profit achieved
+- [ ] 25+ trades executed
+- [ ] Exchange account funded
+- [ ] Risk guardrails configured
+
+1. **Check Eligibility**
+   ```bash
+   curl -H "Authorization: Bearer <your-token>" \
+     https://yourdomain.com/api/system/live-eligibility
+   
+   # Should return: "eligible": true
+   ```
+
+2. **Request Live Trading Approval**
+   - Dashboard → "Settings" → "Live Trading"
+   - Click "Request Live Trading"
+   - Should see eligibility status
+   - If eligible: "✅ Approved for live trading"
+   - If not: Review reasons and continue paper trading
+
+3. **Enable Live Trading Flag**
+   ```bash
+   cd /var/www/amarktai/backend
+   nano .env
+   ```
+   
+   **Update Settings:**
+   ```bash
+   ENABLE_LIVE_TRADING=true   # ⚠️ DANGER: Enables live trading
+   ```
+   
+   ```bash
+   sudo systemctl restart amarktai-api
+   ```
+
+4. **Switch Bot to Live Mode (Double Confirmation)**
+   - Dashboard → "Bots" → Select bot
+   - Click "Promote to Live"
+   - **Confirmation Dialog 1:** Review performance stats
+   - **Confirmation Dialog 2:** Type "I UNDERSTAND" or OTP
+   - Bot switches to LIVE mode
+
+5. **Monitor Live Trading Closely**
+   ```bash
+   # Watch logs in real-time
+   sudo journalctl -u amarktai-api -f | grep "LIVE"
+   
+   # Should see: "💹 LIVE TRADE: ..." entries
+   ```
+
+6. **Set Risk Limits (CRITICAL)**
+   - Dashboard → "Settings" → "Risk Management"
+   - Set:
+     - Max position size: 5-10% of capital
+     - Max daily loss: 5%
+     - Max open trades: 3-5
+     - Circuit breaker: Enable
+
+**Expected Result:**
+- ✅ Live trading flag enabled
+- ✅ Bot promoted to live mode with double confirmation
+- ✅ Real trades executing on exchange
+- ✅ Risk guardrails active
+- ✅ Emergency stop accessible
+
+---
+
+### Phase 6: Emergency Stop (If Needed)
+
+**If anything goes wrong:**
+
+1. **Via Dashboard:**
+   - Dashboard → "Emergency Stop" button (top right)
+   - Click → Confirm → All trading STOPS
+
+2. **Via CLI:**
+   ```bash
+   curl -X POST -H "Authorization: Bearer <your-token>" \
+     https://yourdomain.com/api/system/emergency-stop
+   ```
+
+3. **Via systemd (Nuclear option):**
+   ```bash
+   sudo systemctl stop amarktai-api
+   ```
+
+4. **Resume After Fix:**
+   ```bash
+   # Resume trading
+   curl -X POST -H "Authorization: Bearer <your-token>" \
+     https://yourdomain.com/api/system/emergency-stop/disable
+   
+   # Restart service
+   sudo systemctl restart amarktai-api
+   ```
+
+**Expected Result:**
+- ✅ All trading stops IMMEDIATELY
+- ✅ Open positions remain (not auto-closed)
+- ✅ System safe and stable
+- ✅ Can resume when ready
+
+---
+
+### Ongoing Maintenance
+
+**Daily:**
+- [ ] Check dashboard for bot performance
+- [ ] Review recent trades
+- [ ] Monitor system logs for errors
+
+**Weekly:**
+- [ ] Review profit/loss reports
+- [ ] Check for system updates
+- [ ] Verify backups are running
+
+**Monthly:**
+- [ ] Review and optimize bot strategies
+- [ ] Update dependencies if needed
+- [ ] Review risk limits and adjust
+
+**Commands:**
+```bash
+# Check system health
+python3 /var/www/amarktai/scripts/verify_go_live.py
+
+# View recent logs
+sudo journalctl -u amarktai-api -n 100
+
+# Restart if needed
+sudo systemctl restart amarktai-api
+
+# Update code
+cd /var/www/amarktai
+sudo git pull origin main
+sudo systemctl restart amarktai-api
+```
+
+---
+
+### Troubleshooting Quick Reference
+
+| Issue | Solution |
+|-------|----------|
+| "luno requires apiKey" error | ✅ FIXED: System uses public market data, no keys required |
+| "NoneType round" crash | ✅ FIXED: All numeric values sanitized before rounding |
+| Prices endpoint returns 0 | Check if Luno API is accessible, ensure ENABLE_CCXT=true |
+| Paper trades not executing | Check ENABLE_TRADING=true, verify logs for errors |
+| Can't save API keys | Verify JWT token valid, check auth endpoint `/api/auth/me` |
+| Live trading not working | Check ENABLE_LIVE_TRADING=true, verify eligibility first |
+| Emergency stop not working | Try CLI or systemd stop as backup |
+
+---
+
+**Support & Updates:**
+- GitHub: https://github.com/sharetheherbman-debug/Amarktai-Network---Deployment
+- Documentation: See `docs/` folder
+- Issues: Open GitHub issue or contact admin
+
+**Last Updated:** 2026-01-18
+**Version:** 2.0.0 (Production-Ready)
+

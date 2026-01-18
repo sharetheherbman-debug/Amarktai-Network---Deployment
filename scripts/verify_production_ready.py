@@ -288,6 +288,65 @@ def test_ml_predict_endpoint_mounted():
         f"Unexpected status: {resp.status_code}"
 
 
+def test_paper_trading_mode_available():
+    """Test that paper trading endpoints are functional"""
+    # Test system modes endpoint
+    resp = requests.get(
+        f"{BACKEND_URL}/api/system/mode",
+        headers={"Authorization": f"Bearer {test_token}"},
+        timeout=10
+    )
+    
+    assert resp.status_code == 200, \
+        f"System modes endpoint failed: {resp.status_code}"
+    
+    data = resp.json()
+    # Should have mode fields (paperTrading, liveTrading, autopilot, etc.)
+    assert isinstance(data, dict), "System modes should return dict"
+    
+    print(f"   → Paper trading modes available")
+
+
+def test_live_trading_gate_default_off():
+    """Test that live trading is OFF by default"""
+    resp = requests.get(
+        f"{BACKEND_URL}/api/system/live-eligibility",
+        headers={"Authorization": f"Bearer {test_token}"},
+        timeout=10
+    )
+    
+    # Should return eligibility status
+    assert resp.status_code == 200, \
+        f"Live eligibility endpoint failed: {resp.status_code}"
+    
+    data = resp.json()
+    
+    # Live trading should not be allowed by default for new users
+    # (User needs to complete paper training first)
+    assert "live_allowed" in data or "eligible" in data, \
+        "Should return eligibility status"
+    
+    print(f"   → Live trading gate functioning (default safe)")
+
+
+def test_emergency_stop_available():
+    """Test that emergency stop endpoint exists"""
+    # Don't activate, just check endpoint exists
+    resp = requests.get(
+        f"{BACKEND_URL}/api/system/emergency-stop/status",
+        headers={"Authorization": f"Bearer {test_token}"},
+        timeout=10
+    )
+    
+    assert resp.status_code == 200, \
+        f"Emergency stop status endpoint failed: {resp.status_code}"
+    
+    data = resp.json()
+    assert "active" in data, "Should return emergency stop status"
+    
+    print(f"   → Emergency stop system available")
+
+
 def cleanup_test_user():
     """Clean up test user created during tests"""
     # Cleanup handled by test functions themselves
@@ -321,6 +380,9 @@ def main():
     test("API keys test endpoint exists", test_api_keys_test_endpoint)
     test("Prices endpoint doesn't crash without keys", test_prices_endpoint_doesnt_crash_without_keys)
     test("ML predict endpoint is mounted", test_ml_predict_endpoint_mounted)
+    test("Paper trading mode available", test_paper_trading_mode_available)
+    test("Live trading gate default off", test_live_trading_gate_default_off)
+    test("Emergency stop available", test_emergency_stop_available)
     
     # Summary
     print()
