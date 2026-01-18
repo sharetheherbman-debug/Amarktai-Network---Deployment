@@ -171,7 +171,10 @@ async def delete_api_key(
     provider: str,
     user_id: str = Depends(get_current_user)
 ):
-    """Delete an API key for the current user"""
+    """Delete an API key for the current user
+    
+    Returns success even if key doesn't exist (idempotent)
+    """
     try:
         result = await db.api_keys_collection.delete_one({
             "user_id": user_id,
@@ -179,7 +182,11 @@ async def delete_api_key(
         })
         
         if result.deleted_count == 0:
-            raise HTTPException(status_code=404, detail=f"No API key found for {provider}")
+            logger.info(f"ℹ️ No {provider} API key found for user {user_id[:8]} (already deleted)")
+            return {
+                "success": True,
+                "message": f"{provider.upper()} API key not found (already deleted)"
+            }
         
         logger.info(f"🗑️ Deleted {provider} API key for user {user_id[:8]}")
         
@@ -188,8 +195,6 @@ async def delete_api_key(
             "message": f"Deleted {provider.upper()} API key"
         }
         
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Delete API key error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

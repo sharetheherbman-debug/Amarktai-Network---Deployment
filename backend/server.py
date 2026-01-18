@@ -1549,8 +1549,23 @@ async def send_chat_message(message: dict, user_id: str = Depends(get_current_us
         
         return ai_response
     except Exception as e:
-        logger.error(f"Chat message failed: {e}")
-        raise HTTPException(status_code=500, detail="Chat failed")
+        logger.error(f"Chat message failed: {e}", exc_info=True)
+        # Return a graceful error response instead of 500
+        try:
+            # Try to save error message to chat
+            error_msg = ChatMessage(
+                user_id=user_id,
+                role="assistant",
+                content=f"I apologize, but I encountered an error processing your message. Error: {str(e)[:100]}"
+            )
+            error_msg_dict = error_msg.model_dump()
+            error_msg_dict['timestamp'] = error_msg_dict['timestamp'].isoformat()
+            await db.chat_messages_collection.insert_one(error_msg_dict)
+            
+            return error_msg_dict['content']
+        except:
+            # If even that fails, return simple error
+            return "I apologize, but I'm experiencing technical difficulties. Please try again later."
 
 @api_router.get("/chat/history")
 async def get_chat_history(limit: int = 50, user_id: str = Depends(get_current_user)):
@@ -2188,7 +2203,10 @@ async def get_ai_learning_status(admin_id: str = Depends(get_current_user)):
 
 @api_router.get("/bots/eligible-for-promotion")
 async def get_eligible_bots(user_id: str = Depends(get_current_user)):
-    """Get list of bots eligible for promotion to live trading"""
+    """Get list of bots eligible for promotion to live trading
+    
+    Never throws 500 - returns empty list with reasons if no eligible bots or error
+    """
     try:
         from engines.promotion_engine import promotion_engine
         
@@ -2199,9 +2217,23 @@ async def get_eligible_bots(user_id: str = Depends(get_current_user)):
             "count": len(eligible),
             "message": f"{len(eligible)} bot(s) ready for live trading (7 days, 52% win rate, 3% profit, 25+ trades)"
         }
+    except ImportError as e:
+        logger.error(f"Promotion engine not available: {e}")
+        return {
+            "eligible_bots": [],
+            "count": 0,
+            "message": "Promotion engine not available",
+            "error": str(e)
+        }
     except Exception as e:
-        logger.error(f"Eligible bots check error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Eligible bots check error: {e}", exc_info=True)
+        # Never throw 500 - return safe default
+        return {
+            "eligible_bots": [],
+            "count": 0,
+            "message": "Unable to check eligible bots at this time",
+            "error": str(e)
+        }
 
 @api_router.post("/bots/confirm-live-switch")
 async def confirm_live_switch(data: dict, user_id: str = Depends(get_current_user)):
@@ -3085,9 +3117,12 @@ try:
     from routes.system import router as system_router  # type: ignore
     from routes.trades import router as trades_router  # type: ignore
     from routes.health import router as health_router  # type: ignore
+    from routes.profits import router as profits_router  # type: ignore
     app.include_router(system_router)
     app.include_router(trades_router)
     app.include_router(health_router)
+    app.include_router(profits_router)
+    logger.info("✅ Core routers mounted (system, trades, health, profits)")
 
     # Real‑time SSE router can be enabled via the ENABLE_REALTIME flag.
     import os
