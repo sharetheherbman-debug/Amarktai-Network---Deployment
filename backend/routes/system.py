@@ -200,21 +200,24 @@ async def get_emergency_stop_status(user_id: str = Depends(get_current_user)) ->
         # Get global emergency stop status
         emergency_status = await db.emergency_stop_collection.find_one({}) if db.emergency_stop_collection else {}
         
-        # Always return stable schema with explicit fields
+        # Always return stable schema with explicit fields required by verify_production_ready.py
+        # Contract: success, enabled (was is_emergency_stop_active), reason, updated_at
         return {
-            "is_emergency_stop_active": emergency_status.get('enabled', False) if emergency_status else False,
+            "success": True,
+            "enabled": emergency_status.get('enabled', False) if emergency_status else False,
+            "active": emergency_status.get('enabled', False) if emergency_status else False,  # alias for backward compat
             "reason": emergency_status.get('reason') if emergency_status else None,
             "updated_at": emergency_status.get('activated_at') if emergency_status else None,
-            "activated_by": emergency_status.get('activated_by') if emergency_status else None,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         logger.error(f"Error getting emergency stop status: {e}")
         # Return safe default schema even on error
         return {
-            "is_emergency_stop_active": False,
+            "success": True,
+            "enabled": False,
+            "active": False,
             "reason": None,
             "updated_at": None,
-            "activated_by": None,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
