@@ -131,8 +131,7 @@ def test_prices_without_keys():
         resp = requests.post(
             f"{BACKEND_URL}/api/auth/register",
             json={
-                "first_name": "Test",
-                "last_name": "User",
+                "first_name": "Test User",
                 "email": test_email,
                 "password": "TestPass123!"
             },
@@ -195,8 +194,7 @@ def test_live_trading_gate():
         resp = requests.post(
             f"{BACKEND_URL}/api/auth/register",
             json={
-                "first_name": "Test",
-                "last_name": "User",
+                "first_name": "Test User",
                 "email": test_email,
                 "password": "TestPass123!"
             },
@@ -233,23 +231,6 @@ def test_live_trading_gate():
     except Exception as e:
         print(f"❌ Error: {e}")
         return False
-            else:
-                resp = requests.post(f"{BACKEND_URL}{endpoint}", json={}, timeout=5)
-            
-            if resp.status_code == 404:
-                print(f"❌ {method} {endpoint} → 404 (not mounted!)")
-                all_good = False
-            elif resp.status_code in [401, 403]:
-                print(f"✅ {method} {endpoint} → {resp.status_code} (protected)")
-            elif resp.status_code == 422:
-                print(f"✅ {method} {endpoint} → 422 (validation, mounted)")
-            else:
-                print(f"⚠️  {method} {endpoint} → {resp.status_code}")
-        except Exception as e:
-            print(f"❌ {method} {endpoint} → Error: {e}")
-            all_good = False
-    
-    return all_good
 
 def test_public_endpoints():
     """Test that public endpoints work"""

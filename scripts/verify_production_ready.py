@@ -102,12 +102,11 @@ def test_auth_registration_and_login():
     test_email = f"test_{uuid.uuid4().hex[:8]}@example.com"
     test_password = "TestPass123!"
     
-    # Register (include first_name and last_name for new contract)
+    # Register with actual contract: first_name, email, password, (optional: invite_code)
     resp = requests.post(
         f"{BACKEND_URL}/api/auth/register",
         json={
-            "first_name": "Test",
-            "last_name": "User",
+            "first_name": "Test User",
             "email": test_email,
             "password": test_password
         },
