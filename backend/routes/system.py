@@ -95,75 +95,98 @@ async def get_live_eligibility(user_id: str = Depends(get_current_user)) -> dict
     Protected endpoint that returns eligibility status based on:
     - ENABLE_LIVE_TRADING feature flag
     - Emergency stop status
-    - User-specific requirements
+    - User-specific requirements (paper training, API keys, drawdown)
+    
+    Returns stable schema:
+    {
+        "live_allowed": false,
+        "reasons": ["..."]
+    }
     """
     try:
-        eligible = False
+        live_allowed = True
         reasons = []
-        flags = {}
         
         # Check ENABLE_LIVE_TRADING feature flag
         enable_live = os.getenv('ENABLE_LIVE_TRADING', 'false').lower() == 'true'
-        flags['enable_live_trading'] = enable_live
         if not enable_live:
-            reasons.append("ENABLE_LIVE_TRADING is disabled in system configuration")
+            live_allowed = False
+            reasons.append("Live trading is disabled in system configuration (ENABLE_LIVE_TRADING=false)")
         
         # Check emergency stop status
         try:
-            emergency_status = await db.emergency_stop_collection.find_one({}) or {}
-            emergency_enabled = emergency_status.get('enabled', False)
-            flags['emergency_stop'] = emergency_enabled
-            if emergency_enabled:
-                reasons.append("Emergency stop is currently active")
-        except:
-            flags['emergency_stop'] = False
+            if db.emergency_stop_collection:
+                emergency_status = await db.emergency_stop_collection.find_one({}) or {}
+                emergency_enabled = emergency_status.get('enabled', False)
+                if emergency_enabled:
+                    live_allowed = False
+                    reasons.append("Emergency stop is currently active")
+        except Exception as e:
+            logger.warning(f"Could not check emergency stop: {e}")
         
-        # Check if user has completed paper training
+        # Check if user has completed paper training (minimum 7 days)
         try:
-            # Get user's bots that have completed paper training
+            # Get user's bots
             bots = await db.bots_collection.find({
                 "user_id": user_id,
                 "status": "active"
             }).to_list(100)
             
-            paper_trained_bots = [b for b in bots if b.get('paper_training_complete', False)]
-            flags['paper_trained_bots'] = len(paper_trained_bots)
+            paper_days = 0
+            for bot in bots:
+                created_at = bot.get('created_at')
+                if created_at:
+                    from datetime import datetime, timezone
+                    created = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    days_old = (datetime.now(timezone.utc) - created).days
+                    paper_days = max(paper_days, days_old)
             
-            if len(paper_trained_bots) == 0:
-                reasons.append("No bots have completed paper training requirements")
+            if paper_days < 7:
+                live_allowed = False
+                reasons.append(f"Minimum 7 days paper trading required (current: {paper_days} days)")
         except Exception as e:
-            logger.warning(f"Error checking paper training status: {e}")
-            flags['paper_trained_bots'] = 0
+            logger.warning(f"Error checking paper training: {e}")
+            live_allowed = False
             reasons.append("Unable to verify paper training status")
         
         # Check if user has API keys configured
         try:
             api_keys = await db.api_keys_collection.count_documents({"user_id": user_id})
-            flags['api_keys_configured'] = api_keys > 0
             if api_keys == 0:
+                live_allowed = False
                 reasons.append("No exchange API keys configured")
-        except:
-            flags['api_keys_configured'] = False
+        except Exception as e:
+            logger.warning(f"Error checking API keys: {e}")
+            live_allowed = False
             reasons.append("Unable to verify API keys")
         
-        # User is eligible only if all checks pass
-        if enable_live and not flags.get('emergency_stop', False) and flags.get('paper_trained_bots', 0) > 0 and flags.get('api_keys_configured', False):
-            eligible = True
+        # Check for excessive drawdown (max 15% from initial capital)
+        try:
+            for bot in bots:
+                initial = bot.get('initial_capital', 1000)
+                current = bot.get('current_capital', 1000)
+                if initial > 0:
+                    drawdown = ((initial - current) / initial) * 100
+                    if drawdown > 15:
+                        live_allowed = False
+                        reasons.append(f"Bot '{bot.get('name')}' has excessive drawdown ({drawdown:.1f}%)")
+        except Exception as e:
+            logger.warning(f"Error checking drawdown: {e}")
+        
+        # If all checks passed
+        if live_allowed and not reasons:
             reasons = ["All requirements met for live trading"]
         
         return {
-            "eligible": eligible,
-            "reasons": reasons,
-            "flags": flags,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "live_allowed": live_allowed,
+            "reasons": reasons
         }
     except Exception as e:
         logger.error(f"Error checking live eligibility: {e}")
+        # Return safe default: NOT eligible
         return {
-            "eligible": False,
-            "reasons": [f"Error checking eligibility: {str(e)}"],
-            "flags": {},
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "live_allowed": False,
+            "reasons": [f"Error checking eligibility: {str(e)}"]
         }
 
 
@@ -171,24 +194,27 @@ async def get_live_eligibility(user_id: str = Depends(get_current_user)) -> dict
 async def get_emergency_stop_status(user_id: str = Depends(get_current_user)) -> dict:
     """Get emergency stop status
     
-    Protected endpoint that returns current emergency stop state
+    Protected endpoint that returns current emergency stop state with stable schema
     """
     try:
         # Get global emergency stop status
-        emergency_status = await db.emergency_stop_collection.find_one({}) or {}
-        enabled = emergency_status.get('enabled', False)
+        emergency_status = await db.emergency_stop_collection.find_one({}) if db.emergency_stop_collection else {}
         
+        # Always return stable schema with explicit fields
         return {
-            "enabled": enabled,
-            "reason": emergency_status.get('reason', ''),
-            "activated_at": emergency_status.get('activated_at', None),
-            "activated_by": emergency_status.get('activated_by', None),
+            "is_emergency_stop_active": emergency_status.get('enabled', False) if emergency_status else False,
+            "reason": emergency_status.get('reason') if emergency_status else None,
+            "updated_at": emergency_status.get('activated_at') if emergency_status else None,
+            "activated_by": emergency_status.get('activated_by') if emergency_status else None,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         logger.error(f"Error getting emergency stop status: {e}")
+        # Return safe default schema even on error
         return {
-            "enabled": False,
-            "error": str(e),
+            "is_emergency_stop_active": False,
+            "reason": None,
+            "updated_at": None,
+            "activated_by": None,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
