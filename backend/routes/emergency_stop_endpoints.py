@@ -143,7 +143,8 @@ async def get_emergency_stop_status(user_id: str = Depends(get_current_user)):
                 "enabled": False,
                 "active": False,
                 "reason": None,
-                "updated_at": None
+                "updated_at": None,
+                "activated_by": None
             }
         
         is_active = modes.get('emergencyStop', False)
