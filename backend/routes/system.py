@@ -194,18 +194,20 @@ async def get_live_eligibility(user_id: str = Depends(get_current_user)) -> dict
 async def get_emergency_stop_status(user_id: str = Depends(get_current_user)) -> dict:
     """Get emergency stop status
     
-    Protected endpoint that returns current emergency stop state with stable schema
+    Protected endpoint that returns current emergency stop state with stable schema.
+    Returns both 'enabled' and 'active' fields with the same value for backward compatibility
+    with different API consumers (verify_production_ready.py expects 'active').
     """
     try:
         # Get global emergency stop status
         emergency_status = await db.emergency_stop_collection.find_one({}) if db.emergency_stop_collection else {}
         
         # Always return stable schema with explicit fields required by verify_production_ready.py
-        # Contract: success, enabled (was is_emergency_stop_active), reason, updated_at
+        # Both 'enabled' and 'active' included for compatibility with different API consumers
         return {
             "success": True,
             "enabled": emergency_status.get('enabled', False) if emergency_status else False,
-            "active": emergency_status.get('enabled', False) if emergency_status else False,  # alias for backward compat
+            "active": emergency_status.get('enabled', False) if emergency_status else False,
             "reason": emergency_status.get('reason') if emergency_status else None,
             "updated_at": emergency_status.get('activated_at') if emergency_status else None,
             "timestamp": datetime.now(timezone.utc).isoformat()
