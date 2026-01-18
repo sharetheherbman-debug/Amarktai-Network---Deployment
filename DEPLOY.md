@@ -11,30 +11,39 @@
 If this is an **update deployment** on an already-running system:
 
 ```bash
-# 1. Run verification
-bash scripts/verify_go_live.sh
-# Must show: ✓ ALL CHECKS PASSED
+# 1. Pull latest changes
+cd /var/amarktai/app
+git pull origin main
 
-# 2. Update backend
+# 2. Run production readiness verification
+python3 scripts/verify_production_ready.py
+# Must show: 🎉 ALL CHECKS PASSED - Production Ready
+
+# 3. Update backend dependencies (if needed)
 cd backend
-pip install -r requirements.txt
+source venv/bin/activate
+pip install -r requirements.txt --upgrade
+
+# 4. Restart services
 sudo systemctl restart amarktai-api
 sudo systemctl status amarktai-api
 
-# 3. Update frontend
-cd ../frontend
-npm install
-npm run build
-sudo cp -r build/* /var/www/amarktai/
-sudo systemctl reload nginx
-
-# 4. Verify deployment
-curl http://localhost:8000/api/health/ping
-curl -I http://localhost/
+# 5. Verify deployment
+python3 scripts/verify_go_live.py
+curl http://localhost:8001/api/health/ping
 ```
 
-**Critical Environment Variable:**
-- `ADMIN_PASSWORD=Ashmor12@` must be set in systemd service
+**Critical Notes:**
+- Auth system now supports backward-compatible password hash fields
+- JWT tokens use consistent `user_id` claim
+- Price endpoint resilient to missing API keys
+- All API key endpoints properly secured with JWT auth
+- Paper trading enabled by default (live trading requires explicit flag)
+
+**Environment Variables:**
+- `ENABLE_LIVE_TRADING=false` (default, safe)
+- `JWT_SECRET` must be set (min 32 chars)
+- `JWT_ALGORITHM=HS256` (default, can override)
 
 For **first-time setup**, continue reading below.
 
