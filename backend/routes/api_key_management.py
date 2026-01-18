@@ -473,6 +473,7 @@ async def get_decrypted_key(user_id: str, provider: str) -> Optional[Dict]:
     
     Used internally by other services
     Supports backward compatibility with ObjectId user_ids
+    Supports multiple field name variants for encrypted keys
     
     Args:
         user_id: User ID (string)
@@ -504,9 +505,30 @@ async def get_decrypted_key(user_id: str, provider: str) -> Optional[Dict]:
             logger.warning(f"No API key found for user {user_id[:8]} provider {provider}")
             return None
         
+        # Support multiple field name variants for encrypted keys
+        # Try canonical names first, then fallback to alternative names
+        api_key_field = None
+        api_secret_field = None
+        
+        # Check for API key field variants
+        for field in ["api_key_encrypted", "apiKeyEncrypted", "encrypted_api_key"]:
+            if field in key_doc:
+                api_key_field = field
+                break
+        
+        # Check for API secret field variants
+        for field in ["api_secret_encrypted", "apiSecretEncrypted", "encrypted_api_secret"]:
+            if field in key_doc:
+                api_secret_field = field
+                break
+        
+        if not api_key_field:
+            logger.error(f"No encrypted API key field found for user {user_id[:8]} provider {provider}")
+            return None
+        
         return {
-            "api_key": decrypt_api_key(key_doc["api_key_encrypted"]),
-            "api_secret": decrypt_api_key(key_doc["api_secret_encrypted"]) if key_doc.get("api_secret_encrypted") else None,
+            "api_key": decrypt_api_key(key_doc[api_key_field]),
+            "api_secret": decrypt_api_key(key_doc[api_secret_field]) if api_secret_field and key_doc.get(api_secret_field) else None,
             "provider": provider,
             "exchange": key_doc.get("exchange")
         }
