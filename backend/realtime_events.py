@@ -198,6 +198,46 @@ class RealTimeEvents:
             "message": f"❌ Bot '{bot_data.get('name')}' training failed: {bot_data.get('training_failed_reason')}"
         })
         logger.info(f"📡 Real-time: training_failed for user {user_id[:8]}")
+    
+    @staticmethod
+    async def key_saved(user_id: str, provider: str, display_name: str):
+        """Broadcast when API key is saved"""
+        await manager.send_message(user_id, {
+            "type": "key_saved",
+            "provider": provider,
+            "display_name": display_name,
+            "message": f"🔑 {display_name} API key saved"
+        })
+        logger.info(f"📡 Real-time: key_saved ({provider}) for user {user_id[:8]}")
+    
+    @staticmethod
+    async def key_tested(user_id: str, provider: str, display_name: str, success: bool, error: str = None):
+        """Broadcast when API key is tested"""
+        emoji = "✅" if success else "❌"
+        message = f"{emoji} {display_name} key test {'passed' if success else 'failed'}"
+        if not success and error:
+            message += f": {error}"
+        
+        await manager.send_message(user_id, {
+            "type": "key_tested",
+            "provider": provider,
+            "display_name": display_name,
+            "success": success,
+            "error": error,
+            "message": message
+        })
+        logger.info(f"📡 Real-time: key_tested ({provider}, {success}) for user {user_id[:8]}")
+    
+    @staticmethod
+    async def key_deleted(user_id: str, provider: str, display_name: str):
+        """Broadcast when API key is deleted"""
+        await manager.send_message(user_id, {
+            "type": "key_deleted",
+            "provider": provider,
+            "display_name": display_name,
+            "message": f"🗑️ {display_name} API key deleted"
+        })
+        logger.info(f"📡 Real-time: key_deleted ({provider}) for user {user_id[:8]}")
 
 # Global instance
 rt_events = RealTimeEvents()
