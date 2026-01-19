@@ -31,12 +31,15 @@ class AutopilotEngine:
         
     async def start(self):
         """Start the autopilot engine - idempotent, respects feature flags"""
-        # Check feature flag first
-        enable_autopilot = os.getenv('ENABLE_AUTOPILOT', '0') == '1'
-        enable_schedulers = os.getenv('ENABLE_SCHEDULERS', '0') == '1'
+        # Check feature flag first - use robust parsing
+        enable_autopilot_val = os.getenv('ENABLE_AUTOPILOT', 'false').strip().lower()
+        enable_autopilot = enable_autopilot_val in {'1', 'true', 'yes', 'y', 'on'}
+        
+        enable_schedulers_val = os.getenv('ENABLE_SCHEDULERS', 'false').strip().lower()
+        enable_schedulers = enable_schedulers_val in {'1', 'true', 'yes', 'y', 'on'}
         
         if not enable_autopilot:
-            logger.info("🤖 Autopilot Engine disabled (ENABLE_AUTOPILOT=0)")
+            logger.info("🤖 Autopilot Engine disabled (ENABLE_AUTOPILOT not truthy)")
             return
         
         # Prevent multiple starts
@@ -79,7 +82,7 @@ class AutopilotEngine:
                 self.scheduler.start()
                 logger.info("🤖 Autopilot Engine started with scheduler")
             else:
-                logger.info("🤖 Autopilot Engine started without scheduler (ENABLE_SCHEDULERS=0 or already running)")
+                logger.info("🤖 Autopilot Engine started without scheduler (ENABLE_SCHEDULERS not truthy or already running)")
         except Exception as e:
             logger.error(f"Failed to start Autopilot Engine: {e}")
             self.running = False

@@ -28,12 +28,21 @@ async def get_system_status(user_id: str = Depends(get_current_user)):
     - Database health
     """
     try:
-        # Get feature flags
+        # Helper function for consistent boolean parsing
+        def env_bool(name: str, default: bool = False) -> bool:
+            """Parse environment variable as boolean."""
+            value = os.getenv(name)
+            if value is None:
+                return default
+            value = value.strip().lower()
+            return value in {'1', 'true', 'yes', 'y', 'on'}
+        
+        # Get feature flags using consistent parsing
         feature_flags = {
-            "enable_trading": os.getenv('ENABLE_TRADING', '0') == '1',
-            "enable_schedulers": os.getenv('ENABLE_SCHEDULERS', '0') == '1',
-            "enable_autopilot": os.getenv('ENABLE_AUTOPILOT', '0') == '1',
-            "enable_ccxt": os.getenv('ENABLE_CCXT', '0') == '1'
+            "enable_trading": env_bool('ENABLE_TRADING', False),
+            "enable_schedulers": env_bool('ENABLE_SCHEDULERS', False),
+            "enable_autopilot": env_bool('ENABLE_AUTOPILOT', False),
+            "enable_ccxt": env_bool('ENABLE_CCXT', True)
         }
         
         # Check scheduler status

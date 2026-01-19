@@ -30,6 +30,30 @@ import ccxt.async_support as ccxt
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# FEATURE FLAG HELPER
+# ============================================================================
+
+def env_bool(name: str, default: bool = False) -> bool:
+    """
+    Parse environment variable as boolean.
+    
+    Returns True for: '1', 'true', 'yes', 'y', 'on' (case-insensitive)
+    Returns default when variable is not set or empty.
+    
+    Args:
+        name: Environment variable name
+        default: Default value if variable is not set
+        
+    Returns:
+        Boolean value
+    """
+    value = os.getenv(name)
+    if value is None:
+        return default
+    value = value.strip().lower()
+    return value in {'1', 'true', 'yes', 'y', 'on'}
+
 api_router = APIRouter()
 api_router.include_router(auth_router)
 
@@ -53,10 +77,10 @@ async def lifespan(app: FastAPI):
         raise  # Cannot proceed without database
     
     # Feature flags for safe plug-and-play deployment
-    enable_trading = os.getenv('ENABLE_TRADING', '0') == '1'
-    enable_autopilot = os.getenv('ENABLE_AUTOPILOT', '0') == '1'
-    enable_ccxt = os.getenv('ENABLE_CCXT', '0') == '1'
-    enable_schedulers = os.getenv('ENABLE_SCHEDULERS', '0') == '1'
+    enable_trading = env_bool('ENABLE_TRADING', False)
+    enable_autopilot = env_bool('ENABLE_AUTOPILOT', False)
+    enable_ccxt = env_bool('ENABLE_CCXT', True)
+    enable_schedulers = env_bool('ENABLE_SCHEDULERS', False)
     
     logger.info(f"🎚️ Feature flags: TRADING={enable_trading}, AUTOPILOT={enable_autopilot}, CCXT={enable_ccxt}, SCHEDULERS={enable_schedulers}")
     
@@ -3069,54 +3093,70 @@ async def get_prometheus_metrics():
         logger.error(f"Metrics export failed: {e}")
         raise HTTPException(status_code=500, detail="Metrics export failed")
 
-# Mount API router
+# Mount API router (includes auth and other inline endpoints)
 app.include_router(api_router, prefix="/api")
 
-# Mount routers individually with fail-safe loading
-# Each router is mounted separately so one failure doesn't block others
+# ============================================================================
+# MOUNT ROUTERS - Each router defines its own /api/... prefix
+# ============================================================================
+# Each router is mounted exactly once without additional prefix wrapping.
+# Routers already define their own /api/... prefixes in their route files.
 routers_to_mount = [
-    ("routes.phase5_endpoints", "phase5_router", "Phase 5"),
-    ("routes.phase6_endpoints", "phase6_router", "Phase 6"),
-    ("routes.phase8_endpoints", "phase8_router", "Phase 8"),
-    ("routes.capital_tracking_endpoints", "capital_router", "Capital Tracking"),
-    ("routes.emergency_stop_endpoints", "emergency_router", "Emergency Stop"),
-    ("routes.wallet_endpoints", "wallet_router", "Wallet Hub"),
-    ("routes.system_health_endpoints", "health_router", "System Health"),
-    ("routes.admin_endpoints", "admin_router", "Admin"),
-    ("routes.bot_lifecycle", "bot_lifecycle_router", "Bot Lifecycle"),
-    ("routes.system_limits", "system_limits_router", "System Limits"),
-    ("routes.live_trading_gate", "live_gate_router", "Live Trading Gate"),
-    ("routes.analytics_api", "analytics_router", "Analytics API"),
-    ("routes.ai_chat", "ai_chat_router", "AI Chat"),
-    ("routes.two_factor_auth", "twofa_router", "2FA"),
-    ("routes.genetic_algorithm", "genetic_router", "Genetic Algorithm"),
-    ("routes.dashboard_endpoints", "dashboard_router", "Dashboard"),
-    ("routes.api_key_management", "api_key_mgmt_router", "API Key Management"),
-    ("routes.daily_report", "daily_report_router", "Daily Report"),
-    ("routes.ledger_endpoints", "ledger_router", "Ledger"),
-    ("routes.order_endpoints", "order_router", "Orders"),
-    ("routes.alerts", "alerts_router", "Alerts"),
-    ("routes.limits_management", "limits_router", "Limits Management"),
-    ("routes.advanced_trading_endpoints", "advanced_router", "Advanced Trading"),
-    ("routes.payment_agent_endpoints", "payment_router", "Payment Agent"),
-    ("routes.user_api_keys", "user_api_keys_router", "User API Keys"),
-    ("routes.api_keys_canonical", "api_keys_canonical_router", "Canonical API Keys"),
-    ("routes.dashboard_aliases", "dashboard_aliases_router", "Dashboard Aliases"),
-    ("routes.decision_trace", "decision_trace_router", "Decision Trace"),
-    ("routes.system_status", "system_status_router", "System Status"),
-    ("routes.compatibility_endpoints", "compatibility_router", "Compatibility"),
+    ("routes.system", "System"),
+    ("routes.trades", "Trades"),
+    ("routes.health", "Health"),
+    ("routes.profits", "Profits"),
+    ("routes.system_status", "System Status"),
+    ("routes.phase5_endpoints", "Phase 5"),
+    ("routes.phase6_endpoints", "Phase 6"),
+    ("routes.phase8_endpoints", "Phase 8"),
+    ("routes.capital_tracking_endpoints", "Capital Tracking"),
+    ("routes.emergency_stop_endpoints", "Emergency Stop"),
+    ("routes.wallet_endpoints", "Wallet Hub"),
+    ("routes.system_health_endpoints", "System Health"),
+    ("routes.admin_endpoints", "Admin"),
+    ("routes.bot_lifecycle", "Bot Lifecycle"),
+    ("routes.system_limits", "System Limits"),
+    ("routes.live_trading_gate", "Live Trading Gate"),
+    ("routes.analytics_api", "Analytics API"),
+    ("routes.ai_chat", "AI Chat"),
+    ("routes.two_factor_auth", "2FA"),
+    ("routes.genetic_algorithm", "Genetic Algorithm"),
+    ("routes.dashboard_endpoints", "Dashboard"),
+    ("routes.api_key_management", "API Key Management"),
+    ("routes.daily_report", "Daily Report"),
+    ("routes.ledger_endpoints", "Ledger"),
+    ("routes.order_endpoints", "Orders"),
+    ("routes.alerts", "Alerts"),
+    ("routes.limits_management", "Limits Management"),
+    ("routes.advanced_trading_endpoints", "Advanced Trading"),
+    ("routes.payment_agent_endpoints", "Payment Agent"),
+    ("routes.user_api_keys", "User API Keys"),
+    ("routes.api_keys_canonical", "Canonical API Keys"),
+    ("routes.dashboard_aliases", "Dashboard Aliases"),
+    ("routes.decision_trace", "Decision Trace"),
+    ("routes.compatibility_endpoints", "Compatibility"),
 ]
+
+# Mount realtime router only if enabled via feature flag
+if env_bool("ENABLE_REALTIME", True):
+    routers_to_mount.append(("routes.realtime", "Realtime Events"))
 
 mounted_routers = []
 failed_routers = []
 
-for module_path, router_name, display_name in routers_to_mount:
+for module_path, display_name in routers_to_mount:
     try:
-        module = __import__(module_path, fromlist=[router_name])
-        router = getattr(module, router_name)
-        app.include_router(router)
+        # Import the module and get its 'router' attribute
+        module = __import__(module_path, fromlist=['router'])
+        router_obj = getattr(module, 'router')
+        app.include_router(router_obj)
         mounted_routers.append(display_name)
         logger.info(f"✅ Mounted: {display_name}")
+    except AttributeError as e:
+        # Handle case where module doesn't export 'router'
+        failed_routers.append((display_name, f"No 'router' attribute: {e}"))
+        logger.error(f"❌ Failed to mount {display_name}: No 'router' attribute found")
     except Exception as e:
         failed_routers.append((display_name, str(e)))
         logger.error(f"❌ Failed to mount {display_name}: {e}")
@@ -3133,36 +3173,6 @@ except Exception as e:
 logger.info(f"📊 Router mounting complete: {len(mounted_routers)} mounted, {len(failed_routers)} failed")
 if failed_routers:
     logger.warning(f"⚠️ Failed routers: {', '.join([f[0] for f in failed_routers])}")
-
-# --------------------------------------------------------------------------
-# Additional routers for system and trades ping endpoints
-#
-# These routers provide lightweight health‑check endpoints to verify that
-# critical subsystems are reachable.  They are mounted without an extra
-# prefix because the routers themselves define their `/api/system` and
-# `/api/trades` prefixes respectively.
-try:
-    from routes.system import router as system_router  # type: ignore
-    from routes.trades import router as trades_router  # type: ignore
-    from routes.health import router as health_router  # type: ignore
-    from routes.profits import router as profits_router  # type: ignore
-    app.include_router(system_router)
-    app.include_router(trades_router)
-    app.include_router(health_router)
-    app.include_router(profits_router)
-    logger.info("✅ Core routers mounted (system, trades, health, profits)")
-
-    # Real‑time SSE router can be enabled via the ENABLE_REALTIME flag.
-    import os
-    if os.getenv('ENABLE_REALTIME', 'true').lower() in {'true', '1', 'yes'}:
-        from routes.realtime import router as realtime_router  # type: ignore
-        app.include_router(realtime_router)
-        logger.info("✅ Real‑time SSE router mounted at /api/realtime/events")
-    else:
-        logger.info("ℹ️ Real‑time SSE router disabled via ENABLE_REALTIME=false")
-except Exception as e:
-    # Failure to import these optional routers should never block server startup.
-    logger.warning(f"Optional system/trades/realtime routers could not be loaded: {e}")
 
 # ============================================================================
 # ROOT ENDPOINT
