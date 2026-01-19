@@ -251,11 +251,6 @@ def main():
     # Run verifier
     verifier = GoLiveVerifier(base_url)
     
-    # Set credentials if provided
-    if email and password:
-        os.environ["EMAIL"] = email
-        os.environ["PASSWORD"] = password
-    
     success = verifier.run_all_tests()
     
     # Exit with appropriate code
