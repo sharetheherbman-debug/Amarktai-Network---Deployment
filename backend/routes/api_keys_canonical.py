@@ -210,11 +210,13 @@ async def test_api_key(
     Test an API key before saving
     Makes a lightweight API call to verify credentials
     Persists test results to database
+    Uses model fallback chain for OpenAI testing
     """
     try:
         # Normalize payload - accept multiple field name variants
         api_key = data.get("api_key") or data.get("apiKey")
         api_secret = data.get("api_secret") or data.get("apiSecret")
+        passphrase = data.get("passphrase")
         
         if not api_key:
             raise HTTPException(status_code=400, detail="API key required")
@@ -224,86 +226,49 @@ async def test_api_key(
         
         timestamp = datetime.now(timezone.utc).isoformat()
         
-        # Test based on provider type
-        if provider in ["binance", "luno", "kucoin", "ovex", "valr"]:
-            # Test exchange API key
-            import ccxt.async_support as ccxt
-            
-            exchange_class = getattr(ccxt, provider, None)
-            if not exchange_class:
-                raise HTTPException(status_code=400, detail=f"Exchange {provider} not supported")
-            
-            exchange_instance = exchange_class({
-                'apiKey': api_key,
-                'secret': api_secret,
-                'enableRateLimit': True
-            })
-            
-            try:
-                # Test with a simple API call
-                balance = await exchange_instance.fetch_balance()
-                await exchange_instance.close()
-                
-                # Get currency count
-                currencies_found = len([c for c, amt in balance.get('total', {}).items() if amt > 0])
-                
-                # Update test metadata if key exists in database
-                await db.api_keys_collection.update_one(
-                    {"user_id": user_id_str, "provider": provider},
-                    {"$set": {
-                        "last_tested_at": timestamp,
-                        "last_test_ok": True,
-                        "last_test_error": None
-                    }}
-                )
-                
-                return {
-                    "success": True,
-                    "message": f"✅ {provider.upper()} API key validated successfully",
-                    "provider": provider,
-                    "currencies_found": currencies_found
-                }
-            except Exception as e:
-                await exchange_instance.close()
-                error_msg = str(e)
-                
-                # Update test metadata with error
-                await db.api_keys_collection.update_one(
-                    {"user_id": user_id_str, "provider": provider},
-                    {"$set": {
-                        "last_tested_at": timestamp,
-                        "last_test_ok": False,
-                        "last_test_error": error_msg[:500]
-                    }}
-                )
-                
-                if "Invalid API-key" in error_msg or "authentication" in error_msg.lower():
-                    return {
-                        "success": False,
-                        "message": f"❌ Invalid API credentials for {provider.upper()}",
-                        "error": "Authentication failed"
-                    }
-                else:
-                    return {
-                        "success": False,
-                        "message": f"❌ API test failed for {provider.upper()}",
-                        "error": error_msg
-                    }
+        # Use keys service for testing
+        from services.keys_service import keys_service
         
-        else:
-            # Generic success for other providers (OpenAI, etc.)
-            await db.api_keys_collection.update_one(
-                {"user_id": user_id_str, "provider": provider},
-                {"$set": {
-                    "last_tested_at": timestamp,
-                    "last_test_ok": True,
-                    "last_test_error": None
-                }}
-            )
+        success, metadata, error = await keys_service.test_api_key(
+            provider, api_key, api_secret, passphrase
+        )
+        
+        # Update test metadata in database if key exists
+        update_data = {
+            "last_tested_at": timestamp,
+            "last_test_ok": success,
+            "last_test_error": error if not success else None
+        }
+        
+        # Add metadata if available
+        if metadata:
+            update_data.update(metadata)
+        
+        await db.api_keys_collection.update_one(
+            {"user_id": user_id_str, "provider": provider},
+            {"$set": update_data},
+            upsert=False  # Don't create if doesn't exist
+        )
+        
+        if success:
+            # Build success message
+            message = f"✅ {provider.upper()} API key validated successfully"
+            if provider == 'openai' and metadata and metadata.get('working_model'):
+                message += f" (using model: {metadata['working_model']})"
+            elif metadata and metadata.get('currencies_found'):
+                message += f" ({metadata['currencies_found']} currencies found)"
             
             return {
                 "success": True,
-                "message": f"✅ {provider.upper()} API key format validated",
+                "message": message,
+                "provider": provider,
+                "metadata": metadata
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"❌ API test failed for {provider.upper()}",
+                "error": error,
                 "provider": provider
             }
             
