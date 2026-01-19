@@ -62,21 +62,26 @@ class AIBodyguard:
     async def check_user_bots(self, user_id: str):
         """Check all bots for a specific user"""
         try:
+            # Use new bodyguard service for drawdown checks
+            from services.bodyguard_service import bodyguard_service
+            
+            # Check all user bots with new recovery-aware service
+            result = await bodyguard_service.check_all_user_bots(user_id)
+            
+            if result.get('paused', 0) > 0 or result.get('resumed', 0) > 0:
+                logger.info(
+                    f"Bodyguard checked {result.get('checked', 0)} bots for user {user_id[:8]}: "
+                    f"{result.get('paused', 0)} paused, {result.get('resumed', 0)} resumed"
+                )
+            
+            # Still run legacy checks for other patterns (not covered by new service)
             bots = await self.db.bots.find({'user_id': user_id, 'status': 'active'}).to_list(1000)
             
             for bot in bots:
                 bot_id = bot['id']
                 
-                # Check 1: Extreme drawdown detection
-                await self.check_extreme_drawdown(user_id, bot_id, bot)
-                
-                # Check 2: Risk profile violation
-                await self.check_risk_violation(user_id, bot_id, bot)
-                
-                # Check 3: Suspicious trading patterns
+                # Legacy checks (suspicious patterns, duplicates)
                 await self.check_suspicious_patterns(user_id, bot_id, bot)
-                
-                # Check 4: Duplicate bot detection
                 await self.check_duplicate_bots(user_id, bot)
                 
         except Exception as e:
