@@ -3083,6 +3083,10 @@ app.include_router(api_router, prefix="/api")
 # Each router is mounted exactly once without additional prefix wrapping.
 # Routers already define their own /api/... prefixes in their route files.
 routers_to_mount = [
+    ("routes.keys", "API Keys (Unified)"),  # New unified keys router - takes precedence
+    ("routes.system_mode", "System Mode"),  # New unified mode management
+    ("routes.platforms", "Platforms"),  # Platform drilldown
+    ("routes.build_info", "Build Info"),  # Build version info
     ("routes.system", "System"),
     ("routes.trades", "Trades"),
     ("routes.health", "Health"),
