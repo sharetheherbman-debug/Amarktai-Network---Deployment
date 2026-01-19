@@ -1,0 +1,361 @@
+"""
+Training Pipeline for New Bots
+Ensures new bots never start live without training
+Minimal implementation with safety-first approach
+"""
+
+from fastapi import APIRouter, HTTPException, Depends
+from datetime import datetime, timezone, timedelta
+from typing import Dict, List, Optional
+import logging
+
+from auth import get_current_user
+import database as db
+from realtime_events import rt_events
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/training", tags=["Bot Training"])
+
+
+# Training graduation criteria
+MIN_TRADES = 20
+MIN_RUNTIME_HOURS = 6
+MIN_PNL_THRESHOLD = 0  # Must be profitable
+MAX_DRAWDOWN_THRESHOLD = 0.25  # 25% max drawdown
+
+
+async def seed_bot_from_top_performers(bot_id: str, user_id: str) -> Dict:
+    """Seed new bot with training profile from top 3 performing bots
+    
+    Args:
+        bot_id: Bot ID to seed
+        user_id: User ID
+        
+    Returns:
+        Seeding result with source bot IDs
+    """
+    try:
+        # Get top 3 performing bots for this user (paper or live, completed training)
+        top_bots = await db.bots_collection.find(
+            {
+                "user_id": user_id,
+                "training_complete": True,
+                "total_profit": {"$gt": 0}
+            },
+            {"_id": 0}
+        ).sort("total_profit", -1).limit(3).to_list(3)
+        
+        if not top_bots:
+            # No top bots - use default conservative profile
+            profile = {
+                "risk_mode": "safe",
+                "position_size_pct": 0.20,  # 20% per trade
+                "stop_loss_pct": 0.15,  # 15% stop loss
+                "take_profit_pct": 0.10,  # 10% take profit
+                "max_daily_trades": 10,
+                "seeded_from": "default_conservative"
+            }
+        else:
+            # Average parameters from top bots
+            avg_position_size = sum(b.get('position_size_pct', 0.25) for b in top_bots) / len(top_bots)
+            avg_stop_loss = sum(b.get('stop_loss_pct', 0.15) for b in top_bots) / len(top_bots)
+            
+            profile = {
+                "risk_mode": top_bots[0].get('risk_mode', 'balanced'),
+                "position_size_pct": round(avg_position_size, 3),
+                "stop_loss_pct": round(avg_stop_loss, 3),
+                "take_profit_pct": 0.10,
+                "max_daily_trades": 15,
+                "seeded_from": [b.get('id') for b in top_bots]
+            }
+        
+        # Update bot with training profile
+        await db.bots_collection.update_one(
+            {"id": bot_id},
+            {"$set": {
+                "training_profile": profile,
+                "training_seeded_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        
+        logger.info(f"Bot {bot_id} seeded with training profile from {len(top_bots)} top bots")
+        return {"success": True, "profile": profile, "source_count": len(top_bots)}
+        
+    except Exception as e:
+        logger.error(f"Bot seeding error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+async def evaluate_training(bot_id: str) -> Dict:
+    """Evaluate if bot has graduated from training
+    
+    Criteria:
+    - min_trades >= 20
+    - min_runtime_hours >= 6
+    - net_pnl > 0
+    - max_drawdown <= 25%
+    
+    Args:
+        bot_id: Bot ID to evaluate
+        
+    Returns:
+        Evaluation result with pass/fail and reason
+    """
+    try:
+        bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        if not bot:
+            return {"passed": False, "reason": "Bot not found"}
+        
+        # Check trade count
+        trades_count = bot.get('trades_count', 0)
+        if trades_count < MIN_TRADES:
+            return {
+                "passed": False,
+                "reason": f"Insufficient trades: {trades_count}/{MIN_TRADES}",
+                "suggestion": "Continue paper trading to accumulate more trade history"
+            }
+        
+        # Check runtime
+        started_at = bot.get('started_at') or bot.get('created_at')
+        if started_at:
+            started_dt = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+            runtime_hours = (datetime.now(timezone.utc) - started_dt).total_seconds() / 3600
+            if runtime_hours < MIN_RUNTIME_HOURS:
+                return {
+                    "passed": False,
+                    "reason": f"Insufficient runtime: {runtime_hours:.1f}h / {MIN_RUNTIME_HOURS}h",
+                    "suggestion": "Let bot trade for longer to assess performance"
+                }
+        
+        # Check PnL
+        net_pnl = bot.get('total_profit', 0)
+        if net_pnl <= MIN_PNL_THRESHOLD:
+            return {
+                "passed": False,
+                "reason": f"Not profitable: R{net_pnl:.2f}",
+                "suggestion": "Bot must be profitable before going live. Review strategy."
+            }
+        
+        # Check drawdown
+        max_drawdown = bot.get('max_drawdown', 0)
+        if max_drawdown > MAX_DRAWDOWN_THRESHOLD:
+            return {
+                "passed": False,
+                "reason": f"Excessive drawdown: {max_drawdown*100:.1f}% > {MAX_DRAWDOWN_THRESHOLD*100:.1f}%",
+                "suggestion": "Reduce risk or improve strategy to lower drawdown"
+            }
+        
+        # All checks passed!
+        return {
+            "passed": True,
+            "reason": "Training complete - all criteria met",
+            "stats": {
+                "trades_count": trades_count,
+                "runtime_hours": runtime_hours if started_at else 0,
+                "net_pnl": net_pnl,
+                "max_drawdown": max_drawdown
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Training evaluation error: {e}")
+        return {"passed": False, "reason": f"Evaluation error: {str(e)}"}
+
+
+@router.get("/queue")
+async def get_training_queue(user_id: str = Depends(get_current_user)):
+    """Get all bots in training for current user
+    
+    Returns bots with training state and progress
+    
+    Args:
+        user_id: Current user ID from auth
+        
+    Returns:
+        List of bots in training with evaluation status
+    """
+    try:
+        # Get all bots in training or training_failed state
+        training_bots = await db.bots_collection.find(
+            {
+                "user_id": user_id,
+                "$or": [
+                    {"status": "training"},
+                    {"training_in_progress": True},
+                    {"status": "training_failed"}
+                ]
+            },
+            {"_id": 0}
+        ).to_list(1000)
+        
+        # Evaluate each bot
+        enriched_bots = []
+        for bot in training_bots:
+            evaluation = await evaluate_training(bot.get('id'))
+            
+            enriched_bot = {
+                "id": bot.get('id'),
+                "name": bot.get('name'),
+                "exchange": bot.get('exchange'),
+                "status": bot.get('status'),
+                "training_state": "training" if bot.get('status') == 'training' else "training_failed",
+                "trades_count": bot.get('trades_count', 0),
+                "total_profit": bot.get('total_profit', 0),
+                "max_drawdown": bot.get('max_drawdown', 0),
+                "started_at": bot.get('started_at') or bot.get('created_at'),
+                "evaluation": evaluation
+            }
+            enriched_bots.append(enriched_bot)
+        
+        return {
+            "success": True,
+            "training_bots": enriched_bots,
+            "total": len(enriched_bots),
+            "ready_for_promotion": len([b for b in enriched_bots if b['evaluation'].get('passed')])
+        }
+        
+    except Exception as e:
+        logger.error(f"Get training queue error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{bot_id}/promote")
+async def promote_bot_from_training(
+    bot_id: str,
+    data: Optional[Dict] = None,
+    user_id: str = Depends(get_current_user)
+):
+    """Promote bot from training to active (paused_ready state)
+    
+    Requires training graduation criteria to be met
+    Bot moves to paused_ready state (manual activate required)
+    
+    Args:
+        bot_id: Bot ID to promote
+        data: Optional data (mode: 'paper' or 'live')
+        user_id: Current user ID from auth
+        
+    Returns:
+        Promotion result
+    """
+    try:
+        # Verify bot belongs to user
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Evaluate training
+        evaluation = await evaluate_training(bot_id)
+        if not evaluation.get('passed'):
+            return {
+                "success": False,
+                "message": "Bot has not passed training",
+                "reason": evaluation.get('reason'),
+                "suggestion": evaluation.get('suggestion')
+            }
+        
+        # Determine target mode
+        if data is None:
+            data = {}
+        target_mode = data.get('mode', bot.get('trading_mode', 'paper'))
+        
+        # Promote to paused_ready state (requires manual activation)
+        promoted_at = datetime.now(timezone.utc).isoformat()
+        
+        await db.bots_collection.update_one(
+            {"id": bot_id},
+            {"$set": {
+                "status": "paused",
+                "training_complete": True,
+                "training_completed_at": promoted_at,
+                "paused_at": promoted_at,
+                "pause_reason": "Training complete - ready for manual activation",
+                "paused_by_system": True,
+                "training_in_progress": False,
+                "trading_mode": target_mode
+            }}
+        )
+        
+        # Get updated bot
+        updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        
+        # Emit realtime event
+        await rt_events.training_completed(user_id, updated_bot)
+        
+        logger.info(f"✅ Bot {bot['name']} promoted from training to paused_ready")
+        
+        return {
+            "success": True,
+            "message": f"Bot '{bot['name']}' training complete - ready for activation",
+            "bot": updated_bot,
+            "evaluation": evaluation
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Promote bot error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{bot_id}/fail")
+async def fail_training(
+    bot_id: str,
+    data: Dict,
+    user_id: str = Depends(get_current_user)
+):
+    """Mark bot training as failed with reason
+    
+    Admin/system endpoint to mark training as failed
+    
+    Args:
+        bot_id: Bot ID
+        data: {reason: str, suggestion: str}
+        user_id: Current user ID from auth
+        
+    Returns:
+        Updated bot status
+    """
+    try:
+        # Verify bot belongs to user
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        reason = data.get('reason', 'Training criteria not met')
+        suggestion = data.get('suggestion', 'Review bot configuration and retry')
+        
+        await db.bots_collection.update_one(
+            {"id": bot_id},
+            {"$set": {
+                "status": "training_failed",
+                "training_failed": True,
+                "training_failed_at": datetime.now(timezone.utc).isoformat(),
+                "training_failed_reason": reason,
+                "training_failed_suggestion": suggestion,
+                "training_in_progress": False
+            }}
+        )
+        
+        # Get updated bot
+        updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        
+        # Emit realtime event
+        await rt_events.training_failed(user_id, updated_bot)
+        
+        logger.warning(f"Bot {bot['name']} training failed: {reason}")
+        
+        return {
+            "success": True,
+            "message": f"Bot training marked as failed",
+            "bot": updated_bot,
+            "reason": reason,
+            "suggestion": suggestion
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Fail training error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -178,6 +178,26 @@ class RealTimeEvents:
             "data": wallet_data,
             "message": "💰 Wallet updated"
         })
+    
+    @staticmethod
+    async def training_completed(user_id: str, bot_data: dict):
+        """Broadcast when bot completes training"""
+        await manager.send_message(user_id, {
+            "type": "training_completed",
+            "bot": bot_data,
+            "message": f"🎓 Bot '{bot_data.get('name')}' training complete - ready for activation"
+        })
+        logger.info(f"📡 Real-time: training_completed for user {user_id[:8]}")
+    
+    @staticmethod
+    async def training_failed(user_id: str, bot_data: dict):
+        """Broadcast when bot training fails"""
+        await manager.send_message(user_id, {
+            "type": "training_failed",
+            "bot": bot_data,
+            "message": f"❌ Bot '{bot_data.get('name')}' training failed: {bot_data.get('training_failed_reason')}"
+        })
+        logger.info(f"📡 Real-time: training_failed for user {user_id[:8]}")
 
 # Global instance
 rt_events = RealTimeEvents()

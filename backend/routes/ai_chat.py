@@ -205,36 +205,61 @@ async def ai_chat(
             else:
                 ai_response = "Invalid confirmation token or unauthorized."
         else:
-            # Generate AI response with OpenAI
+            # Generate AI response with OpenAI - CANONICAL KEY RETRIEVAL + MODEL FALLBACK
             try:
                 # Import get_decrypted_key to load user's saved key
                 from routes.api_key_management import get_decrypted_key
                 import os
                 
-                # Priority order: user-saved key > env OPENAI_API_KEY > error
-                # 1. Try user-saved key from database
+                # CANONICAL KEY RETRIEVAL - Priority order:
+                # 1. User-saved key from database (preferred)
+                # 2. Env/system key fallback (OPENAI_API_KEY)
+                # 3. Error with deterministic guidance
                 key_data = await get_decrypted_key(user_id, "openai")
                 user_api_key = None
+                key_source = None
                 
                 if key_data and key_data.get("api_key"):
                     user_api_key = key_data.get("api_key")
+                    key_source = "user"
                 else:
-                    # 2. Fall back to env OPENAI_API_KEY
+                    # Fallback to env key
                     user_api_key = os.getenv("OPENAI_API_KEY")
+                    if user_api_key:
+                        key_source = "env"
                 
                 if not user_api_key:
-                    ai_response = "AI service not configured. Please save your OpenAI API key in the Dashboard under API Keys."
-                else:
-                    
-                    # Use AsyncOpenAI client (openai>=1.x) with user's key
-                    from openai import AsyncOpenAI
-                    
-                    # Create client with user's API key
-                    client = AsyncOpenAI(api_key=user_api_key)
-                    
-                    # Prepare context for AI
-                    context = f"""You are an AI trading assistant for the Amarktai Network.
-                    
+                    # Deterministic JSON error (no random assistant text)
+                    return {
+                        "role": "assistant",
+                        "content": "❌ AI service not configured. Please save your OpenAI API key in Settings → API Keys.",
+                        "error": "no_api_key",
+                        "guidance": "Save your OpenAI API key to enable AI features.",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "system_state": system_state
+                    }
+                
+                # Use AsyncOpenAI client (openai>=1.x) with user's key
+                from openai import AsyncOpenAI
+                
+                # Create client with user's API key
+                client = AsyncOpenAI(api_key=user_api_key)
+                
+                # MODEL FALLBACK - Same as keys/test
+                fallback_models = []
+                fallback_env = os.getenv("OPENAI_FALLBACK_MODEL")
+                if fallback_env:
+                    fallback_models.append(fallback_env)
+                
+                # Safe ordered allowlist (prefer cheap models for chat)
+                allowlist = ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o", "gpt-3.5-turbo"]
+                for m in allowlist:
+                    if m not in fallback_models:
+                        fallback_models.append(m)
+                
+                # Prepare context for AI
+                context = f"""You are an AI trading assistant for the Amarktai Network.
+                
 Current System State:
 - Total Bots: {system_state['bots']['total']} (Active: {system_state['bots']['active']}, Paused: {system_state['bots']['paused']})
 - Total Capital: R{system_state['capital']['total']}
@@ -257,56 +282,87 @@ Instructions:
 - For dangerous actions (emergency_stop, stop_bot), require explicit confirmation
 - Provide recommendations based on performance data
 """
+                
+                # Try each model in fallback order
+                model_used = None
+                ai_response = None
+                
+                for test_model in fallback_models:
+                    try:
+                        response = await client.chat.completions.create(
+                            model=test_model,
+                            messages=[
+                                {"role": "system", "content": context},
+                                {"role": "user", "content": content}
+                            ],
+                            max_tokens=500,
+                            temperature=0.7
+                        )
+                        ai_response = response.choices[0].message.content
+                        model_used = test_model
+                        break  # Success!
+                    except Exception as model_error:
+                        error_str = str(model_error)
+                        # Try next model on 403/404
+                        if "404" in error_str or "model_not_found" in error_str.lower() or "403" in error_str or "forbidden" in error_str.lower():
+                            logger.info(f"AI chat model {test_model} unavailable, trying next")
+                            continue
+                        else:
+                            # Other error - don't continue fallback
+                            raise model_error
+                
+                if not ai_response:
+                    # All models failed
+                    return {
+                        "role": "assistant",
+                        "content": "❌ AI models unavailable. Please check your OpenAI API key permissions.",
+                        "error": "all_models_failed",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "system_state": system_state
+                    }
+                
+                # Success - add metadata
+                logger.info(f"AI chat used model: {model_used}, key_source: {key_source}")
+                
+                # Check if AI recommends an action
+                if request_action and any(keyword in content.lower() for keyword in ['start', 'pause', 'stop', 'emergency']):
+                    # Detect action intent
+                    action_detected = None
+                    params = {}
+                    requires_confirmation = False
                     
-                    response = await client.chat.completions.create(
-                        model="gpt-4o-mini",  # Use cheap model for chat
-                        messages=[
-                            {"role": "system", "content": context},
-                            {"role": "user", "content": content}
-                        ],
-                        max_tokens=500,
-                        temperature=0.7
-                    )
-                    
-                    ai_response = response.choices[0].message.content
-                    
-                    # Check if AI recommends an action
-                    if request_action and any(keyword in content.lower() for keyword in ['start', 'pause', 'stop', 'emergency']):
-                        # Detect action intent
-                        action_detected = None
-                        params = {}
+                    if 'emergency' in content.lower() and 'stop' in content.lower():
+                        action_detected = 'emergency_stop'
+                        requires_confirmation = True
+                    elif 'pause' in content.lower():
+                        action_detected = 'pause_bot'
                         requires_confirmation = False
-                        
-                        if 'emergency' in content.lower() and 'stop' in content.lower():
-                            action_detected = 'emergency_stop'
-                            requires_confirmation = True
-                        elif 'pause' in content.lower():
-                            action_detected = 'pause_bot'
-                            requires_confirmation = False
-                        # Add more action detection logic...
-                        
-                        if action_detected:
-                            if requires_confirmation:
-                                # Generate confirmation token
-                                import uuid
-                                token = str(uuid.uuid4())
-                                confirmation_tokens[token] = {
-                                    "user_id": user_id,
-                                    "action": action_detected,
-                                    "params": params,
-                                    "created_at": datetime.now(timezone.utc).isoformat()
-                                }
-                                
-                                ai_response += f"\n\n⚠️ **This is a dangerous action that requires confirmation.**\n"
-                                ai_response += f"To proceed, reply with confirmation token: `{token}`"
-                            else:
-                                # Safe action - execute immediately
-                                result = await action_router.execute_action(action_detected, params, user_id)
-                                ai_response += f"\n\n✅ Action executed: {result}"
+                    # Add more action detection logic...
+                    
+                    if action_detected:
+                        if requires_confirmation:
+                            # Generate confirmation token
+                            import uuid
+                            token = str(uuid.uuid4())
+                            confirmation_tokens[token] = {
+                                "user_id": user_id,
+                                "action": action_detected,
+                                "params": params,
+                                "created_at": datetime.now(timezone.utc).isoformat()
+                            }
+                            
+                            ai_response += f"\n\n⚠️ **This is a dangerous action that requires confirmation.**\n"
+                            ai_response += f"To proceed, reply with confirmation token: `{token}`"
+                        else:
+                            # Safe action - execute immediately
+                            result = await action_router.execute_action(action_detected, params, user_id)
+                            ai_response += f"\n\n✅ Action executed: {result}"
             
             except Exception as e:
                 logger.error(f"OpenAI API error: {e}")
                 ai_response = "I'm having trouble connecting to my AI services. Please try again."
+                key_source = None
+                model_used = None
         
         # Save AI response
         ai_msg = {
@@ -326,6 +382,8 @@ Instructions:
         return {
             "role": "assistant",
             "content": ai_response,
+            "key_source": key_source if 'key_source' in locals() else None,
+            "model_used": model_used if 'model_used' in locals() else None,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "system_state": system_state
         }

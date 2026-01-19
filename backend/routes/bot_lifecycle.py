@@ -18,6 +18,85 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/bots", tags=["Bot Lifecycle"])
 
 
+@router.get("/status")
+async def get_bots_status(user_id: str = Depends(get_current_user)):
+    """Get bot status list with states for bot management
+    
+    Returns all bots with detailed status including training states
+    
+    Args:
+        user_id: Current user ID (from auth)
+        
+    Returns:
+        List of bots with id, exchange, state, paused_reason, etc.
+    """
+    try:
+        bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
+        
+        # Enrich each bot with detailed state
+        enriched_bots = []
+        for bot in bots:
+            status = bot.get('status', 'unknown')
+            
+            # Map status to standard states
+            if status == 'active':
+                state = 'active'
+            elif status == 'paused':
+                # Check if ready to activate (paused_ready)
+                if bot.get('training_complete') and bot.get('paused_by_user'):
+                    state = 'paused_ready'
+                else:
+                    state = 'paused'
+            elif status == 'stopped':
+                state = 'stopped'
+            elif status == 'training' or bot.get('training_in_progress'):
+                state = 'training'
+            elif status == 'training_failed' or bot.get('training_failed'):
+                state = 'training_failed'
+            else:
+                state = status
+            
+            enriched_bot = {
+                "id": bot.get('id'),
+                "name": bot.get('name'),
+                "exchange": bot.get('exchange', 'unknown'),
+                "state": state,
+                "status": status,  # Keep original for compatibility
+                "paused_reason": bot.get('pause_reason'),
+                "paused_by_user": bot.get('paused_by_user', False),
+                "paused_by_system": bot.get('paused_by_system', False),
+                "trading_mode": bot.get('trading_mode', 'paper'),
+                "current_capital": bot.get('current_capital', 0),
+                "total_profit": bot.get('total_profit', 0),
+                "trades_count": bot.get('trades_count', 0),
+                "training_complete": bot.get('training_complete', False),
+                "training_failed_reason": bot.get('training_failed_reason'),
+                "created_at": bot.get('created_at'),
+                "started_at": bot.get('started_at'),
+                "paused_at": bot.get('paused_at'),
+                "stopped_at": bot.get('stopped_at')
+            }
+            enriched_bots.append(enriched_bot)
+        
+        # Count by exchange to ensure all 5 are represented
+        exchange_counts = {}
+        all_exchanges = ['luno', 'binance', 'kucoin', 'ovex', 'valr']
+        for exchange in all_exchanges:
+            exchange_counts[exchange] = len([b for b in enriched_bots if b.get('exchange') == exchange])
+        
+        return {
+            "success": True,
+            "bots": enriched_bots,
+            "total": len(enriched_bots),
+            "exchange_counts": exchange_counts,
+            "all_exchanges": all_exchanges
+        }
+        
+    except Exception as e:
+        logger.error(f"Get bots status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/{bot_id}/start")
 async def start_bot(bot_id: str, user_id: str = Depends(get_current_user)):
     """Start a bot's trading activity
@@ -223,8 +302,10 @@ async def pause_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Dep
 
 @router.post("/{bot_id}/resume")
 @router.put("/{bot_id}/resume")
+@router.post("/{bot_id}/unpause")
+@router.put("/{bot_id}/unpause")
 async def resume_bot(bot_id: str, user_id: str = Depends(get_current_user)):
-    """Resume a paused bot's trading activity
+    """Resume a paused bot's trading activity (also /unpause alias)
     
     Accepts both POST and PUT methods for compatibility with frontend
     

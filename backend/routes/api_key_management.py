@@ -200,48 +200,116 @@ async def test_api_key(
                     }
         
         elif provider == "openai":
-            # Test OpenAI API key with openai>=1.x
+            # Test OpenAI API key with openai>=1.x WITH MODEL FALLBACK
             import os
             
             try:
                 # Use AsyncOpenAI client (openai>=1.x)
                 from openai import AsyncOpenAI
                 
-                # Use provided model or default to cheap model
-                test_model = model or os.getenv("OPENAI_TEST_MODEL", "gpt-4o-mini")
+                # Build model fallback list (ordered by preference)
+                # Priority: requested model -> OPENAI_FALLBACK_MODEL -> safe allowlist
+                fallback_models = []
+                if model:
+                    fallback_models.append(model)
+                fallback_env = os.getenv("OPENAI_FALLBACK_MODEL")
+                if fallback_env:
+                    fallback_models.append(fallback_env)
+                
+                # Safe ordered allowlist (most reliable models first)
+                allowlist = ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o", "gpt-3.5-turbo", "gpt-4"]
+                for m in allowlist:
+                    if m not in fallback_models:
+                        fallback_models.append(m)
                 
                 # Create client with provided API key
                 client = AsyncOpenAI(api_key=api_key)
                 
-                # Simple test call
-                response = await client.chat.completions.create(
-                    model=test_model,
-                    messages=[{"role": "user", "content": "test"}],
-                    max_tokens=5
-                )
+                # Try each model in fallback order
+                model_used = None
+                last_error = None
+                error_code = None
                 
-                # Update test metadata
-                await db.api_keys_collection.update_one(
-                    {"user_id": user_id_str, "provider": provider},
-                    {"$set": {
-                        "last_tested_at": timestamp,
-                        "last_test_ok": True,
-                        "last_test_error": None
-                    }},
-                    upsert=False
-                )
+                for test_model in fallback_models:
+                    try:
+                        # Simple test call
+                        response = await client.chat.completions.create(
+                            model=test_model,
+                            messages=[{"role": "user", "content": "test"}],
+                            max_tokens=5
+                        )
+                        # Success! Use this model
+                        model_used = test_model
+                        break
+                    except Exception as model_error:
+                        error_str = str(model_error)
+                        last_error = error_str
+                        
+                        # Detect error type
+                        if "404" in error_str or "model_not_found" in error_str.lower():
+                            error_code = "model_not_found"
+                            logger.info(f"Model {test_model} not found, trying next fallback")
+                            continue
+                        elif "403" in error_str or "forbidden" in error_str.lower():
+                            error_code = "model_forbidden"
+                            logger.info(f"Model {test_model} forbidden, trying next fallback")
+                            continue
+                        else:
+                            # Other error (likely auth or API issue) - don't continue fallback
+                            error_code = "api_error"
+                            break
                 
-                return {
-                    "ok": True,
-                    "success": True,
-                    "message": "✅ OpenAI API key validated successfully",
-                    "provider": provider,
-                    "test_data": {
-                        "model_accessible": True,
-                        "test_model": test_model,
-                        "models": ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo", "gpt-4"]
+                # Determine key source
+                key_source = "user" if not api_key else "user"  # Always user for this test
+                
+                if model_used:
+                    # Success - update test metadata
+                    await db.api_keys_collection.update_one(
+                        {"user_id": user_id_str, "provider": provider},
+                        {"$set": {
+                            "last_tested_at": timestamp,
+                            "last_test_ok": True,
+                            "last_test_error": None,
+                            "model_used_last": model_used
+                        }},
+                        upsert=False
+                    )
+                    
+                    return {
+                        "ok": True,
+                        "success": True,
+                        "message": f"✅ OpenAI API key validated successfully",
+                        "provider": provider,
+                        "model_used": model_used,
+                        "key_source": key_source,
+                        "test_data": {
+                            "model_accessible": True,
+                            "test_model": model_used,
+                            "models": allowlist
+                        }
                     }
-                }
+                else:
+                    # All models failed
+                    await db.api_keys_collection.update_one(
+                        {"user_id": user_id_str, "provider": provider},
+                        {"$set": {
+                            "last_tested_at": timestamp,
+                            "last_test_ok": False,
+                            "last_test_error": last_error[:500] if last_error else "All models failed"
+                        }},
+                        upsert=False
+                    )
+                    
+                    return {
+                        "ok": False,
+                        "success": False,
+                        "message": f"❌ OpenAI API test failed (tried {len(fallback_models)} models)",
+                        "provider": provider,
+                        "error_code": error_code,
+                        "error_message": last_error[:200] if last_error else "All models failed",
+                        "models_tried": fallback_models
+                    }
+                    
             except ImportError as e:
                 # Fallback error for missing openai library
                 error_msg = "OpenAI library not installed or version incompatible"
@@ -258,7 +326,8 @@ async def test_api_key(
                     "ok": False,
                     "success": False,
                     "message": "❌ OpenAI library configuration error",
-                    "error": error_msg
+                    "error_code": "import_error",
+                    "error_message": error_msg
                 }
             except Exception as e:
                 error_msg = str(e)
@@ -280,14 +349,18 @@ async def test_api_key(
                         "ok": False,
                         "success": False,
                         "message": "❌ Invalid OpenAI API key",
-                        "error": "Authentication failed - check your API key"
+                        "provider": provider,
+                        "error_code": "auth_failed",
+                        "error_message": "Authentication failed - check your API key"
                     }
                 else:
                     return {
                         "ok": False,
                         "success": False,
                         "message": "❌ OpenAI API test failed",
-                        "error": error_msg
+                        "provider": provider,
+                        "error_code": "api_error",
+                        "error_message": error_msg
                     }
         
         else:
