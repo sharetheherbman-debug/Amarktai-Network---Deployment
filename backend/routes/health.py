@@ -83,6 +83,39 @@ async def preflight_check() -> dict:
         else:
             services["ccxt"] = "skipped"
         
+        # Paper trading DB check (required for paper trading mode)
+        try:
+            # Check if paper trading engine can access DB collections
+            if db.bots_collection is not None and db.trades_collection is not None:
+                services["paper_trading_db"] = "ok"
+            else:
+                services["paper_trading_db"] = "error"
+        except Exception as e:
+            logger.warning(f"Preflight paper trading DB check failed: {e}")
+            services["paper_trading_db"] = "error"
+        
+        # OpenAI key source check (for AI features)
+        env_openai_key = os.getenv("OPENAI_API_KEY")
+        if env_openai_key:
+            services["openai_key_source"] = "env"
+        else:
+            services["openai_key_source"] = "none"
+        
+        # Note: Cannot check user-saved keys without authentication in preflight
+        # User-saved keys would override env in actual usage
+        
+        # API keys count (global count - no user context in preflight)
+        keys = {}
+        try:
+            if db.api_keys_collection is not None:
+                total_count = await db.api_keys_collection.count_documents({})
+                keys["saved_count_global"] = total_count
+            else:
+                keys["saved_count_global"] = 0
+        except Exception as e:
+            logger.warning(f"Preflight keys count check failed: {e}")
+            keys["saved_count_global"] = 0
+        
         # Auth configuration check
         jwt_secret = os.getenv("JWT_SECRET", "")
         auth = {
@@ -128,6 +161,7 @@ async def preflight_check() -> dict:
             "routers": routers,
             "services": services,
             "auth": auth,
+            "keys": keys,
         }
         
         if not ok:
