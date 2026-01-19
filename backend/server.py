@@ -134,11 +134,15 @@ async def lifespan(app: FastAPI):
         logger.info("📅 Schedulers disabled (ENABLE_SCHEDULERS=0)")
     
     if enable_trading:
-        try:
-            trading_scheduler.start()
-            logger.info("💹 Paper Trading Scheduler started")
-        except Exception as e:
-            logger.error(f"Failed to start Trading Scheduler: {e}")
+        # Start trading scheduler only if schedulers are enabled
+        if enable_schedulers:
+            try:
+                trading_scheduler.start()
+                logger.info("💹 Trading Scheduler started")
+            except Exception as e:
+                logger.error(f"Failed to start Trading Scheduler: {e}")
+        else:
+            logger.info("💹 Trading Scheduler disabled (ENABLE_SCHEDULERS=0)")
         
         try:
             from engines.trading_engine_production import trading_engine

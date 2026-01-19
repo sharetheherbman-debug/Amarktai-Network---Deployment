@@ -47,6 +47,7 @@ notifications_collection = None
 reports_collection = None
 promotion_requests_collection = None
 decisions_collection = None  # AI trading decisions and reasoning
+reinvest_requests_collection = None  # Profit reinvestment requests
 
 # Autopilot and detection
 autopilot_actions_collection = None
@@ -150,6 +151,7 @@ async def setup_collections():
     global risk_profiles_collection, market_regimes_collection
     global learning_data_collection, learning_logs_collection, audit_logs_collection
     global notifications_collection, reports_collection, promotion_requests_collection
+    global decisions_collection, reinvest_requests_collection
     global autopilot_actions_collection, rogue_detections_collection
     global emergency_stop_collection
     global wallet_balances_collection, capital_injections_collection
@@ -189,6 +191,7 @@ async def setup_collections():
     reports_collection = db.reports
     promotion_requests_collection = db.promotion_requests
     decisions_collection = db.decisions  # AI trading decisions
+    reinvest_requests_collection = db.reinvest_requests  # Profit reinvestment requests
     
     # Autopilot and detection
     autopilot_actions_collection = db.autopilot_actions

@@ -379,6 +379,85 @@ sudo systemctl start amarktai-api
 sudo systemctl status amarktai-api
 ```
 
+## Go-Live Runtime Verification
+
+After deployment, verify that critical runtime features are working correctly using the automated test script.
+
+### Prerequisites
+
+1. Server must be running (either locally or on VPS)
+2. At least one user account with an OpenAI API key saved
+3. User credentials (email/password)
+
+### Running the Verifier
+
+```bash
+# Set credentials via environment variables
+export EMAIL='your-email@example.com'
+export PASSWORD='your-password'
+
+# Run the verifier (against local server)
+python3 verify_go_live_runtime.py
+
+# Or against a remote server
+export BASE_URL='https://your-vps-domain.com'
+python3 verify_go_live_runtime.py
+
+# Or pass credentials as arguments
+python3 verify_go_live_runtime.py your-email@example.com your-password
+```
+
+### Expected Output (PASS)
+
+```
+============================================================
+🚀 GO-LIVE RUNTIME VERIFICATION
+============================================================
+🔐 Logging in as your-email@example.com...
+✅ Login successful
+
+📋 Test 1: Preflight Check
+  Endpoint: GET /api/health/preflight
+  ✅ PASS - Preflight OK
+
+📋 Test 2: API Keys List
+  Endpoint: GET /api/keys/list
+  ✅ PASS - Found 1 OpenAI key(s)
+
+📋 Test 3: API Key Test
+  Endpoint: POST /api/keys/test
+  ✅ PASS - Key test successful: ✅ OpenAI API key validated successfully
+
+📋 Test 4: AI Chat
+  Endpoint: POST /api/ai/chat
+  ✅ PASS - AI chat responded: As an AI trading assistant...
+
+============================================================
+📊 RESULTS
+============================================================
+  ✅ Passed: 4
+  ❌ Failed: 0
+
+🎉 ALL TESTS PASSED - Go-Live Runtime Ready!
+============================================================
+```
+
+### What the Verifier Tests
+
+1. **Preflight Check** - Verifies server health and basic connectivity
+2. **API Keys List** - Confirms at least one OpenAI key is saved for the user
+3. **API Key Test** - Tests the key using saved credentials (no key in request body)
+4. **AI Chat** - Verifies AI chat works with saved user key (not environment variable)
+
+### Troubleshooting
+
+If tests fail:
+
+1. **Login Failed** - Check credentials are correct
+2. **No OpenAI Keys** - Save an OpenAI key in Dashboard under API Keys
+3. **Key Test Failed** - Verify the saved key is valid on OpenAI platform
+4. **AI Chat Error** - Check server logs for OpenAI API errors
+
 ## Contact
 
 If issues persist after following this guide, collect:
