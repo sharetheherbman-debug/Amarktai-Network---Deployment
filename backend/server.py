@@ -877,78 +877,15 @@ async def update_system_mode(data: dict, user_id: str = Depends(get_current_user
 
 @api_router.get("/overview")
 async def get_overview(user_id: str = Depends(get_current_user), include_wallet: bool = False):
-    """Get dashboard overview - FIXED with accurate counts + mode display
+    """Get dashboard overview - Uses centralized metrics service
     
     Query params:
         include_wallet: If true, includes live Luno wallet balances (slower but live data)
     """
     try:
-        bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
-        
-        # Accurate counts
-        active_bots = [b for b in bots if b.get('status') == 'active']
-        total_bots = len(bots)
-        active_count = len(active_bots)
-        
-        # Count by mode
-        paper_bots = len([b for b in active_bots if b.get('trading_mode') == 'paper'])
-        live_bots = len([b for b in active_bots if b.get('trading_mode') == 'live'])
-        
-        # Calculate REAL total profit (excludes capital injections)
-        from engines.capital_injection_tracker import capital_tracker
-        
-        total_current = sum(bot.get('current_capital', 0) for bot in active_bots)
-        total_initial = sum(bot.get('initial_capital', 0) for bot in active_bots)
-        total_injections = sum(bot.get('total_injections', 0) for bot in active_bots)
-        
-        # Real profit = (current - initial) - injections
-        gross_profit = total_current - total_initial
-        total_profit = gross_profit - total_injections
-        
-        # Calculate REAL 24h change from actual trades
-        twenty_four_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-        recent_trades = await db.trades_collection.find({
-            "user_id": user_id,
-            "timestamp": {"$gte": twenty_four_hours_ago}
-        }, {"_id": 0}).to_list(10000)
-        
-        profit_24h = sum(t.get('profit_loss', 0) for t in recent_trades)
-        change_24h_pct = (profit_24h / total_initial * 100) if total_initial > 0 else 0
-        
-        # Calculate exposure
-        total_capital = sum(bot.get('current_capital', 0) for bot in active_bots)
-        exposure = (total_capital / (total_capital + 1000)) * 100 if total_capital > 0 else 0
-        
-        # Get system modes
-        modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
-        
-        # Determine display text
-        if live_bots > 0:
-            bot_display = f"{active_count} active / {total_bots} ({live_bots} live, {paper_bots} paper)"
-        else:
-            bot_display = f"{active_count} active / {total_bots} (paper)"
-        
-        trading_status = "Live Trading" if modes and modes.get('liveTrading') else "Paper Trading" if modes and modes.get('paperTrading') else "Inactive"
-        
-        result = {
-            "totalProfit": round(total_profit, 2),
-            "total_profit": round(total_profit, 2),
-            "change_24h": round(profit_24h, 2),
-            "change_24h_pct": round(change_24h_pct, 2),
-            "activeBots": bot_display,
-            "active_bots": active_count,
-            "total_bots": total_bots,
-            "paper_bots": paper_bots,
-            "live_bots": live_bots,
-            "exposure": round(exposure, 2),
-            "riskLevel": "Low" if exposure < 50 else "Medium" if exposure < 75 else "High",
-            "risk_level": "Low" if exposure < 50 else "Medium" if exposure < 75 else "High",
-            "aiSentiment": "Bullish" if change_24h_pct > 0 else "Bearish" if change_24h_pct < 0 else "Neutral",
-            "ai_sentiment": "Bullish" if change_24h_pct > 0 else "Bearish" if change_24h_pct < 0 else "Neutral",
-            "lastUpdate": datetime.now(timezone.utc).isoformat(),
-            "last_update": datetime.now(timezone.utc).isoformat(),
-            "tradingStatus": trading_status
-        }
+        # Use centralized metrics service
+        from services.metrics_service import metrics_service
+        result = await metrics_service.get_overview_metrics(user_id)
         
         # Optionally include live wallet balances
         if include_wallet:
@@ -970,6 +907,8 @@ async def get_overview(user_id: str = Depends(get_current_user), include_wallet:
             "activeBots": "0 / 0",
             "active_bots": 0,
             "total_bots": 0,
+            "paper_bots": 0,
+            "live_bots": 0,
             "exposure": 0.00,
             "riskLevel": "Unknown",
             "risk_level": "Unknown",

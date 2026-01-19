@@ -146,8 +146,13 @@ async def start_bot(bot_id: str, user_id: str = Depends(get_current_user)):
         # Get updated bot
         updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
         
-        # Send real-time notification
+        # Send real-time notifications
         await rt_events.bot_resumed(user_id, updated_bot)
+        
+        # Also broadcast overview and platform stats updates
+        from services.realtime_service import realtime_service
+        await realtime_service.broadcast_overview_update(user_id, f"Bot started: {bot['name']}")
+        await realtime_service.broadcast_platform_stats_update(user_id, bot.get('exchange'))
         
         logger.info(f"✅ Bot {bot['name']} started by user {user_id[:8]}")
         
@@ -210,12 +215,17 @@ async def stop_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Depe
         # Get updated bot
         updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
         
-        # Send real-time notification
+        # Send real-time notifications
         await manager.send_message(user_id, {
             "type": "bot_stopped",
             "bot": updated_bot,
             "message": f"⏹️ Bot '{bot['name']}' stopped"
         })
+        
+        # Also broadcast overview and platform stats updates
+        from services.realtime_service import realtime_service
+        await realtime_service.broadcast_overview_update(user_id, f"Bot stopped: {bot['name']}")
+        await realtime_service.broadcast_platform_stats_update(user_id, bot.get('exchange'))
         
         logger.info(f"✅ Bot {bot['name']} stopped by user {user_id[:8]}")
         
@@ -282,8 +292,13 @@ async def pause_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Dep
         # Get updated bot
         updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
         
-        # Send real-time notification
+        # Send real-time notifications
         await rt_events.bot_paused(user_id, updated_bot)
+        
+        # Also broadcast overview and platform stats updates
+        from services.realtime_service import realtime_service
+        await realtime_service.broadcast_overview_update(user_id, f"Bot paused: {bot['name']}")
+        await realtime_service.broadcast_platform_stats_update(user_id, bot.get('exchange'))
         
         logger.info(f"✅ Bot {bot['name']} paused by user {user_id[:8]}")
         
@@ -686,4 +701,80 @@ async def toggle_bot_trading(bot_id: str, data: Dict, user_id: str = Depends(get
         raise
     except Exception as e:
         logger.error(f"Toggle bot trading error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{bot_id}")
+async def delete_bot(
+    bot_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """Delete a bot permanently
+    
+    Soft-deletes the bot by setting status to 'deleted' rather than removing from DB.
+    This preserves historical data for analytics while removing bot from active use.
+    Broadcasts realtime events for immediate UI update.
+    
+    Args:
+        bot_id: Bot ID to delete
+        user_id: Current user ID (from auth)
+        
+    Returns:
+        Success response with deletion confirmation
+    """
+    try:
+        # Get bot and verify ownership
+        bot = await db.bots_collection.find_one(
+            {"id": bot_id, "user_id": user_id},
+            {"_id": 0}
+        )
+        
+        if not bot:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Bot {bot_id} not found or access denied"
+            )
+        
+        bot_name = bot.get('name', 'Unknown')
+        
+        # Soft delete: mark as deleted but keep in DB for history
+        await db.bots_collection.update_one(
+            {"id": bot_id},
+            {
+                "$set": {
+                    "status": "deleted",
+                    "deleted_at": datetime.now(timezone.utc).isoformat(),
+                    "deleted_by": user_id
+                }
+            }
+        )
+        
+        # Broadcast realtime events
+        from services.realtime_service import realtime_service
+        
+        # Bot deleted event
+        await rt_events.bot_deleted(user_id, bot_name)
+        
+        # Update overview, profits, and platform stats
+        await realtime_service.broadcast_overview_update(user_id, f"Bot deleted: {bot_name}")
+        await realtime_service.broadcast_profits_update(user_id, f"Bot deleted: {bot_name}")
+        
+        # Update platform stats for the bot's exchange
+        exchange = bot.get('exchange')
+        if exchange:
+            await realtime_service.broadcast_platform_stats_update(user_id, exchange)
+        
+        logger.info(f"Bot {bot_id} ({bot_name}) deleted by user {user_id[:8]}")
+        
+        return {
+            "success": True,
+            "message": f"Bot '{bot_name}' deleted successfully",
+            "bot_id": bot_id,
+            "bot_name": bot_name
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Delete bot error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
