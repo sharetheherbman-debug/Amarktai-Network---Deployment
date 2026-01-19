@@ -1,6 +1,7 @@
 """
 Bot Creation Validator
 Validates all bot creation parameters before database insertion
+Uses canonical platform registry
 """
 
 import asyncio
@@ -11,6 +12,14 @@ import logging
 import database as db
 from error_codes import ErrorCode, insufficient_funds_error
 from engines.wallet_manager import wallet_manager
+from config.platforms import (
+    is_valid_platform,
+    get_max_bots,
+    validate_platform_for_mode,
+    normalize_platform_id,
+    SUPPORTED_PLATFORMS,
+    TOTAL_BOT_CAPACITY
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,17 +27,11 @@ class BotValidator:
     """Validates bot creation parameters"""
     
     def __init__(self):
-        self.supported_exchanges = ['luno', 'binance', 'kucoin', 'ovex', 'valr']
+        # Use canonical platform configuration
+        self.supported_exchanges = SUPPORTED_PLATFORMS
         self.min_capital = 100  # R100 minimum
         self.max_capital = 100000  # R100,000 maximum
-        self.max_bots_per_exchange = {
-            'luno': 5,
-            'binance': 10,
-            'kucoin': 10,
-            'ovex': 10,
-            'valr': 10
-        }
-        self.max_bots_total = 45
+        self.max_bots_total = TOTAL_BOT_CAPACITY
     
     async def validate_bot_creation(self, user_id: str, bot_data: Dict) -> Tuple[bool, Dict]:
         """
@@ -40,15 +43,29 @@ class BotValidator:
             If invalid: (False, error_dict)
         """
         
-        # 1. Validate exchange
-        exchange = bot_data.get('exchange', '').lower()
-        if exchange not in self.supported_exchanges:
+        # 1. Validate exchange using canonical registry
+        exchange_raw = bot_data.get('exchange', '')
+        exchange = normalize_platform_id(exchange_raw)
+        
+        if not is_valid_platform(exchange):
             return False, ErrorCode.format_error(
                 ErrorCode.INVALID_EXCHANGE,
-                exchange=bot_data.get('exchange', 'Unknown')
+                exchange=exchange_raw
             )
         
-        # 2. Validate capital amount
+        # Normalize exchange in bot data
+        bot_data['exchange'] = exchange
+        
+        # 2. Validate trading mode for platform
+        trading_mode = bot_data.get('trading_mode', 'paper')
+        is_mode_valid, mode_error = validate_platform_for_mode(exchange, trading_mode)
+        if not is_mode_valid:
+            return False, ErrorCode.format_error(
+                ErrorCode.VALIDATION_ERROR,
+                details=mode_error
+            )
+        
+        # 3. Validate capital amount
         capital = bot_data.get('capital', 0)
         if capital < self.min_capital or capital > self.max_capital:
             return False, ErrorCode.format_error(
@@ -57,7 +74,7 @@ class BotValidator:
                 max=self.max_capital
             )
         
-        # 3. Check bot name uniqueness
+        # 4. Check bot name uniqueness
         name = bot_data.get('name', '').strip()
         if not name:
             return False, ErrorCode.format_error(
@@ -76,13 +93,13 @@ class BotValidator:
                 name=name
             )
         
-        # 4. Check exchange bot limit
+        # 5. Check exchange bot limit using canonical config
         exchange_bot_count = await db.bots_collection.count_documents({
             "user_id": user_id,
             "exchange": exchange
         })
         
-        max_for_exchange = self.max_bots_per_exchange.get(exchange, 10)
+        max_for_exchange = get_max_bots(exchange)
         if exchange_bot_count >= max_for_exchange:
             return False, ErrorCode.format_error(
                 ErrorCode.EXCHANGE_BOT_LIMIT_REACHED,
@@ -91,7 +108,7 @@ class BotValidator:
                 max=max_for_exchange
             )
         
-        # 5. Check total bot limit
+        # 6. Check total bot limit
         total_bots = await db.bots_collection.count_documents({"user_id": user_id})
         if total_bots >= self.max_bots_total:
             return False, {
