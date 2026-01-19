@@ -3097,6 +3097,7 @@ routers_to_mount = [
     ("routes.system_health_endpoints", "System Health"),
     ("routes.admin_endpoints", "Admin"),
     ("routes.bot_lifecycle", "Bot Lifecycle"),
+    ("routes.training", "Bot Training"),
     ("routes.system_limits", "System Limits"),
     ("routes.live_trading_gate", "Live Trading Gate"),
     ("routes.analytics_api", "Analytics API"),

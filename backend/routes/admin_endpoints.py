@@ -969,6 +969,80 @@ async def get_user_api_keys_status(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/bots/eligible-for-live")
+async def get_eligible_bots_for_live(admin_user_id: str = Depends(verify_admin)):
+    """
+    Get list of bots eligible for live promotion
+    Shows only eligible bots for admin override dropdown:
+    - paused_ready state (training complete, paused)
+    - active paper bots
+    
+    Excludes:
+    - Already live bots
+    - Training bots
+    - Training failed bots
+    - Stopped bots
+    
+    Returns:
+        List of eligible bots with user info
+    """
+    try:
+        # Find all bots that are:
+        # 1. In paper mode (trading_mode == 'paper')
+        # 2. Either active or paused with training_complete
+        # 3. Not already in live mode
+        eligible_bots = await db.bots_collection.find(
+            {
+                "$and": [
+                    {"trading_mode": {"$ne": "live"}},  # Not already live
+                    {"status": {"$in": ["active", "paused"]}},  # Active or paused
+                    {"status": {"$ne": "stopped"}},  # Not stopped
+                    {"status": {"$ne": "training_failed"}},  # Not training failed
+                    {
+                        "$or": [
+                            {"status": "active"},  # Active paper bots
+                            {"training_complete": True}  # Or training complete (paused_ready)
+                        ]
+                    }
+                ]
+            },
+            {"_id": 0}
+        ).to_list(1000)
+        
+        # Enrich with user info
+        enriched_bots = []
+        for bot in eligible_bots:
+            user_id = bot.get('user_id')
+            user = await db.users_collection.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+            
+            enriched_bot = {
+                "id": bot.get('id'),
+                "name": bot.get('name'),
+                "exchange": bot.get('exchange'),
+                "status": bot.get('status'),
+                "trading_mode": bot.get('trading_mode', 'paper'),
+                "current_capital": bot.get('current_capital', 0),
+                "total_profit": bot.get('total_profit', 0),
+                "trades_count": bot.get('trades_count', 0),
+                "win_rate": bot.get('win_rate', 0),
+                "training_complete": bot.get('training_complete', False),
+                "user_email": user.get('email') if user else 'unknown',
+                "user_name": user.get('name') if user else 'unknown',
+                "eligibility_reason": "Training complete" if bot.get('training_complete') else "Active paper bot"
+            }
+            enriched_bots.append(enriched_bot)
+        
+        return {
+            "success": True,
+            "eligible_bots": enriched_bots,
+            "total": len(enriched_bots)
+        }
+        
+    except Exception as e:
+        logger.error(f"Get eligible bots error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/bots/{bot_id}/override-live")
 async def override_bot_to_live(
     bot_id: str,
