@@ -44,6 +44,7 @@ class TradingEngineProduction:
             
             # Update bot capital
             new_capital = current_capital + net_profit
+            new_total_profit = bot.get('total_profit', 0) + net_profit
             
             # Update bot in database
             await db.bots_collection.update_one(
@@ -51,7 +52,7 @@ class TradingEngineProduction:
                 {
                     "$set": {
                         "current_capital": new_capital,
-                        "total_profit": bot.get('total_profit', 0) + net_profit
+                        "total_profit": new_total_profit
                     },
                     "$inc": {
                         "win_count" if net_profit > 0 else "loss_count": 1
@@ -90,7 +91,7 @@ class TradingEngineProduction:
                 from engines.risk_management import risk_management
                 await risk_management.set_position(
                     bot_id=bot['id'],
-                    entry_price=current_price,
+                    entry_price=trade['price'],  # Use the trade price
                     stop_loss_pct=2.0,  # 2% stop loss
                     take_profit_pct=5.0,  # 5% take profit
                     trailing_stop_pct=3.0  # 3% trailing stop

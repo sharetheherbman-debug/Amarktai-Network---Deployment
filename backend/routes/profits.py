@@ -44,8 +44,8 @@ async def get_profits(
         
         # Calculate total profit
         total_profit = sum(
-            t.get('profit', 0) for t in trades 
-            if t.get('status') == 'closed' and t.get('profit')
+            t.get('profit_loss', 0) for t in trades 
+            if t.get('status') == 'closed' and t.get('profit_loss') is not None
         )
         
         # Group by period
@@ -54,7 +54,7 @@ async def get_profits(
             # Group by day
             daily_profits = {}
             for trade in trades:
-                if trade.get('status') == 'closed' and trade.get('profit'):
+                if trade.get('status') == 'closed' and trade.get('profit_loss') is not None:
                     timestamp = trade.get('timestamp')
                     if isinstance(timestamp, str):
                         date = timestamp[:10]  # YYYY-MM-DD
@@ -63,7 +63,7 @@ async def get_profits(
                     
                     if date not in daily_profits:
                         daily_profits[date] = 0
-                    daily_profits[date] += trade.get('profit', 0)
+                    daily_profits[date] += trade.get('profit_loss', 0)
             
             # Convert to items list
             for date, profit in sorted(daily_profits.items(), reverse=True)[:30]:
@@ -77,7 +77,7 @@ async def get_profits(
             # Group by week
             weekly_profits = {}
             for trade in trades:
-                if trade.get('status') == 'closed' and trade.get('profit'):
+                if trade.get('status') == 'closed' and trade.get('profit_loss') is not None:
                     timestamp = trade.get('timestamp')
                     if isinstance(timestamp, str):
                         try:
@@ -90,7 +90,7 @@ async def get_profits(
                     
                     if week not in weekly_profits:
                         weekly_profits[week] = 0
-                    weekly_profits[week] += trade.get('profit', 0)
+                    weekly_profits[week] += trade.get('profit_loss', 0)
             
             # Convert to items list
             for week, profit in sorted(weekly_profits.items(), reverse=True)[:12]:
@@ -104,7 +104,7 @@ async def get_profits(
             # Group by month
             monthly_profits = {}
             for trade in trades:
-                if trade.get('status') == 'closed' and trade.get('profit'):
+                if trade.get('status') == 'closed' and trade.get('profit_loss') is not None:
                     timestamp = trade.get('timestamp')
                     if isinstance(timestamp, str):
                         month = timestamp[:7]  # YYYY-MM
@@ -113,7 +113,7 @@ async def get_profits(
                     
                     if month not in monthly_profits:
                         monthly_profits[month] = 0
-                    monthly_profits[month] += trade.get('profit', 0)
+                    monthly_profits[month] += trade.get('profit_loss', 0)
             
             # Convert to items list
             for month, profit in sorted(monthly_profits.items(), reverse=True)[:12]:
