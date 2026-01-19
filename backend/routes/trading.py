@@ -124,3 +124,87 @@ async def get_system_modes(user_id: str = Depends(get_current_user)):
     return modes
 
 
+@router.post("/system/mode/toggle")
+async def toggle_system_mode(data: dict, user_id: str = Depends(get_current_user)):
+    """Toggle system modes with mutual exclusion enforcement
+    
+    Enforces: paper vs live are mutually exclusive
+    - When paperTrading is enabled, liveTrading is disabled
+    - When liveTrading is enabled, paperTrading is disabled
+    
+    Args:
+        data: {mode: "paperTrading"|"liveTrading"|"autopilot", enabled: bool}
+        user_id: Current user ID from auth
+        
+    Returns:
+        Updated modes with mutual exclusion applied
+    """
+    try:
+        mode = data.get('mode')
+        enabled = data.get('enabled', False)
+        
+        if mode not in ['paperTrading', 'liveTrading', 'autopilot', 'emergencyStop']:
+            raise HTTPException(status_code=400, detail=f"Invalid mode: {mode}")
+        
+        # Get current modes
+        modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
+        if not modes:
+            modes = {
+                "user_id": user_id,
+                "paperTrading": False,
+                "liveTrading": False,
+                "autopilot": False,
+                "emergencyStop": False
+            }
+        
+        # Apply mutual exclusion for paper vs live
+        update_fields = {
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        if mode == 'paperTrading':
+            update_fields['paperTrading'] = enabled
+            if enabled:
+                # Enabling paper disables live
+                update_fields['liveTrading'] = False
+        elif mode == 'liveTrading':
+            update_fields['liveTrading'] = enabled
+            if enabled:
+                # Enabling live disables paper
+                update_fields['paperTrading'] = False
+        elif mode == 'autopilot':
+            update_fields['autopilot'] = enabled
+        elif mode == 'emergencyStop':
+            update_fields['emergencyStop'] = enabled
+        
+        # Update database
+        await db.system_modes_collection.update_one(
+            {"user_id": user_id},
+            {"$set": update_fields},
+            upsert=True
+        )
+        
+        # Get updated modes
+        updated_modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
+        
+        # Emit realtime event
+        from realtime_events import rt_events
+        await rt_events.system_mode_changed(user_id, mode, enabled)
+        
+        logger.info(f"Mode toggled for user {user_id[:8]}: {mode}={enabled}")
+        
+        return {
+            "success": True,
+            "message": f"{mode} {'enabled' if enabled else 'disabled'}",
+            "modes": updated_modes,
+            "mutual_exclusion_applied": (mode in ['paperTrading', 'liveTrading'] and enabled)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Toggle mode error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+

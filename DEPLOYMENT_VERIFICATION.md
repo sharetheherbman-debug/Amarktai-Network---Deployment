@@ -386,15 +386,18 @@ After deployment, verify that critical runtime features are working correctly us
 ### Prerequisites
 
 1. Server must be running (either locally or on VPS)
-2. At least one user account with an OpenAI API key saved
+2. At least one user account created
 3. User credentials (email/password)
 
-### Running the Verifier
+### Running the Go-Live Verifier (ALL GATES)
 
 ```bash
 # Set credentials via environment variables
 export EMAIL='your-email@example.com'
 export PASSWORD='your-password'
+export OPENAI_API_KEY='sk-...'  # Optional: for testing OpenAI key save
+export LUNO_API_KEY='...'  # Optional: for testing Luno key save
+export LUNO_API_SECRET='...'  # Optional: for testing Luno key save
 
 # Run the verifier (against local server)
 python3 verify_go_live_runtime.py
@@ -407,47 +410,263 @@ python3 verify_go_live_runtime.py
 python3 verify_go_live_runtime.py your-email@example.com your-password
 ```
 
-### Expected Output (PASS)
+### Manual Gate-by-Gate Verification
+
+#### Gate A: Keys (OpenAI + Luno) ✅
+
+Test model fallback with saved user keys:
+
+```bash
+# Login and get token
+TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"your@email.com","password":"yourpassword"}' \
+  | jq -r '.access_token')
+
+# Save OpenAI key
+curl -s -X POST http://localhost:8000/api/keys/save \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"openai","api_key":"sk-..."}' | jq '.'
+# Expected: {"success":true,"message":"Saved OPENAI API key",...}
+
+# Test OpenAI key with model fallback (should auto-fallback if model forbidden)
+curl -s -X POST http://localhost:8000/api/keys/test \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"openai"}' | jq '.'
+# Expected: {"ok":true,"model_used":"gpt-4o-mini","key_source":"user",...}
+
+# List saved keys
+curl -s http://localhost:8000/api/keys/list \
+  -H "Authorization: Bearer $TOKEN" | jq '.keys'
+# Expected: Array with openai key showing last_test_ok=true
+
+# Save Luno key
+curl -s -X POST http://localhost:8000/api/keys/save \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"luno","api_key":"...","api_secret":"..."}' | jq '.'
+# Expected: {"success":true,"message":"Saved LUNO API key",...}
+
+# Test Luno key
+curl -s -X POST http://localhost:8000/api/keys/test \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"luno"}' | jq '.'
+# Expected: {"ok":true,"provider":"luno","test_data":{...}}
+```
+
+#### Gate B: AI Features ✅
+
+Test AI chat with canonical key retrieval:
+
+```bash
+# AI chat (uses saved OpenAI key from Gate A)
+curl -s -X POST http://localhost:8000/api/ai/chat \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"content":"What is my total profit?"}' | jq '.'
+# Expected: {"content":"...","key_source":"user","model_used":"gpt-4o-mini",...}
+
+# AI chat without key (should return deterministic error)
+curl -s -X POST http://localhost:8000/api/ai/chat \
+  -H "Authorization: Bearer $INVALID_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"content":"test"}' | jq '.'
+# Expected: {"error":"no_api_key","guidance":"Save your OpenAI API key...",...}
+```
+
+#### Gate C: Realtime Updates ✅
+
+Test realtime event stream:
+
+```bash
+# Subscribe to SSE events (run in background)
+curl -N -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8000/api/realtime/events &
+
+# In another terminal, trigger events:
+# 1. Save a key
+curl -s -X POST http://localhost:8000/api/keys/save \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"test","api_key":"test123"}' | jq '.'
+
+# 2. Toggle system mode
+curl -s -X POST http://localhost:8000/system/mode/toggle \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"paperTrading","enabled":true}' | jq '.'
+
+# Events should appear in SSE stream within 10s:
+# event: bot_update
+# event: system_mode_update
+# event: api_key_update
+```
+
+#### Gate D: Bot Management Controls ✅
+
+Test bot status and controls:
+
+```bash
+# Get bot status (shows all 5 exchanges)
+curl -s http://localhost:8000/api/bots/status \
+  -H "Authorization: Bearer $TOKEN" | jq '.exchange_counts'
+# Expected: {"luno":X,"binance":Y,"kucoin":Z,"ovex":A,"valr":B}
+# Also verify: ".all_exchanges" shows ["luno","binance","kucoin","ovex","valr"]
+
+# Get a bot ID
+BOT_ID=$(curl -s http://localhost:8000/api/bots/status \
+  -H "Authorization: Bearer $TOKEN" | jq -r '.bots[0].id')
+
+# Pause bot
+curl -s -X POST http://localhost:8000/api/bots/$BOT_ID/pause \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reason":"Testing pause"}' | jq '.bot.state'
+# Expected: "paused"
+
+# Unpause bot
+curl -s -X POST http://localhost:8000/api/bots/$BOT_ID/unpause \
+  -H "Authorization: Bearer $TOKEN" | jq '.bot.state'
+# Expected: "active"
+
+# Stop bot
+curl -s -X POST http://localhost:8000/api/bots/$BOT_ID/stop \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reason":"Testing stop"}' | jq '.bot.state'
+# Expected: "stopped"
+```
+
+#### Gate E: Mode Truth (Paper vs Live) ✅
+
+Test mutual exclusion:
+
+```bash
+# Get current modes
+curl -s http://localhost:8000/system/mode \
+  -H "Authorization: Bearer $TOKEN" | jq '.'
+
+# Enable paper trading (should disable live)
+curl -s -X POST http://localhost:8000/system/mode/toggle \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"paperTrading","enabled":true}' | jq '.modes'
+# Expected: {"paperTrading":true,"liveTrading":false,...}
+
+# Try to enable live trading (should disable paper)
+curl -s -X POST http://localhost:8000/system/mode/toggle \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"liveTrading","enabled":true}' | jq '.modes'
+# Expected: {"paperTrading":false,"liveTrading":true,...}
+# Also verify: ".mutual_exclusion_applied":true
+```
+
+#### Gate F: Admin Override UX ✅
+
+Test admin bot promotion dropdown (requires admin token):
+
+```bash
+# Login as admin
+ADMIN_TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@email.com","password":"adminpass"}' \
+  | jq -r '.access_token')
+
+# Get eligible bots for live promotion (dropdown selector)
+curl -s http://localhost:8000/api/admin/bots/eligible-for-live \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq '.eligible_bots'
+# Expected: Array of bots with training_complete=true OR active paper bots
+# Should NOT include: stopped, training_failed, already live bots
+
+# Promote a bot to live (requires confirmation in UI)
+ELIGIBLE_BOT_ID=$(curl -s http://localhost:8000/api/admin/bots/eligible-for-live \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq -r '.eligible_bots[0].id')
+
+curl -s -X POST http://localhost:8000/api/admin/bots/$ELIGIBLE_BOT_ID/override-live \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq '.'
+# Expected: {"success":true,"message":"Bot ... promoted to live trading (admin override)",...}
+```
+
+#### Gate G: Training Pipeline ✅
+
+Test training queue and promotion:
+
+```bash
+# Get training queue
+curl -s http://localhost:8000/api/training/queue \
+  -H "Authorization: Bearer $TOKEN" | jq '.'
+# Expected: {"training_bots":[...],"ready_for_promotion":N}
+
+# Get a training bot that passed evaluation
+TRAINING_BOT_ID=$(curl -s http://localhost:8000/api/training/queue \
+  -H "Authorization: Bearer $TOKEN" | jq -r '.training_bots[] | select(.evaluation.passed==true) | .id' | head -1)
+
+# Promote bot from training to paused_ready
+curl -s -X POST http://localhost:8000/api/training/$TRAINING_BOT_ID/promote \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"paper"}' | jq '.'
+# Expected: {"success":true,"message":"Bot ... training complete - ready for activation",...}
+
+# Verify bot is now in paused_ready state
+curl -s http://localhost:8000/api/bots/status \
+  -H "Authorization: Bearer $TOKEN" | jq ".bots[] | select(.id==\"$TRAINING_BOT_ID\") | .state"
+# Expected: "paused_ready" or "paused" with training_complete=true
+
+# Verify new bots never start live automatically
+# (this is enforced in bot creation - new bots must go through training first)
+```
+
+### Expected Output (ALL GATES PASS)
 
 ```
 ============================================================
-🚀 GO-LIVE RUNTIME VERIFICATION
+🚀 GO-LIVE GATES VERIFICATION
 ============================================================
-🔐 Logging in as your-email@example.com...
-✅ Login successful
 
-📋 Test 1: Preflight Check
-  Endpoint: GET /api/health/preflight
-  ✅ PASS - Preflight OK
+Gate A: Keys (OpenAI + Luno) ✅
+  - Model fallback: ✅ (gpt-4o-mini used)
+  - Key source: user ✅
+  - Luno save/test: ✅
 
-📋 Test 2: API Keys List
-  Endpoint: GET /api/keys/list
-  ✅ PASS - Found 1 OpenAI key(s)
+Gate B: AI Features ✅
+  - Canonical key retrieval: ✅
+  - Model fallback: ✅
+  - Deterministic errors: ✅
 
-📋 Test 3: API Key Test
-  Endpoint: POST /api/keys/test
-  ✅ PASS - Key test successful: ✅ OpenAI API key validated successfully
+Gate C: Realtime Updates ✅
+  - SSE stream active: ✅
+  - Events emitted within 10s: ✅
+  - Bot updates, mode changes, key saves: ✅
 
-📋 Test 4: AI Chat
-  Endpoint: POST /api/ai/chat
-  ✅ PASS - AI chat responded: As an AI trading assistant...
+Gate D: Bot Management ✅
+  - All 5 exchanges shown: ✅
+  - pause/unpause/stop work: ✅
+  - Status endpoint shows states: ✅
+
+Gate E: Mode Truth ✅
+  - Paper vs Live mutual exclusion: ✅
+  - Mode toggle enforced: ✅
+
+Gate F: Admin Override ✅
+  - Eligible bots dropdown: ✅
+  - Only paused_ready + active paper shown: ✅
+  - Override requires admin: ✅
+
+Gate G: Training Pipeline ✅
+  - Training queue shows bots: ✅
+  - Graduation criteria evaluated: ✅
+  - Promote to paused_ready works: ✅
+  - New bots never auto-start live: ✅
 
 ============================================================
-📊 RESULTS
-============================================================
-  ✅ Passed: 4
-  ❌ Failed: 0
-
-🎉 ALL TESTS PASSED - Go-Live Runtime Ready!
+🎉 ALL GO-LIVE GATES PASSED!
 ============================================================
 ```
-
-### What the Verifier Tests
-
-1. **Preflight Check** - Verifies server health and basic connectivity
-2. **API Keys List** - Confirms at least one OpenAI key is saved for the user
-3. **API Key Test** - Tests the key using saved credentials (no key in request body)
-4. **AI Chat** - Verifies AI chat works with saved user key (not environment variable)
 
 ### Troubleshooting
 
