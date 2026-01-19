@@ -10,6 +10,7 @@ import logging
 import os
 
 from auth import get_current_user
+from utils.env_utils import env_bool
 import database as db
 
 logger = logging.getLogger(__name__)
@@ -28,15 +29,6 @@ async def get_system_status(user_id: str = Depends(get_current_user)):
     - Database health
     """
     try:
-        # Helper function for consistent boolean parsing
-        def env_bool(name: str, default: bool = False) -> bool:
-            """Parse environment variable as boolean."""
-            value = os.getenv(name)
-            if value is None:
-                return default
-            value = value.strip().lower()
-            return value in {'1', 'true', 'yes', 'y', 'on'}
-        
         # Get feature flags using consistent parsing
         feature_flags = {
             "enable_trading": env_bool('ENABLE_TRADING', False),

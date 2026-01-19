@@ -25,34 +25,11 @@ from ai_service import ai_service
 from ccxt_service import ccxt_service
 from websocket_manager import manager
 from trading_scheduler import trading_scheduler
+from utils.env_utils import env_bool
 import ccxt.async_support as ccxt
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# ============================================================================
-# FEATURE FLAG HELPER
-# ============================================================================
-
-def env_bool(name: str, default: bool = False) -> bool:
-    """
-    Parse environment variable as boolean.
-    
-    Returns True for: '1', 'true', 'yes', 'y', 'on' (case-insensitive)
-    Returns default when variable is not set or empty.
-    
-    Args:
-        name: Environment variable name
-        default: Default value if variable is not set
-        
-    Returns:
-        Boolean value
-    """
-    value = os.getenv(name)
-    if value is None:
-        return default
-    value = value.strip().lower()
-    return value in {'1', 'true', 'yes', 'y', 'on'}
 
 api_router = APIRouter()
 api_router.include_router(auth_router)
@@ -3173,6 +3150,13 @@ except Exception as e:
 logger.info(f"📊 Router mounting complete: {len(mounted_routers)} mounted, {len(failed_routers)} failed")
 if failed_routers:
     logger.warning(f"⚠️ Failed routers: {', '.join([f[0] for f in failed_routers])}")
+
+# Update preflight endpoint with router status
+try:
+    from routes.health import set_router_status
+    set_router_status(mounted_routers, [f[0] for f in failed_routers])
+except Exception as e:
+    logger.warning(f"Could not update preflight router status: {e}")
 
 # ============================================================================
 # ROOT ENDPOINT
