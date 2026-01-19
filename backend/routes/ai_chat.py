@@ -207,14 +207,23 @@ async def ai_chat(
         else:
             # Generate AI response with OpenAI
             try:
-                import openai
-                import os
+                # Import get_decrypted_key to load user's saved key
+                from routes.api_key_management import get_decrypted_key
                 
-                openai.api_key = os.getenv('OPENAI_API_KEY', '')
+                # Load user's saved OpenAI key from database
+                key_data = await get_decrypted_key(user_id, "openai")
                 
-                if not openai.api_key:
-                    ai_response = "AI service not configured. Please set OPENAI_API_KEY."
+                if not key_data or not key_data.get("api_key"):
+                    ai_response = "AI service not configured. Please save your OpenAI API key in the Dashboard under API Keys."
                 else:
+                    user_api_key = key_data.get("api_key")
+                    
+                    # Use AsyncOpenAI client (openai>=1.x) with user's key
+                    from openai import AsyncOpenAI
+                    
+                    # Create client with user's API key
+                    client = AsyncOpenAI(api_key=user_api_key)
+                    
                     # Prepare context for AI
                     context = f"""You are an AI trading assistant for the Amarktai Network.
                     
@@ -241,8 +250,8 @@ Instructions:
 - Provide recommendations based on performance data
 """
                     
-                    response = openai.chat.completions.create(
-                        model="gpt-4",
+                    response = await client.chat.completions.create(
+                        model="gpt-4o-mini",  # Use cheap model for chat
                         messages=[
                             {"role": "system", "content": context},
                             {"role": "user", "content": content}
@@ -258,6 +267,7 @@ Instructions:
                         # Detect action intent
                         action_detected = None
                         params = {}
+                        requires_confirmation = False
                         
                         if 'emergency' in content.lower() and 'stop' in content.lower():
                             action_detected = 'emergency_stop'

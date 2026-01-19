@@ -15,6 +15,16 @@ from websocket_manager import manager
 
 logger = logging.getLogger(__name__)
 
+# Bot pause reason codes
+class BotPauseReason:
+    """Standardized bot pause reason codes"""
+    MODE_DISABLED = "MODE_DISABLED"  # Autopilot mode disabled
+    NO_EXCHANGE_KEYS = "NO_EXCHANGE_KEYS"  # No API keys configured for exchange
+    RISK_STOP = "RISK_STOP"  # Risk engine stopped bot
+    EMERGENCY_STOP = "EMERGENCY_STOP"  # Emergency stop activated
+    BUDGET_EXHAUSTED = "BUDGET_EXHAUSTED"  # Trading budget exhausted
+    USER_PAUSED = "USER_PAUSED"  # Manually paused by user
+
 class TradingScheduler:
     """CONTINUOUS STAGGERED TRADING - Uses trade_staggerer for 24/7 execution"""
     
@@ -35,25 +45,63 @@ class TradingScheduler:
             if not active_bots:
                 return
             
-            # Check each user's System Mode settings
+            # Check each user's System Mode settings and track reasons
             users_with_trading = {}
+            users_pause_reasons = {}
             for bot in active_bots:
                 user_id = bot['user_id']
                 if user_id not in users_with_trading:
                     modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
                     
-                    # Trading enabled if autopilot is ON
-                    if modes and modes.get('autopilot'):
-                        # Check emergency stop
-                        if not modes.get('emergencyStop', False):
-                            users_with_trading[user_id] = True
-                        else:
-                            users_with_trading[user_id] = False
-                    else:
+                    # Check various conditions
+                    if not modes:
                         users_with_trading[user_id] = False
+                        users_pause_reasons[user_id] = BotPauseReason.MODE_DISABLED
+                    elif modes.get('emergencyStop', False):
+                        users_with_trading[user_id] = False
+                        users_pause_reasons[user_id] = BotPauseReason.EMERGENCY_STOP
+                    elif not modes.get('autopilot'):
+                        users_with_trading[user_id] = False
+                        users_pause_reasons[user_id] = BotPauseReason.MODE_DISABLED
+                    else:
+                        # Autopilot is ON and no emergency stop
+                        users_with_trading[user_id] = True
+                        users_pause_reasons[user_id] = None
             
-            # Filter bots with trading enabled
+            # Update system_state to reflect paper trading status
+            for user_id in users_with_trading.keys():
+                if users_with_trading[user_id]:
+                    # Update system modes to show paperTrading=true by default for safety
+                    modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
+                    if modes:
+                        # Default to paper trading if liveTrading is not explicitly enabled
+                        is_live_trading = modes.get('liveTrading', False)
+                        is_paper_trading = not is_live_trading  # Paper by default
+                        
+                        await db.system_modes_collection.update_one(
+                            {"user_id": user_id},
+                            {"$set": {"paperTrading": is_paper_trading}},
+                            upsert=False
+                        )
+            
+            # Filter bots with trading enabled and pause others with reason
+            paused_bots = [bot for bot in active_bots if not users_with_trading.get(bot['user_id'], False)]
             active_bots = [bot for bot in active_bots if users_with_trading.get(bot['user_id'], False)]
+            
+            # Update paused bots with pause reason
+            for bot in paused_bots:
+                user_id = bot['user_id']
+                pause_reason = users_pause_reasons.get(user_id, BotPauseReason.MODE_DISABLED)
+                
+                await db.bots_collection.update_one(
+                    {"id": bot['id']},
+                    {"$set": {
+                        "status": "paused",
+                        "pause_reason": pause_reason,
+                        "paused_by_system": True,
+                        "paused_at": datetime.now(timezone.utc).isoformat()
+                    }}
+                )
             
             if not active_bots:
                 return

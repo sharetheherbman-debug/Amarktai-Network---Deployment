@@ -98,12 +98,22 @@ async def test_api_key(
         api_key = data.get("api_key") or data.get("apiKey")
         api_secret = data.get("api_secret") or data.get("apiSecret")
         exchange = data.get("exchange") or data.get("provider")
+        model = data.get("model")  # Optional model parameter
         
-        if not provider or not api_key:
-            raise HTTPException(status_code=400, detail="Provider and API key required")
+        if not provider:
+            raise HTTPException(status_code=400, detail="Provider required")
         
         # Ensure user_id is always stored as string
         user_id_str = str(user_id)
+        
+        # If api_key not provided, load saved key from database
+        if not api_key:
+            saved_key_data = await get_decrypted_key(user_id_str, provider)
+            if not saved_key_data:
+                raise HTTPException(status_code=400, detail=f"No saved key for provider {provider}")
+            api_key = saved_key_data.get("api_key")
+            api_secret = saved_key_data.get("api_secret")
+            exchange = saved_key_data.get("exchange") or provider
         
         from datetime import datetime, timezone
         timestamp = datetime.now(timezone.utc).isoformat()
@@ -144,10 +154,12 @@ async def test_api_key(
                         "last_tested_at": timestamp,
                         "last_test_ok": True,
                         "last_test_error": None
-                    }}
+                    }},
+                    upsert=False
                 )
                 
                 return {
+                    "ok": True,
                     "success": True,
                     "message": f"✅ {provider.upper()} API key validated successfully",
                     "provider": provider,
@@ -168,17 +180,20 @@ async def test_api_key(
                         "last_tested_at": timestamp,
                         "last_test_ok": False,
                         "last_test_error": error_msg[:500]  # Limit error length
-                    }}
+                    }},
+                    upsert=False
                 )
                 
                 if "Invalid API-key" in error_msg or "authentication" in error_msg.lower():
                     return {
+                        "ok": False,
                         "success": False,
                         "message": f"❌ Invalid API credentials for {provider.upper()}",
                         "error": "Authentication failed - check API key and secret"
                     }
                 else:
                     return {
+                        "ok": False,
                         "success": False,
                         "message": f"❌ API test failed for {provider.upper()}",
                         "error": error_msg
@@ -192,8 +207,8 @@ async def test_api_key(
                 # Use AsyncOpenAI client (openai>=1.x)
                 from openai import AsyncOpenAI
                 
-                # Get test model from env or use default
-                test_model = os.getenv("OPENAI_TEST_MODEL", "gpt-4o-mini")
+                # Use provided model or default to cheap model
+                test_model = model or os.getenv("OPENAI_TEST_MODEL", "gpt-4o-mini")
                 
                 # Create client with provided API key
                 client = AsyncOpenAI(api_key=api_key)
@@ -212,10 +227,12 @@ async def test_api_key(
                         "last_tested_at": timestamp,
                         "last_test_ok": True,
                         "last_test_error": None
-                    }}
+                    }},
+                    upsert=False
                 )
                 
                 return {
+                    "ok": True,
                     "success": True,
                     "message": "✅ OpenAI API key validated successfully",
                     "provider": provider,
@@ -234,9 +251,11 @@ async def test_api_key(
                         "last_tested_at": timestamp,
                         "last_test_ok": False,
                         "last_test_error": error_msg
-                    }}
+                    }},
+                    upsert=False
                 )
                 return {
+                    "ok": False,
                     "success": False,
                     "message": "❌ OpenAI library configuration error",
                     "error": error_msg
@@ -251,18 +270,21 @@ async def test_api_key(
                         "last_tested_at": timestamp,
                         "last_test_ok": False,
                         "last_test_error": error_msg[:500]
-                    }}
+                    }},
+                    upsert=False
                 )
                 
                 # Check for authentication errors
                 if "invalid" in error_msg.lower() or "incorrect" in error_msg.lower() or "authentication" in error_msg.lower():
                     return {
+                        "ok": False,
                         "success": False,
                         "message": "❌ Invalid OpenAI API key",
                         "error": "Authentication failed - check your API key"
                     }
                 else:
                     return {
+                        "ok": False,
                         "success": False,
                         "message": "❌ OpenAI API test failed",
                         "error": error_msg
@@ -276,10 +298,12 @@ async def test_api_key(
                     "last_tested_at": timestamp,
                     "last_test_ok": True,
                     "last_test_error": None
-                }}
+                }},
+                upsert=False
             )
             
             return {
+                "ok": True,
                 "success": True,
                 "message": f"✅ {provider.upper()} API key format validated",
                 "provider": provider
