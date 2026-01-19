@@ -156,7 +156,7 @@ class GoLiveVerifier:
             return False
     
     def test_ai_chat(self) -> bool:
-        """Test 4: Test /api/ai/chat does not return 'Please set OPENAI_API_KEY'"""
+        """Test 4: Test /api/ai/chat does not return 'Please save your OpenAI API key'"""
         print("\n📋 Test 4: AI Chat")
         print("  Endpoint: POST /api/ai/chat")
         
@@ -169,8 +169,8 @@ class GoLiveVerifier:
             data = response["data"]
             content = data.get("content", "")
             
-            # Check for the error message
-            if "Please set OPENAI_API_KEY" in content:
+            # Check for the error message that indicates no API key configured
+            if "Please save your OpenAI API key" in content:
                 print(f"  ❌ FAIL - AI chat returned config error: {content[:100]}")
                 self.tests_failed += 1
                 return False

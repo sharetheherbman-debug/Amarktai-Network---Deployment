@@ -36,6 +36,7 @@ import random
 from datetime import datetime, timezone
 from typing import Dict, Tuple
 import logging
+import database as db
 from exchange_limits import get_fee_rate
 from rate_limiter import rate_limiter
 from risk_engine import risk_engine

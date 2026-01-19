@@ -209,14 +209,22 @@ async def ai_chat(
             try:
                 # Import get_decrypted_key to load user's saved key
                 from routes.api_key_management import get_decrypted_key
+                import os
                 
-                # Load user's saved OpenAI key from database
+                # Priority order: user-saved key > env OPENAI_API_KEY > error
+                # 1. Try user-saved key from database
                 key_data = await get_decrypted_key(user_id, "openai")
+                user_api_key = None
                 
-                if not key_data or not key_data.get("api_key"):
+                if key_data and key_data.get("api_key"):
+                    user_api_key = key_data.get("api_key")
+                else:
+                    # 2. Fall back to env OPENAI_API_KEY
+                    user_api_key = os.getenv("OPENAI_API_KEY")
+                
+                if not user_api_key:
                     ai_response = "AI service not configured. Please save your OpenAI API key in the Dashboard under API Keys."
                 else:
-                    user_api_key = key_data.get("api_key")
                     
                     # Use AsyncOpenAI client (openai>=1.x) with user's key
                     from openai import AsyncOpenAI
