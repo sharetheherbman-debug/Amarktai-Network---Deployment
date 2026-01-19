@@ -3084,6 +3084,7 @@ app.include_router(api_router, prefix="/api")
 # Routers already define their own /api/... prefixes in their route files.
 routers_to_mount = [
     ("routes.keys", "API Keys (Unified)"),  # New unified keys router - takes precedence
+    ("routes.system_mode", "System Mode"),  # New unified mode management
     ("routes.system", "System"),
     ("routes.trades", "Trades"),
     ("routes.health", "Health"),

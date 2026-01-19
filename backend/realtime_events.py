@@ -238,6 +238,18 @@ class RealTimeEvents:
             "message": f"🗑️ {display_name} API key deleted"
         })
         logger.info(f"📡 Real-time: key_deleted ({provider}) for user {user_id[:8]}")
+    
+    @staticmethod
+    async def mode_switched(user_id: str, mode: str, mode_data: dict):
+        """Broadcast when system mode is switched"""
+        emoji = "📝" if mode == "paper" else "🚀" if mode == "live" else "🤖"
+        await manager.send_message(user_id, {
+            "type": "mode_switched",
+            "mode": mode,
+            "mode_data": mode_data,
+            "message": f"{emoji} System switched to {mode.upper()} mode"
+        })
+        logger.info(f"📡 Real-time: mode_switched to {mode} for user {user_id[:8]}")
 
 # Global instance
 rt_events = RealTimeEvents()
