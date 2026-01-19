@@ -1,6 +1,6 @@
 """
 Profits API Endpoints
-Provides profit data and reinvestment functionality
+Provides profit data using canonical profit_service
 """
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -9,6 +9,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 from auth import get_current_user
+from services.profit_service import profit_service
 import database as db
 
 logger = logging.getLogger(__name__)
@@ -19,129 +20,174 @@ router = APIRouter(prefix="/api/profits", tags=["Profits"])
 @router.get("")
 async def get_profits(
     period: str = "daily",
+    mode: Optional[str] = None,
     user_id: str = Depends(get_current_user)
 ):
-    """Get profit data for user
+    """Get profit data for user using canonical profit service
     
     Protected endpoint that returns profit information
-    Supports multiple period types: daily, weekly, monthly
+    Supports multiple period types: daily, weekly, monthly, all
     
     Args:
-        period: Time period for aggregation (daily, weekly, monthly)
+        period: Time period for aggregation (daily, weekly, monthly, all)
+        mode: Filter by trading mode ('paper' or 'live', None = both)
         user_id: Current user ID from auth
         
     Returns:
-        Profit data with items and total
+        Profit data with summary and time series
     """
     try:
-        # Get all trades for user
-        trades_cursor = db.trades_collection.find(
-            {"user_id": user_id},
-            {"_id": 0}
-        ).sort("timestamp", -1)
-        
-        trades = await trades_cursor.to_list(1000)
-        
-        # Calculate total profit
-        total_profit = sum(
-            t.get('profit_loss', 0) for t in trades 
-            if t.get('status') == 'closed' and t.get('profit_loss') is not None
-        )
-        
-        # Group by period
-        items = []
-        if period == "daily":
-            # Group by day
-            daily_profits = {}
-            for trade in trades:
-                if trade.get('status') == 'closed' and trade.get('profit_loss') is not None:
-                    timestamp = trade.get('timestamp')
-                    if isinstance(timestamp, str):
-                        date = timestamp[:10]  # YYYY-MM-DD
-                    else:
-                        date = timestamp.strftime('%Y-%m-%d') if timestamp else 'unknown'
-                    
-                    if date not in daily_profits:
-                        daily_profits[date] = 0
-                    daily_profits[date] += trade.get('profit_loss', 0)
+        # Get comprehensive profit summary from canonical service
+        if period == "all":
+            # Get full summary
+            summary = await profit_service.get_profit_summary(user_id, mode)
             
-            # Convert to items list
-            for date, profit in sorted(daily_profits.items(), reverse=True)[:30]:
-                items.append({
-                    "date": date,
-                    "profit": round(profit, 2),
-                    "period": "daily"
-                })
+            return {
+                "period": "all",
+                "mode": mode or "all",
+                "total_profit": summary["total_profit"],
+                "profit_today": summary["profit_today"],
+                "profit_yesterday": summary["profit_yesterday"],
+                "best_day": summary["best_day"],
+                "avg_daily": summary["avg_daily"],
+                "daily_series": summary["daily_series_30"],
+                "currency": "ZAR",
+                "timestamp": summary["last_calculated_at"]
+            }
+        
+        elif period == "daily":
+            # Get 30 days
+            series = await profit_service.get_daily_profit_series(user_id, 30, mode)
+            total = await profit_service.calculate_total_profit(user_id, mode)
+            
+            return {
+                "period": "daily",
+                "mode": mode or "all",
+                "items": series,
+                "total": total,
+                "currency": "ZAR",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
         
         elif period == "weekly":
+            # Get 12 weeks worth of daily data and group
+            series = await profit_service.get_daily_profit_series(user_id, 84, mode)
+            total = await profit_service.calculate_total_profit(user_id, mode)
+            
             # Group by week
             weekly_profits = {}
-            for trade in trades:
-                if trade.get('status') == 'closed' and trade.get('profit_loss') is not None:
-                    timestamp = trade.get('timestamp')
-                    if isinstance(timestamp, str):
-                        try:
-                            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                            week = dt.strftime('%Y-W%U')
-                        except:
-                            week = 'unknown'
-                    else:
-                        week = timestamp.strftime('%Y-W%U') if timestamp else 'unknown'
-                    
+            for item in series:
+                try:
+                    dt = datetime.fromisoformat(item["date"])
+                    week = dt.strftime('%Y-W%U')
                     if week not in weekly_profits:
                         weekly_profits[week] = 0
-                    weekly_profits[week] += trade.get('profit_loss', 0)
+                    weekly_profits[week] += item["profit"]
+                except:
+                    pass
             
-            # Convert to items list
-            for week, profit in sorted(weekly_profits.items(), reverse=True)[:12]:
-                items.append({
-                    "week": week,
-                    "profit": round(profit, 2),
-                    "period": "weekly"
-                })
+            items = [
+                {"week": week, "profit": round(profit, 2), "period": "weekly"}
+                for week, profit in sorted(weekly_profits.items(), reverse=True)[:12]
+            ]
+            
+            return {
+                "period": "weekly",
+                "mode": mode or "all",
+                "items": items,
+                "total": total,
+                "currency": "ZAR",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
         
         elif period == "monthly":
+            # Get 12 months worth of daily data and group
+            series = await profit_service.get_daily_profit_series(user_id, 365, mode)
+            total = await profit_service.calculate_total_profit(user_id, mode)
+            
             # Group by month
             monthly_profits = {}
-            for trade in trades:
-                if trade.get('status') == 'closed' and trade.get('profit_loss') is not None:
-                    timestamp = trade.get('timestamp')
-                    if isinstance(timestamp, str):
-                        month = timestamp[:7]  # YYYY-MM
-                    else:
-                        month = timestamp.strftime('%Y-%m') if timestamp else 'unknown'
-                    
+            for item in series:
+                try:
+                    month = item["date"][:7]  # YYYY-MM
                     if month not in monthly_profits:
                         monthly_profits[month] = 0
-                    monthly_profits[month] += trade.get('profit_loss', 0)
+                    monthly_profits[month] += item["profit"]
+                except:
+                    pass
             
-            # Convert to items list
-            for month, profit in sorted(monthly_profits.items(), reverse=True)[:12]:
-                items.append({
-                    "month": month,
-                    "profit": round(profit, 2),
-                    "period": "monthly"
-                })
+            items = [
+                {"month": month, "profit": round(profit, 2), "period": "monthly"}
+                for month, profit in sorted(monthly_profits.items(), reverse=True)[:12]
+            ]
+            
+            return {
+                "period": "monthly",
+                "mode": mode or "all",
+                "items": items,
+                "total": total,
+                "currency": "ZAR",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
         
-        return {
-            "period": period,
-            "items": items,
-            "total": round(total_profit, 2),
-            "currency": "ZAR",
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+        else:
+            raise HTTPException(status_code=400, detail="Invalid period. Must be 'daily', 'weekly', 'monthly', or 'all'")
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting profits: {e}")
         # Return safe default instead of 500
         return {
             "period": period,
+            "mode": mode or "all",
             "items": [],
             "total": 0,
             "currency": "ZAR",
             "error": str(e),
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
+
+
+@router.get("/summary")
+async def get_profit_summary(
+    mode: Optional[str] = None,
+    user_id: str = Depends(get_current_user)
+):
+    """Get comprehensive profit summary
+    
+    Returns:
+        Full profit summary with stats
+    """
+    try:
+        summary = await profit_service.get_profit_summary(user_id, mode)
+        stats = await profit_service.get_trade_stats(user_id, mode)
+        
+        # Add unrealized profit
+        unrealized = await profit_service.calculate_unrealized_profit(user_id, mode)
+        
+        return {
+            "success": True,
+            "mode": mode or "all",
+            "realized_profit": summary["total_profit"],
+            "unrealized_profit": unrealized,
+            "total_profit": summary["total_profit"] + unrealized,
+            "profit_today": summary["profit_today"],
+            "profit_yesterday": summary["profit_yesterday"],
+            "best_day": summary["best_day"],
+            "avg_daily": summary["avg_daily"],
+            "total_trades": stats["total_trades"],
+            "winning_trades": stats["winning_trades"],
+            "losing_trades": stats["losing_trades"],
+            "win_rate": stats["win_rate"],
+            "total_fees": stats["total_fees"],
+            "currency": "ZAR",
+            "timestamp": summary["last_calculated_at"]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting profit summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/reinvest")
