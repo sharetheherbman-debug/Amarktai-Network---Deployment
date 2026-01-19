@@ -365,14 +365,14 @@ python3 verify_go_live_runtime.py
 The paper trading DB fix cannot be easily verified without running actual paper trades, but the fix is straightforward:
 
 **Before:**
-- `paper_trading_engine.py` used `db_collections['bots']` and `db_collections['trades']`
-- But also had unreachable code that would reference `db` module if it existed
-- This caused "cannot access local variable 'db'" errors in some edge cases
+- `paper_trading_engine.py` was missing the module-level `import database as db`
+- Code received `db_collections` dict parameter but had no direct access to `db` module
+- This caused "cannot access local variable 'db'" errors when code tried to reference the missing `db` variable
 
 **After:**
 - Module-level import added: `import database as db`
 - Matches pattern used in all other files (trading_scheduler.py, auth.py, etc.)
-- No code behavior changed, just makes `db` available if needed
+- Resolves any potential references to `db` module that were causing the error
 
 **Verification:**
 ```bash
