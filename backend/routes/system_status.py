@@ -10,6 +10,7 @@ import logging
 import os
 
 from auth import get_current_user
+from utils.env_utils import env_bool
 import database as db
 
 logger = logging.getLogger(__name__)
@@ -28,12 +29,12 @@ async def get_system_status(user_id: str = Depends(get_current_user)):
     - Database health
     """
     try:
-        # Get feature flags
+        # Get feature flags using consistent parsing
         feature_flags = {
-            "enable_trading": os.getenv('ENABLE_TRADING', '0') == '1',
-            "enable_schedulers": os.getenv('ENABLE_SCHEDULERS', '0') == '1',
-            "enable_autopilot": os.getenv('ENABLE_AUTOPILOT', '0') == '1',
-            "enable_ccxt": os.getenv('ENABLE_CCXT', '0') == '1'
+            "enable_trading": env_bool('ENABLE_TRADING', False),
+            "enable_schedulers": env_bool('ENABLE_SCHEDULERS', False),
+            "enable_autopilot": env_bool('ENABLE_AUTOPILOT', False),
+            "enable_ccxt": env_bool('ENABLE_CCXT', True)
         }
         
         # Check scheduler status

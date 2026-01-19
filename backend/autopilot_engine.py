@@ -12,6 +12,7 @@ from datetime import datetime, timezone, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+from utils.env_utils import env_bool
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +32,12 @@ class AutopilotEngine:
         
     async def start(self):
         """Start the autopilot engine - idempotent, respects feature flags"""
-        # Check feature flag first
-        enable_autopilot = os.getenv('ENABLE_AUTOPILOT', '0') == '1'
-        enable_schedulers = os.getenv('ENABLE_SCHEDULERS', '0') == '1'
+        # Check feature flag first - use robust parsing
+        enable_autopilot = env_bool('ENABLE_AUTOPILOT', False)
+        enable_schedulers = env_bool('ENABLE_SCHEDULERS', False)
         
         if not enable_autopilot:
-            logger.info("🤖 Autopilot Engine disabled (ENABLE_AUTOPILOT=0)")
+            logger.info("🤖 Autopilot Engine disabled (ENABLE_AUTOPILOT not truthy)")
             return
         
         # Prevent multiple starts
@@ -79,7 +80,7 @@ class AutopilotEngine:
                 self.scheduler.start()
                 logger.info("🤖 Autopilot Engine started with scheduler")
             else:
-                logger.info("🤖 Autopilot Engine started without scheduler (ENABLE_SCHEDULERS=0 or already running)")
+                logger.info("🤖 Autopilot Engine started without scheduler (ENABLE_SCHEDULERS not truthy or already running)")
         except Exception as e:
             logger.error(f"Failed to start Autopilot Engine: {e}")
             self.running = False
