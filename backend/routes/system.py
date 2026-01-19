@@ -37,34 +37,28 @@ async def get_platforms() -> dict:
     
     Returns platform names, enabled status, and bot limits.
     Frontend should use this to populate platform selectors.
-    Restricted to Luno, Binance, and KuCoin only as per requirements.
+    NOW RETURNS ALL 5 PLATFORMS: Luno, Binance, KuCoin, OVEX, VALR
     """
     try:
-        # Supported exchanges only: Luno, Binance, KuCoin
-        supported_platforms = ["luno", "binance", "kucoin"]
+        # Import canonical platform registry
+        from config.platforms import get_all_platforms, SUPPORTED_PLATFORMS
         
-        # Get platform config from backend config with safe fallback
-        try:
-            exchange_limits = config.EXCHANGE_BOT_LIMITS
-        except:
-            # Fallback to safe defaults if config not available
-            exchange_limits = {
-                'luno': 5,
-                'binance': 10,
-                'kucoin': 10
-            }
+        # Get all platform configs from canonical source
+        platform_configs = get_all_platforms()
         
         platforms = []
-        for platform_name in supported_platforms:
-            bot_limit = exchange_limits.get(platform_name, 10)  # Default to 10 if not in config
+        for platform_config in platform_configs:
             platforms.append({
-                "id": platform_name,
-                "name": platform_name.title(),
-                "display_name": platform_name.title(),
-                "enabled": True,
-                "bot_limit": bot_limit,
-                "supports_paper": True,
-                "supports_live": True
+                "id": platform_config["id"],
+                "name": platform_config["name"],
+                "display_name": platform_config["display_name"],
+                "enabled": platform_config["enabled"],
+                "bot_limit": platform_config["max_bots"],
+                "supports_paper": platform_config["supports_paper"],
+                "supports_live": platform_config["supports_live"],
+                "icon": platform_config.get("icon", ""),
+                "color": platform_config.get("color", ""),
+                "region": platform_config.get("region", "")
             })
         
         return {
@@ -74,15 +68,17 @@ async def get_platforms() -> dict:
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
-        # Never crash - return safe defaults
+        # Never crash - return safe defaults with ALL 5 platforms
         logger.error(f"Error in get_platforms: {e}")
         return {
             "platforms": [
-                {"id": "luno", "name": "Luno", "enabled": True, "bot_limit": 5},
-                {"id": "binance", "name": "Binance", "enabled": True, "bot_limit": 10},
-                {"id": "kucoin", "name": "KuCoin", "enabled": True, "bot_limit": 10}
+                {"id": "luno", "name": "Luno", "display_name": "Luno", "enabled": True, "bot_limit": 5, "supports_paper": True, "supports_live": True},
+                {"id": "binance", "name": "Binance", "display_name": "Binance", "enabled": True, "bot_limit": 10, "supports_paper": True, "supports_live": True},
+                {"id": "kucoin", "name": "KuCoin", "display_name": "KuCoin", "enabled": True, "bot_limit": 10, "supports_paper": True, "supports_live": True},
+                {"id": "ovex", "name": "OVEX", "display_name": "OVEX", "enabled": True, "bot_limit": 10, "supports_paper": True, "supports_live": False},
+                {"id": "valr", "name": "VALR", "display_name": "VALR", "enabled": True, "bot_limit": 10, "supports_paper": True, "supports_live": False}
             ],
-            "total_count": 3,
+            "total_count": 5,
             "default": "all",
             "timestamp": datetime.now(timezone.utc).isoformat()
         }

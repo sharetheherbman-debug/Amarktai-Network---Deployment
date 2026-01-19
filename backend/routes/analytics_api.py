@@ -23,6 +23,7 @@ async def get_pnl_timeseries(
     user_id: str = Depends(get_current_user)
 ):
     """Get PnL timeseries data - SINGLE SOURCE OF TRUTH for all profit graphs
+    Uses centralized metrics service
     
     Args:
         range: Time range (1d, 7d, 30d, 90d, 1y, all)
@@ -33,71 +34,13 @@ async def get_pnl_timeseries(
         Timeseries data with timestamps and cumulative PnL
     """
     try:
-        # Calculate time range
-        now = datetime.now(timezone.utc)
+        # Use centralized metrics service
+        from services.metrics_service import metrics_service
+        return await metrics_service.get_profit_history(user_id, range, interval)
         
-        range_map = {
-            "1d": timedelta(days=1),
-            "7d": timedelta(days=7),
-            "30d": timedelta(days=30),
-            "90d": timedelta(days=90),
-            "1y": timedelta(days=365),
-            "all": timedelta(days=3650)  # 10 years
-        }
-        
-        start_time = now - range_map.get(range, timedelta(days=7))
-        
-        # Get all trades in range
-        trades = await db.trades_collection.find(
-            {
-                "user_id": user_id,
-                "timestamp": {"$gte": start_time.isoformat()}
-            },
-            {"_id": 0, "timestamp": 1, "profit_loss": 1, "bot_id": 1}
-        ).sort("timestamp", 1).to_list(10000)
-        
-        if not trades:
-            return {
-                "range": range,
-                "interval": interval,
-                "datapoints": [],
-                "summary": {
-                    "total_pnl": 0,
-                    "trade_count": 0,
-                    "start_time": start_time.isoformat(),
-                    "end_time": now.isoformat()
-                }
-            }
-        
-        # Group trades by interval
-        interval_map = {
-            "5m": timedelta(minutes=5),
-            "15m": timedelta(minutes=15),
-            "1h": timedelta(hours=1),
-            "4h": timedelta(hours=4),
-            "1d": timedelta(days=1)
-        }
-        
-        interval_delta = interval_map.get(interval, timedelta(hours=1))
-        
-        # Create time buckets
-        datapoints = []
-        cumulative_pnl = 0
-        current_bucket_start = start_time
-        bucket_trades = []
-        
-        for trade in trades:
-            trade_time = datetime.fromisoformat(trade['timestamp'].replace('Z', '+00:00'))
-            
-            # Check if trade belongs to current bucket
-            while trade_time >= current_bucket_start + interval_delta:
-                # Close current bucket
-                if bucket_trades:
-                    bucket_pnl = sum(t.get('profit_loss', 0) for t in bucket_trades)
-                    cumulative_pnl += bucket_pnl
-                    
-                    datapoints.append({
-                        "timestamp": current_bucket_start.isoformat(),
+    except Exception as e:
+        logger.error(f"PnL timeseries error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
                         "cumulative_pnl": round(cumulative_pnl, 2),
                         "period_pnl": round(bucket_pnl, 2),
                         "trade_count": len(bucket_trades)
