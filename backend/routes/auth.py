@@ -63,6 +63,7 @@ async def register(request: Request, user: UserRegister):
         "learning_enabled": True,
         "emergency_stop": False,
         "blocked": False,
+        "is_admin": False,  # Default: regular user (admin must be set manually in DB)
         "two_factor_enabled": False
     }
 
