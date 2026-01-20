@@ -1110,3 +1110,253 @@ async def override_bot_to_live(
         logger.error(f"Bot override error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/bots")
+async def get_all_bots_admin(
+    mode: Optional[str] = None,
+    user_id: Optional[str] = None,
+    admin_user_id: str = Depends(verify_admin)
+):
+    """Get all bots (admin view) for override dropdown
+    
+    Args:
+        mode: Filter by trading mode ('paper' or 'live')
+        user_id: Filter by specific user (optional)
+        admin_user_id: Admin user ID from auth
+        
+    Returns:
+        List of all bots with basic info for dropdown
+    """
+    try:
+        # Build query
+        query = {}
+        if mode:
+            query["trading_mode"] = mode
+        if user_id:
+            query["user_id"] = user_id
+        
+        # Get bots
+        bots_cursor = db.bots_collection.find(query, {"_id": 0})
+        bots = await bots_cursor.to_list(10000)
+        
+        # Simplify for dropdown
+        simplified_bots = []
+        for bot in bots:
+            simplified_bots.append({
+                "id": bot.get("id"),
+                "name": bot.get("name"),
+                "user_id": bot.get("user_id"),
+                "exchange": bot.get("exchange"),
+                "status": bot.get("status"),
+                "trading_mode": bot.get("trading_mode"),
+                "total_profit": bot.get("total_profit", 0),
+                "override_rules": bot.get("override_rules", {})
+            })
+        
+        # Sort by name
+        simplified_bots.sort(key=lambda b: b["name"])
+        
+        return {
+            "success": True,
+            "bots": simplified_bots,
+            "total": len(simplified_bots),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Get all bots admin error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/bots/{bot_id}/override")
+async def set_bot_override_rules(
+    bot_id: str,
+    data: Dict,
+    admin_user_id: str = Depends(verify_admin)
+):
+    """Set override rules for a bot
+    
+    Allows admin to override trading parameters:
+    - max_daily_trades
+    - position_size_pct
+    - stop_loss_pct
+    - take_profit_pct
+    - force_pause (immediately pause bot)
+    - force_resume (immediately resume bot)
+    
+    Args:
+        bot_id: Bot ID to override
+        data: Override rules dict
+        admin_user_id: Admin user ID from auth
+        
+    Returns:
+        Updated bot with override rules
+    """
+    try:
+        # Find bot
+        bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Extract override rules
+        override_rules = data.get("override_rules", {})
+        force_pause = data.get("force_pause", False)
+        force_resume = data.get("force_resume", False)
+        
+        # Build update
+        update_doc = {
+            "override_rules": override_rules,
+            "override_rules_set_by": admin_user_id,
+            "override_rules_set_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Handle force pause/resume
+        if force_pause:
+            update_doc["status"] = "paused"
+            update_doc["paused_by_admin"] = True
+            update_doc["paused_at"] = datetime.now(timezone.utc).isoformat()
+            update_doc["pause_reason"] = "Admin override"
+        elif force_resume:
+            update_doc["status"] = "active"
+            update_doc["paused_by_admin"] = False
+            update_doc["resumed_at"] = datetime.now(timezone.utc).isoformat()
+        
+        # Update bot
+        result = await db.bots_collection.update_one(
+            {"id": bot_id},
+            {"$set": update_doc}
+        )
+        
+        if result.modified_count == 0:
+            logger.warning(f"Bot {bot_id} override: no changes made")
+        
+        # Log audit event
+        await audit_logger.log_event(
+            event_type="bot_override_rules_set",
+            user_id=admin_user_id,
+            details={
+                "bot_id": bot_id,
+                "bot_name": bot.get('name'),
+                "override_rules": override_rules,
+                "force_pause": force_pause,
+                "force_resume": force_resume,
+                "set_by": admin_user_id,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            severity="info"
+        )
+        
+        # Get updated bot
+        updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        
+        # Emit realtime event
+        from realtime_events import rt_events
+        await rt_events.bot_updated(bot.get('user_id'), bot_id, update_doc)
+        
+        logger.info(f"Bot {bot_id} override rules set by admin {admin_user_id}")
+        
+        return {
+            "success": True,
+            "message": f"Override rules set for bot '{bot.get('name')}'",
+            "bot": updated_bot,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Set bot override error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/resources/users")
+async def get_user_resource_usage(
+    admin_user_id: str = Depends(verify_admin)
+):
+    """Get per-user storage usage and counts (admin only)
+    
+    Returns storage breakdown per user:
+    - chat_messages count and size
+    - trades count and size
+    - bots count and size
+    - alerts count and size
+    - total storage
+    
+    Args:
+        admin_user_id: Admin user ID from auth
+        
+    Returns:
+        Per-user storage usage + system totals
+    """
+    try:
+        import sys
+        import json
+        
+        # Get all users
+        users_cursor = db.users_collection.find({}, {"_id": 0, "id": 1, "email": 1, "first_name": 1})
+        users = await users_cursor.to_list(1000)
+        
+        user_usage = []
+        
+        for user in users:
+            user_id = user.get("id")
+            
+            # Count documents
+            chat_count = await db.chat_messages_collection.count_documents({"user_id": user_id})
+            trades_count = await db.trades_collection.count_documents({"user_id": user_id})
+            bots_count = await db.bots_collection.count_documents({"user_id": user_id})
+            alerts_count = await db.alerts_collection.count_documents({"user_id": user_id})
+            
+            # Estimate storage (rough)
+            # Note: In production, use MongoDB's collStats or dataSize for accurate measurements
+            chat_size_mb = (chat_count * 500) / (1024 * 1024)  # ~500 bytes per message
+            trades_size_mb = (trades_count * 800) / (1024 * 1024)  # ~800 bytes per trade
+            bots_size_mb = (bots_count * 1000) / (1024 * 1024)  # ~1KB per bot
+            alerts_size_mb = (alerts_count * 300) / (1024 * 1024)  # ~300 bytes per alert
+            
+            total_mb = chat_size_mb + trades_size_mb + bots_size_mb + alerts_size_mb
+            
+            user_usage.append({
+                "user_id": user_id,
+                "email": user.get("email", "N/A"),
+                "first_name": user.get("first_name", "N/A"),
+                "storage_breakdown": {
+                    "chat_messages": {"count": chat_count, "size_mb": round(chat_size_mb, 3)},
+                    "trades": {"count": trades_count, "size_mb": round(trades_size_mb, 3)},
+                    "bots": {"count": bots_count, "size_mb": round(bots_size_mb, 3)},
+                    "alerts": {"count": alerts_count, "size_mb": round(alerts_size_mb, 3)}
+                },
+                "total_storage_mb": round(total_mb, 3)
+            })
+        
+        # Sort by total storage descending
+        user_usage.sort(key=lambda u: u["total_storage_mb"], reverse=True)
+        
+        # Calculate system totals
+        total_system_storage_mb = sum(u["total_storage_mb"] for u in user_usage)
+        total_users = len(user_usage)
+        total_chats = sum(u["storage_breakdown"]["chat_messages"]["count"] for u in user_usage)
+        total_trades = sum(u["storage_breakdown"]["trades"]["count"] for u in user_usage)
+        total_bots = sum(u["storage_breakdown"]["bots"]["count"] for u in user_usage)
+        total_alerts = sum(u["storage_breakdown"]["alerts"]["count"] for u in user_usage)
+        
+        return {
+            "success": True,
+            "users": user_usage,
+            "system_totals": {
+                "total_users": total_users,
+                "total_storage_mb": round(total_system_storage_mb, 3),
+                "total_chat_messages": total_chats,
+                "total_trades": total_trades,
+                "total_bots": total_bots,
+                "total_alerts": total_alerts
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Get user resource usage error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+

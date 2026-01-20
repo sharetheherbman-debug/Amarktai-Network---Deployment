@@ -58,8 +58,9 @@ async def lifespan(app: FastAPI):
     enable_autopilot = env_bool('ENABLE_AUTOPILOT', False)
     enable_ccxt = env_bool('ENABLE_CCXT', True)
     enable_schedulers = env_bool('ENABLE_SCHEDULERS', False)
+    disable_ai_bodyguard = env_bool('DISABLE_AI_BODYGUARD', False)
     
-    logger.info(f"🎚️ Feature flags: TRADING={enable_trading}, AUTOPILOT={enable_autopilot}, CCXT={enable_ccxt}, SCHEDULERS={enable_schedulers}")
+    logger.info(f"🎚️ Feature flags: TRADING={enable_trading}, AUTOPILOT={enable_autopilot}, CCXT={enable_ccxt}, SCHEDULERS={enable_schedulers}, DISABLE_AI_BODYGUARD={disable_ai_bodyguard}")
     
     # Track background tasks for clean shutdown
     background_tasks = []
@@ -79,13 +80,17 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("🤖 Autopilot Engine disabled (ENABLE_AUTOPILOT=0)")
     
-    try:
-        from ai_bodyguard import bodyguard
-        task = asyncio.create_task(bodyguard.start())
-        background_tasks.append(task)
-        logger.info("🛡️ AI Bodyguard activated")
-    except Exception as e:
-        logger.error(f"Failed to start AI Bodyguard: {e}")
+    # Only start AI Bodyguard if not explicitly disabled
+    if not disable_ai_bodyguard:
+        try:
+            from ai_bodyguard import bodyguard
+            task = asyncio.create_task(bodyguard.start())
+            background_tasks.append(task)
+            logger.info("🛡️ AI Bodyguard activated")
+        except Exception as e:
+            logger.error(f"Failed to start AI Bodyguard: {e}")
+    else:
+        logger.info("🛡️ AI Bodyguard disabled (DISABLE_AI_BODYGUARD=1)")
     
     try:
         from self_learning import learning_system
@@ -239,12 +244,13 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Error stopping autopilot: {e}")
     
-    try:
-        from ai_bodyguard import bodyguard
-        bodyguard.stop()
-        logger.info("✅ AI Bodyguard stopped")
-    except Exception as e:
-        logger.error(f"Error stopping bodyguard: {e}")
+    if not disable_ai_bodyguard:
+        try:
+            from ai_bodyguard import bodyguard
+            bodyguard.stop()
+            logger.info("✅ AI Bodyguard stopped")
+        except Exception as e:
+            logger.error(f"Error stopping bodyguard: {e}")
     
     if enable_schedulers:
         try:

@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
 import logging
+import os
 
 from auth import get_current_user
 import database as db
@@ -23,6 +24,9 @@ MIN_TRADES = 20
 MIN_RUNTIME_HOURS = 6
 MIN_PNL_THRESHOLD = 0  # Must be profitable
 MAX_DRAWDOWN_THRESHOLD = 0.25  # 25% max drawdown
+
+# Live Training Bay - minimum hours before live trading allowed
+LIVE_MIN_TRAINING_HOURS = int(os.getenv('LIVE_MIN_TRAINING_HOURS', '24'))
 
 
 async def seed_bot_from_top_performers(bot_id: str, user_id: str) -> Dict:
@@ -359,3 +363,100 @@ async def fail_training(
     except Exception as e:
         logger.error(f"Fail training error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/live-bay")
+async def get_live_training_bay(user_id: str = Depends(get_current_user)):
+    """Get all bots in Live Training Bay quarantine
+    
+    Shows bots that are new/spawned in LIVE mode and must wait >= 24h before trading
+    
+    Args:
+        user_id: Current user ID from auth
+        
+    Returns:
+        List of bots in quarantine with time remaining
+    """
+    try:
+        from mode_manager import mode_manager
+        
+        # Check if user is in live mode
+        system_mode = await mode_manager.get_system_mode(user_id)
+        is_live_mode = system_mode.get('liveTrading', False)
+        
+        if not is_live_mode:
+            return {
+                "success": True,
+                "live_mode_active": False,
+                "quarantine_bots": [],
+                "total": 0,
+                "message": "Live mode not active - no training bay quarantine"
+            }
+        
+        # Get all bots in live_training_bay status
+        quarantine_bots = await db.bots_collection.find(
+            {
+                "user_id": user_id,
+                "trading_mode": "live",
+                "$or": [
+                    {"status": "live_training_bay"},
+                    {"in_live_training_bay": True}
+                ]
+            },
+            {"_id": 0}
+        ).to_list(1000)
+        
+        # Enrich with time remaining
+        now = datetime.now(timezone.utc)
+        enriched_bots = []
+        
+        for bot in quarantine_bots:
+            # Get creation or spawn time
+            created_at = bot.get('created_at') or bot.get('spawned_at')
+            if created_at:
+                if isinstance(created_at, str):
+                    created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                else:
+                    created_dt = created_at
+                
+                # Ensure timezone-aware
+                if created_dt.tzinfo is None:
+                    created_dt = created_dt.replace(tzinfo=timezone.utc)
+                
+                hours_elapsed = (now - created_dt).total_seconds() / 3600
+                hours_remaining = max(0, LIVE_MIN_TRAINING_HOURS - hours_elapsed)
+                eligible = hours_elapsed >= LIVE_MIN_TRAINING_HOURS
+            else:
+                hours_elapsed = 0
+                hours_remaining = LIVE_MIN_TRAINING_HOURS
+                eligible = False
+            
+            enriched_bot = {
+                "id": bot.get('id'),
+                "name": bot.get('name'),
+                "exchange": bot.get('exchange'),
+                "created_at": created_at,
+                "hours_elapsed": round(hours_elapsed, 1),
+                "hours_remaining": round(hours_remaining, 1),
+                "eligible_for_promotion": eligible,
+                "total_profit": bot.get('total_profit', 0),
+                "trades_count": bot.get('trades_count', 0)
+            }
+            enriched_bots.append(enriched_bot)
+        
+        # Sort by hours_remaining (ascending - closest to promotion first)
+        enriched_bots.sort(key=lambda x: x['hours_remaining'])
+        
+        return {
+            "success": True,
+            "live_mode_active": True,
+            "quarantine_bots": enriched_bots,
+            "total": len(enriched_bots),
+            "ready_for_promotion": len([b for b in enriched_bots if b['eligible_for_promotion']]),
+            "min_training_hours": LIVE_MIN_TRAINING_HOURS
+        }
+        
+    except Exception as e:
+        logger.error(f"Get live training bay error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+

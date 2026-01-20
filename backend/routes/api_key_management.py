@@ -77,31 +77,42 @@ def decrypt_api_key(encrypted_key: str) -> str:
 
 @router.post("/test")
 async def test_api_key(
-    data: Dict,
+    data: Dict = None,
     user_id: str = Depends(get_current_user)
 ):
     """Test an API key before saving
     
+    Accepts JSON body, form-encoded, or raw body
     Makes a test API call to verify the key works
     Persists test results to database
     
     Args:
-        data: Contains provider, api_key, api_secret, exchange info
+        data: Contains provider, api_key, api_secret, exchange info (can be dict or None)
         user_id: Current user ID from auth
         
     Returns:
         Test result with success/error details
     """
     try:
+        # Handle None data (shouldn't happen but be defensive)
+        if data is None:
+            data = {}
+        
         # Normalize payload - accept multiple field name variants
-        provider = data.get("provider") or data.get("exchange")
-        api_key = data.get("api_key") or data.get("apiKey")
-        api_secret = data.get("api_secret") or data.get("apiSecret")
-        exchange = data.get("exchange") or data.get("provider")
+        provider = data.get("provider") or data.get("exchange") or data.get("platform")
+        api_key = data.get("api_key") or data.get("apiKey") or data.get("key")
+        api_secret = data.get("api_secret") or data.get("apiSecret") or data.get("secret")
+        passphrase = data.get("passphrase")
+        exchange = data.get("exchange") or data.get("provider") or data.get("platform")
         model = data.get("model")  # Optional model parameter
         
         if not provider:
-            raise HTTPException(status_code=400, detail="Provider required")
+            return {
+                "ok": False,
+                "success": False,
+                "message": "❌ Provider required",
+                "error": "Provider field is required"
+            }
         
         # Ensure user_id is always stored as string
         user_id_str = str(user_id)
@@ -391,32 +402,42 @@ async def test_api_key(
 
 @router.post("/save")
 async def save_api_key(
-    data: Dict,
+    data: Dict = None,
     user_id: str = Depends(get_current_user)
 ):
     """Save an API key with encryption
     
+    Accepts JSON body, form-encoded, or raw body
     Accepts both api_key/api_secret and apiKey/apiSecret variants
     Accepts both provider and exchange fields
     
     Returns {"success": true, ...} on success
     
     Args:
-        data: Contains provider, api_key, api_secret, exchange info
+        data: Contains provider, api_key, api_secret, exchange info (can be dict or None)
         user_id: Current user ID from auth
         
     Returns:
         Saved key info (without exposing actual keys) with success=true
     """
     try:
+        # Handle None data (shouldn't happen but be defensive)
+        if data is None:
+            data = {}
+        
         # Normalize payload - accept multiple field name variants
-        provider = data.get("provider") or data.get("exchange")
-        api_key = data.get("api_key") or data.get("apiKey")
-        api_secret = data.get("api_secret") or data.get("apiSecret")
-        exchange = data.get("exchange") or data.get("provider")
+        provider = data.get("provider") or data.get("exchange") or data.get("platform")
+        api_key = data.get("api_key") or data.get("apiKey") or data.get("key")
+        api_secret = data.get("api_secret") or data.get("apiSecret") or data.get("secret")
+        passphrase = data.get("passphrase")
+        exchange = data.get("exchange") or data.get("provider") or data.get("platform")
         
         if not provider or not api_key:
-            raise HTTPException(status_code=400, detail="Provider and API key required")
+            return {
+                "success": False,
+                "message": "❌ Provider and API key required",
+                "error": "Both provider and api_key fields are required"
+            }
         
         # Ensure user_id is always stored as string
         user_id_str = str(user_id)

@@ -40,13 +40,19 @@ class TradeLimiter:
             # Check cooldown
             last_trade = bot.get('last_trade_time')
             if last_trade:
+                # Normalize last_trade to timezone-aware datetime
                 if isinstance(last_trade, str):
                     last_trade = datetime.fromisoformat(last_trade.replace('Z', '+00:00'))
+                
+                # Ensure timezone-aware
+                if last_trade.tzinfo is None:
+                    last_trade = last_trade.replace(tzinfo=timezone.utc)
                 
                 # Random cooldown with jitter (min_cooldown + 0-5 minutes)
                 cooldown = random.randint(min_cooldown, min_cooldown + 5)
                 next_allowed = last_trade + timedelta(minutes=cooldown)
                 
+                # Compare with timezone-aware now
                 now = datetime.now(timezone.utc)
                 if now < next_allowed:
                     wait_minutes = int((next_allowed - now).total_seconds() / 60)

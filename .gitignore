@@ -90,6 +90,16 @@ android-sdk/
 *.env.*
 !.env.example
 
-# Local patch backups
+# Local patch backups and temporary files
 .bak.*
 *.bak.*
+*.bak_*
+.bak_*
+
+# Build caches and temporary directories
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
