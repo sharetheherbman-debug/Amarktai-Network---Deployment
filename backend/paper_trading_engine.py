@@ -712,13 +712,41 @@ class PaperTradingEngine:
             )
             
             # Save trade
+            # CRITICAL: Validate trade_doc has all required fields before insertion
+            required_fields = [
+                'success', 'bot_id', 'symbol', 'exchange', 'entry_price', 'exit_price',
+                'amount', 'profit_loss', 'fees', 'is_paper', 'timestamp'
+            ]
+            
+            missing_fields = [f for f in required_fields if f not in trade_result]
+            if missing_fields:
+                logger.error(f"CRITICAL: Trade result missing required fields: {missing_fields}")
+                logger.error(f"Trade result: {trade_result}")
+                return None
+            
+            # Generate unique trade ID
+            from uuid import uuid4
+            trade_id = str(uuid4())[:8]
+            
             trade_doc = {
+                "id": trade_id,
                 **trade_result,
                 "user_id": bot_data['user_id'],
+                "bot_id": bot_id,
+                "pair": trade_result.get('symbol'),
+                "side": "BUY",  # Paper trades simulate BUY->SELL
+                "status": "closed",  # Paper trades are immediately closed
                 "new_capital": round(new_capital, 2),
                 "total_profit": round(total_profit, 2)
             }
+            
+            # Final validation: ensure document is not empty
+            if len(trade_doc.keys()) <= 1:
+                logger.error(f"CRITICAL: Attempted to insert empty trade document for bot {bot_id}")
+                return None
+            
             await trades_collection.insert_one(trade_doc)
+            logger.info(f"✅ Trade inserted: id={trade_id}, profit={trade_result['profit_loss']:.2f}")
             
             return {
                 "bot_id": bot_id,
@@ -753,30 +781,6 @@ class PaperTradingEngine:
         self.luno_exchange = None
         self.binance_exchange = None
         self.kucoin_exchange = None
-        """Close all CCXT async exchange sessions - prevents 'Unclosed client session' warnings"""
-        # Close Luno
-        try:
-            if self.luno_exchange:
-                await self.luno_exchange.close()
-                logger.info("Closed Luno exchange session")
-        except Exception as e:
-            logger.error(f"Error closing Luno exchange: {e}")
-        
-        # Close Binance
-        try:
-            if self.binance_exchange:
-                await self.binance_exchange.close()
-                logger.info("Closed Binance exchange session")
-        except Exception as e:
-            logger.error(f"Error closing Binance exchange: {e}")
-        
-        # Close KuCoin (ADDED - was missing)
-        try:
-            if self.kucoin_exchange:
-                await self.kucoin_exchange.close()
-                logger.info("Closed KuCoin exchange session")
-        except Exception as e:
-            logger.error(f"Error closing KuCoin exchange: {e}")
     
     def get_status(self) -> Dict:
         """Get paper trading engine status for monitoring with mode information"""

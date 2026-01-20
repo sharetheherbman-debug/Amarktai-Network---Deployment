@@ -17,7 +17,7 @@ except ImportError:
     pass  # dotenv not available, use environment variables directly
 
 # Paper -> Live promotion criteria (most commonly imported)
-PAPER_TRAINING_DAYS = 7
+PAPER_TRAINING_DAYS = int(os.getenv('PAPER_TRAINING_DAYS', '7'))  # Must be 7 days minimum
 MIN_WIN_RATE = 0.52  # 52%
 MIN_PROFIT_PERCENT = 0.03  # 3%
 MIN_TRADES_FOR_PROMOTION = 25
@@ -86,14 +86,24 @@ AI_MODELS = {
 }
 
 # Feature flags
-ENABLE_TRADING = os.getenv('ENABLE_TRADING', 'false').lower() == 'true'
-ENABLE_LIVE_TRADING = os.getenv('ENABLE_LIVE_TRADING', 'false').lower() == 'true'
-ENABLE_AUTOPILOT = os.getenv('ENABLE_AUTOPILOT', 'false').lower() == 'true'
+ENABLE_TRADING = os.getenv('ENABLE_TRADING', 'true').lower() == 'true'  # Enable for paper trading
+ENABLE_PAPER_TRADING = os.getenv('ENABLE_PAPER_TRADING', 'true').lower() == 'true'  # Paper trading safe
+ENABLE_LIVE_TRADING = os.getenv('ENABLE_LIVE_TRADING', 'false').lower() == 'true'  # Live OFF by default
+ENABLE_AUTOPILOT = os.getenv('ENABLE_AUTOPILOT', 'true').lower() == 'true'  # Autonomous management
+ENABLE_BODYGUARD = os.getenv('ENABLE_BODYGUARD', 'true').lower() == 'true'  # AI protection
+ENABLE_REALTIME = os.getenv('ENABLE_REALTIME', 'true').lower() == 'true'  # SSE/WS events
 ENABLE_SELF_LEARNING = os.getenv('ENABLE_SELF_LEARNING', 'true').lower() == 'true'
 ENABLE_SELF_HEALING = os.getenv('ENABLE_SELF_HEALING', 'true').lower() == 'true'
 ENABLE_CCXT = os.getenv('ENABLE_CCXT', 'true').lower() == 'true'
 ENABLE_UAGENTS = os.getenv('ENABLE_UAGENTS', 'false').lower() == 'true'
 PAYMENT_AGENT_ENABLED = os.getenv('PAYMENT_AGENT_ENABLED', 'false').lower() == 'true'
+
+# Live Trading Gate Requirements
+REQUIRE_WALLET_FUNDED = os.getenv('REQUIRE_WALLET_FUNDED', 'true').lower() == 'true'
+REQUIRE_API_KEYS_FOR_LIVE = os.getenv('REQUIRE_API_KEYS_FOR_LIVE', 'true').lower() == 'true'
+
+# Supported Exchanges for Paper Trading
+PAPER_SUPPORTED_EXCHANGES = {'luno', 'binance', 'kucoin'}
 
 __all__ = [
     'PAPER_TRAINING_DAYS', 'MIN_WIN_RATE', 'MIN_PROFIT_PERCENT', 'MIN_TRADES_FOR_PROMOTION',
@@ -103,7 +113,8 @@ __all__ = [
     'AI_MODELS',
     'STOP_LOSS_SAFE', 'STOP_LOSS_BALANCED', 'STOP_LOSS_AGGRESSIVE',
     'MAX_HOURLY_LOSS_PERCENT', 'MAX_DRAWDOWN_PERCENT',
-    'ENABLE_TRADING', 'ENABLE_LIVE_TRADING', 'ENABLE_AUTOPILOT',
-    'ENABLE_SELF_LEARNING', 'ENABLE_SELF_HEALING', 'ENABLE_CCXT',
-    'ENABLE_UAGENTS', 'PAYMENT_AGENT_ENABLED'
+    'ENABLE_TRADING', 'ENABLE_PAPER_TRADING', 'ENABLE_LIVE_TRADING', 'ENABLE_AUTOPILOT',
+    'ENABLE_BODYGUARD', 'ENABLE_REALTIME', 'ENABLE_SELF_LEARNING', 'ENABLE_SELF_HEALING',
+    'ENABLE_CCXT', 'ENABLE_UAGENTS', 'PAYMENT_AGENT_ENABLED',
+    'REQUIRE_WALLET_FUNDED', 'REQUIRE_API_KEYS_FOR_LIVE', 'PAPER_SUPPORTED_EXCHANGES'
 ]

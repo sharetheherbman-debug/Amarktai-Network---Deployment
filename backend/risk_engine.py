@@ -57,7 +57,6 @@ class RiskEngine:
         # In production, would need asset parameter passed in
         
         # Get all user's trades to calculate current exposure
-        import database as db
         recent_open_trades = await db.trades_collection.find({
             "user_id": user_id,
             "status": {"$in": ["open", "pending"]},  # Only open positions

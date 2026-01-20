@@ -40,20 +40,31 @@ FLOKX_API_KEY = os.getenv('FLOKX_API_KEY', '')
 # ============================================================================
 
 # Trading Feature Flags
-ENABLE_TRADING = os.getenv('ENABLE_TRADING', 'false').lower() == 'true'
-ENABLE_LIVE_TRADING = os.getenv('ENABLE_LIVE_TRADING', 'false').lower() == 'true'
-ENABLE_AUTOPILOT = os.getenv('ENABLE_AUTOPILOT', 'false').lower() == 'true'
+ENABLE_TRADING = os.getenv('ENABLE_TRADING', 'true').lower() == 'true'  # Enable for paper trading
+ENABLE_PAPER_TRADING = os.getenv('ENABLE_PAPER_TRADING', 'true').lower() == 'true'  # Paper trading safe by default
+ENABLE_LIVE_TRADING = os.getenv('ENABLE_LIVE_TRADING', 'false').lower() == 'true'  # Live trading OFF by default
+ENABLE_AUTOPILOT = os.getenv('ENABLE_AUTOPILOT', 'true').lower() == 'true'  # Autopilot for bot management
+ENABLE_BODYGUARD = os.getenv('ENABLE_BODYGUARD', 'true').lower() == 'true'  # AI Bodyguard protection
+ENABLE_REALTIME = os.getenv('ENABLE_REALTIME', 'true').lower() == 'true'  # SSE/WS realtime events
 ENABLE_SELF_LEARNING = os.getenv('ENABLE_SELF_LEARNING', 'true').lower() == 'true'
 ENABLE_SELF_HEALING = os.getenv('ENABLE_SELF_HEALING', 'true').lower() == 'true'
 ENABLE_CCXT = os.getenv('ENABLE_CCXT', 'true').lower() == 'true'  # Safe for price data
 ENABLE_UAGENTS = os.getenv('ENABLE_UAGENTS', 'false').lower() == 'true'
 PAYMENT_AGENT_ENABLED = os.getenv('PAYMENT_AGENT_ENABLED', 'false').lower() == 'true'
 
+# Live Trading Gate Requirements
+PAPER_TRAINING_DAYS = int(os.getenv('PAPER_TRAINING_DAYS', '7'))  # Must complete 7 days of paper trading
+REQUIRE_WALLET_FUNDED = os.getenv('REQUIRE_WALLET_FUNDED', 'true').lower() == 'true'  # Must have funded wallet
+REQUIRE_API_KEYS_FOR_LIVE = os.getenv('REQUIRE_API_KEYS_FOR_LIVE', 'true').lower() == 'true'  # Must have exchange API keys
+
+# Supported Exchanges for Paper Trading (PRODUCTION)
+PAPER_SUPPORTED_EXCHANGES = {'luno', 'binance', 'kucoin'}  # Only these exchanges in paper loop
+
 # Safe mode: All trading disabled by default
 # Enable gradually:
 # 1. ENABLE_CCXT=true (price data only)
-# 2. ENABLE_TRADING=true + paper mode only
-# 3. ENABLE_AUTOPILOT=true for autonomous management
+# 2. ENABLE_PAPER_TRADING=true (paper trading with simulated trades)
+# 3. ENABLE_TRADING=true + ENABLE_AUTOPILOT=true for autonomous management
 # 4. Configure API keys and enable live trading with ENABLE_LIVE_TRADING=true
 
 # ============================================================================
@@ -103,7 +114,7 @@ MAX_TRADES_PER_USER_PER_DAY = 3000  # Total across all bots
 MIN_TRADE_PROFIT_THRESHOLD_ZAR = 2.0  # Minimum net profit target (ignore 30c wins)
 
 # Paper → Live promotion criteria
-PAPER_TRAINING_DAYS = 7
+PAPER_TRAINING_DAYS = int(os.getenv('PAPER_TRAINING_DAYS', '7'))  # Must be 7 days minimum
 MIN_WIN_RATE = 0.52  # 52%
 MIN_PROFIT_PERCENT = 0.03  # 3%
 MIN_TRADES_FOR_PROMOTION = 25
