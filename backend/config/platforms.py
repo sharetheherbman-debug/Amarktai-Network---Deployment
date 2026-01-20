@@ -70,8 +70,7 @@ PLATFORM_CONFIG: Dict[str, Dict] = {
         'requires_passphrase': False,
         'enabled': True,
         'supports_paper': True,
-        # Live adapter not fully implemented yet, but bot creation allowed
-        'supports_live': False,
+        'supports_live': True,  # Now supports live trading
         'required_key_fields': ['api_key', 'api_secret'],
         'ccxt_id': 'ovex',
         'description': 'South African cryptocurrency exchange'
@@ -87,8 +86,7 @@ PLATFORM_CONFIG: Dict[str, Dict] = {
         'requires_passphrase': False,
         'enabled': True,
         'supports_paper': True,
-        # Live adapter not fully implemented yet, but bot creation allowed
-        'supports_live': False,
+        'supports_live': True,  # Now supports live trading
         'required_key_fields': ['api_key', 'api_secret'],
         'ccxt_id': 'valr',
         'description': 'South African cryptocurrency exchange'
