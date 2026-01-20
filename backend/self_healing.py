@@ -9,6 +9,7 @@ import asyncio
 from datetime import datetime, timezone
 from logger_config import logger
 import psutil
+import database as db
 
 
 class SelfHealingSystem:
@@ -49,8 +50,6 @@ class SelfHealingSystem:
     async def _check_database_connection(self):
         """Check and recover database connection"""
         try:
-            import database as db
-            
             # Test connection
             await db.command('ping')
             
@@ -65,7 +64,6 @@ class SelfHealingSystem:
     async def _recover_database(self):
         """Attempt to recover database connection"""
         try:
-            import database as db
             await db.init_db()
             logger.info("✅ Database connection recovered")
             return True

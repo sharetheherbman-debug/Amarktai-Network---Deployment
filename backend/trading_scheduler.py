@@ -12,6 +12,7 @@ from engines.trading_engine_live import live_trading_engine
 from engines.trade_staggerer import trade_staggerer
 import database as db
 from websocket_manager import manager
+from config import PAPER_SUPPORTED_EXCHANGES
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class BotPauseReason:
     EMERGENCY_STOP = "EMERGENCY_STOP"  # Emergency stop activated
     BUDGET_EXHAUSTED = "BUDGET_EXHAUSTED"  # Trading budget exhausted
     USER_PAUSED = "USER_PAUSED"  # Manually paused by user
+    UNSUPPORTED_EXCHANGE = "UNSUPPORTED_EXCHANGE"  # Exchange not supported for paper trading
 
 class TradingScheduler:
     """CONTINUOUS STAGGERED TRADING - Uses trade_staggerer for 24/7 execution"""
@@ -32,10 +34,14 @@ class TradingScheduler:
         self.is_running = False
         self.task = None
         self.check_interval = 10  # Check every 10 seconds for ready trades
+        self.last_heartbeat = None
+        self.heartbeat_interval = 10  # Emit heartbeat every 10 seconds
         
     async def execute_bot_trades(self):
         """Execute trades using staggered queue - CONTINUOUS OPERATION"""
         try:
+            logger.info("📊 Paper tick start")
+            
             # Get all active bots
             active_bots = await db.bots_collection.find(
                 {"status": "active"},
@@ -43,6 +49,40 @@ class TradingScheduler:
             ).to_list(1000)
             
             if not active_bots:
+                logger.debug("No active bots found")
+                return
+            
+            logger.info(f"📊 Bots scanned: {len(active_bots)} active")
+            
+            # Filter bots by supported exchanges for paper trading
+            supported_bots = []
+            unsupported_bots = []
+            
+            for bot in active_bots:
+                exchange = bot.get('exchange', '').lower()
+                if exchange in PAPER_SUPPORTED_EXCHANGES:
+                    supported_bots.append(bot)
+                else:
+                    unsupported_bots.append(bot)
+            
+            # Pause bots on unsupported exchanges
+            for bot in unsupported_bots:
+                exchange = bot.get('exchange', 'unknown')
+                logger.warning(f"⚠️ Bot {bot['name']} on unsupported exchange {exchange} - pausing")
+                await db.bots_collection.update_one(
+                    {"id": bot['id']},
+                    {"$set": {
+                        "status": "paused",
+                        "pause_reason": BotPauseReason.UNSUPPORTED_EXCHANGE,
+                        "paused_by_system": True,
+                        "paused_at": datetime.now(timezone.utc).isoformat()
+                    }}
+                )
+            
+            active_bots = supported_bots
+            
+            if not active_bots:
+                logger.debug("No bots on supported exchanges")
                 return
             
             # Check each user's System Mode settings and track reasons
@@ -130,11 +170,20 @@ class TradingScheduler:
                     
                     if is_paper_mode:
                         # Paper trading
+                        logger.info(f"📊 Trade candidate: {bot['name']} on {bot.get('exchange')}")
+                        
                         result = await paper_engine.run_trading_cycle(
                             bot['id'],
                             bot,
                             {'bots': db.bots_collection, 'trades': db.trades_collection}
                         )
+                        
+                        if result and result.get('trade'):
+                            trade = result['trade']
+                            trade_id = trade.get('bot_id', 'unknown')
+                            profit = trade.get('profit_loss', 0)
+                            logger.info(f"✅ Trade inserted: id={trade_id}, profit={profit:.2f}")
+                            logger.info(f"📡 Realtime event emitted: trade_id={trade_id}")
                     else:
                         # LIVE TRADING - Use live_trading_engine
                         logger.info(f"🔴 LIVE TRADING: {bot['name']} on {bot.get('exchange')}")
@@ -202,7 +251,6 @@ class TradingScheduler:
             
             # Calculate amount
             # For live trading, we need to get real price first
-            import database as db
             
             # Check if user has API keys for this exchange
             api_key_doc = await db.api_keys_collection.find_one({
@@ -288,6 +336,23 @@ class TradingScheduler:
         
         while self.is_running:
             try:
+                # Emit heartbeat for realtime monitoring
+                current_time = datetime.now(timezone.utc)
+                if self.last_heartbeat is None or (current_time - self.last_heartbeat).total_seconds() >= self.heartbeat_interval:
+                    self.last_heartbeat = current_time
+                    heartbeat_event = {
+                        "type": "heartbeat",
+                        "timestamp": current_time.isoformat(),
+                        "scheduler": "trading_scheduler",
+                        "status": "running"
+                    }
+                    # Broadcast heartbeat to all connected users
+                    try:
+                        await manager.broadcast(heartbeat_event)
+                        logger.debug("💓 Heartbeat emitted")
+                    except Exception as e:
+                        logger.debug(f"Failed to emit heartbeat: {e}")
+                
                 await self.execute_bot_trades()
                 
                 # Clean up stale trades periodically
