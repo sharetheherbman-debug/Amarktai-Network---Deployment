@@ -49,6 +49,13 @@ async def lifespan(app: FastAPI):
     try:
         await db.connect()
         logger.info("✅ Database connected and collections initialized")
+        
+        # Startup self-test: verify DB connectivity
+        try:
+            await db.client.admin.command('ping')
+            logger.info("✅ Database connectivity verified")
+        except Exception as ping_error:
+            logger.warning(f"⚠️ Database ping failed but connection established: {ping_error}")
     except Exception as e:
         logger.error(f"❌ FATAL: Database connection failed: {e}")
         raise  # Cannot proceed without database
@@ -109,7 +116,7 @@ async def lifespan(app: FastAPI):
         
         try:
             from engines.self_healing import self_healing
-            self_healing.start()
+            await self_healing.start()
             logger.info("🏥 Self-Healing System started")
         except Exception as e:
             logger.error(f"Failed to start Self-Healing System: {e}")
