@@ -4,6 +4,43 @@ Real-Time Event Manager - Ensures ALL dashboard updates happen via WebSocket
 import asyncio
 from websocket_manager import manager
 from logger_config import logger
+from typing import Dict, List, Callable
+from collections import defaultdict
+
+
+class RealTimeEventBus:
+    """Centralized event bus for real-time updates"""
+    
+    def __init__(self):
+        self.listeners: Dict[str, List[Callable]] = defaultdict(list)
+    
+    def subscribe(self, event_type: str, callback: Callable):
+        """Subscribe to an event type"""
+        self.listeners[event_type].append(callback)
+        logger.debug(f"Subscribed to event: {event_type}")
+    
+    def unsubscribe(self, event_type: str, callback: Callable):
+        """Unsubscribe from an event type"""
+        if callback in self.listeners[event_type]:
+            self.listeners[event_type].remove(callback)
+            logger.debug(f"Unsubscribed from event: {event_type}")
+    
+    async def emit(self, event_type: str, data: dict):
+        """Emit an event to all subscribers"""
+        if event_type in self.listeners:
+            for callback in self.listeners[event_type]:
+                try:
+                    if asyncio.iscoroutinefunction(callback):
+                        await callback(data)
+                    else:
+                        callback(data)
+                except Exception as e:
+                    logger.error(f"Event callback error ({event_type}): {e}")
+
+
+# Global event bus
+event_bus = RealTimeEventBus()
+
 
 class RealTimeEvents:
     """Centralized real-time event broadcasting"""
