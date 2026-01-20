@@ -4,12 +4,42 @@ Handles WebSocket connections and broadcasts
 """
 import asyncio
 from fastapi import WebSocket
-from typing import Dict, Set
+from typing import Dict, Set, Any
 import json
 import logging
 from datetime import datetime, timezone
+from bson import ObjectId
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_for_json(obj: Any) -> Any:
+    """
+    Recursively sanitize data for JSON serialization.
+    Converts ObjectId to str and datetime to timezone-aware ISO string.
+    
+    Args:
+        obj: Object to sanitize (can be dict, list, or primitive)
+        
+    Returns:
+        JSON-serializable version of obj
+    """
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    elif isinstance(obj, datetime):
+        # Ensure timezone-aware
+        if obj.tzinfo is None:
+            obj = obj.replace(tzinfo=timezone.utc)
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [sanitize_for_json(item) for item in obj]
+    elif isinstance(obj, (str, int, float, bool, type(None))):
+        return obj
+    else:
+        # Fallback: convert to string for unknown types
+        return str(obj)
 
 class ConnectionManager:
     def __init__(self):
@@ -57,7 +87,9 @@ class ConnectionManager:
     async def send_personal_message(self, message: dict, websocket: WebSocket):
         """Send message to specific WebSocket"""
         try:
-            await websocket.send_json(message)
+            # Sanitize message before sending
+            sanitized = sanitize_for_json(message)
+            await websocket.send_json(sanitized)
         except Exception as e:
             logger.error(f"Failed to send message: {e}")
             
@@ -70,9 +102,12 @@ class ConnectionManager:
         if user_id in self.active_connections:
             disconnected = set()
             
+            # Sanitize message once before broadcasting
+            sanitized = sanitize_for_json(message)
+            
             for connection in self.active_connections[user_id]:
                 try:
-                    await connection.send_json(message)
+                    await connection.send_json(sanitized)
                 except Exception as e:
                     logger.error(f"Broadcast error: {e}")
                     disconnected.add(connection)

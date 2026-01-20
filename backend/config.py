@@ -108,6 +108,9 @@ MIN_WIN_RATE = 0.52  # 52%
 MIN_PROFIT_PERCENT = 0.03  # 3%
 MIN_TRADES_FOR_PROMOTION = 25
 
+# Live Training Bay - new/spawned bots must be quarantined for minimum hours before trading
+LIVE_MIN_TRAINING_HOURS = int(os.getenv('LIVE_MIN_TRAINING_HOURS', '24'))  # Default 24 hours
+
 # Autopilot settings
 REINVEST_THRESHOLD_ZAR = 500  # Reinvest every R500
 NEW_BOT_CAPITAL = 1000  # R1000 minimum per bot
