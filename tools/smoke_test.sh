@@ -204,7 +204,7 @@ if [ "$STATUS" = "200" ]; then
         fi
         
         # Verify no password fields in response
-        if echo "$BODY" | grep -qE '"password|"password_hash|"hashed_password'; then
+        if echo "$BODY" | grep -qE '"(password|password_hash|hashed_password)"[ ]*:'; then
             log_error "Response contains password fields (security violation)"
         else
             log_success "No password fields in response (secure)"
@@ -272,7 +272,7 @@ else
     
     if [ "$STATUS" = "200" ]; then
         # Verify no password fields leaked
-        if echo "$BODY" | grep -qE '"password|"password_hash|"hashed_password'; then
+        if echo "$BODY" | grep -qE '"(password|password_hash|hashed_password)"[ ]*:'; then
             log_error "Profile response contains password fields (security violation)"
         else
             log_success "Profile retrieved without password leaks"

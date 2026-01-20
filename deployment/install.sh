@@ -93,6 +93,12 @@ systemctl start redis-server || true
 # ============================================================================
 log_info "Setting up MongoDB..."
 
+# Generate random password if not set
+if [ -z "${MONGO_PASSWORD:-}" ]; then
+    MONGO_PASSWORD=$(openssl rand -hex 16)
+    log_info "Generated random MongoDB password"
+fi
+
 # Check if MongoDB is already running
 if docker ps | grep -q amarktai-mongo; then
     log_info "MongoDB container already running"
@@ -104,12 +110,25 @@ else
         -p 27017:27017 \
         -v amarktai-mongo-data:/data/db \
         -e MONGO_INITDB_ROOT_USERNAME=amarktai \
-        -e MONGO_INITDB_ROOT_PASSWORD="${MONGO_PASSWORD:-amarktai2024}" \
+        -e MONGO_INITDB_ROOT_PASSWORD="$MONGO_PASSWORD" \
         mongo:7.0 \
         || log_warning "MongoDB container failed to start (may already exist)"
     
     log_info "Waiting for MongoDB to be ready..."
     sleep 5
+    
+    # Save connection string to .env if not already present
+    if [ -f "$BACKEND_DIR/.env" ]; then
+        if ! grep -q "^MONGO_URL=" "$BACKEND_DIR/.env"; then
+            echo "" >> "$BACKEND_DIR/.env"
+            echo "# MongoDB connection (auto-generated during installation)" >> "$BACKEND_DIR/.env"
+            echo "MONGO_URL=mongodb://amarktai:$MONGO_PASSWORD@localhost:27017" >> "$BACKEND_DIR/.env"
+            log_success "MongoDB connection string added to .env"
+        fi
+    fi
+    
+    log_warning "MongoDB Password: $MONGO_PASSWORD"
+    log_warning "IMPORTANT: Save this password securely!"
 fi
 
 log_success "Database services ready"

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict, EmailStr
+from pydantic import BaseModel, Field, ConfigDict, EmailStr, model_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
 from enum import Enum
@@ -40,12 +40,14 @@ class UserRegister(BaseModel):
     password_hash: Optional[str] = None  # Legacy field, treated as plain password
     invite_code: Optional[str] = None
     
-    def model_post_init(self, __context):
-        """Map name to first_name for backward compatibility"""
+    @model_validator(mode='after')
+    def validate_name_fields(self):
+        """Map name to first_name for backward compatibility and validate"""
         if self.name and not self.first_name:
             self.first_name = self.name
         if not self.first_name:
-            raise ValueError("Either first_name or name is required")
+            raise ValueError("Either 'first_name' or 'name' field is required for registration")
+        return self
 
 class UserLogin(BaseModel):
     email: EmailStr
