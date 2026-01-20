@@ -11,13 +11,44 @@ import logging
 from auth import get_current_user
 import database as db
 from services.profit_service import profit_service
+import platforms  # Import authoritative platform registry
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/platforms", tags=["Platforms"])
 
-# Supported platforms/exchanges
-EXCHANGES = ["luno", "binance", "kucoin", "ovex", "valr"]
+# Use authoritative platform registry
+EXCHANGES = platforms.SUPPORTED_PLATFORMS
+
+
+@router.get("")
+async def get_platforms():
+    """Get list of all supported platforms (public endpoint)
+    
+    Returns the authoritative list of 5 supported platforms with their configurations.
+    This endpoint does not require authentication and serves as the single source of truth
+    for platform information consumed by the frontend and other clients.
+    
+    Returns:
+        {
+            "success": true,
+            "platforms": [...],  # List of platform configs
+            "total": 5
+        }
+    """
+    try:
+        all_platforms = platforms.get_all_platforms()
+        
+        return {
+            "success": True,
+            "platforms": all_platforms,
+            "total": len(all_platforms),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Get platforms error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/summary")

@@ -76,9 +76,62 @@ apt-get install -y -qq \
     curl \
     git \
     nginx \
+    redis-server \
+    docker.io \
+    docker-compose \
     || log_error "Failed to install OS dependencies"
 
 log_success "OS dependencies installed"
+
+# Start Redis if not running
+log_info "Starting Redis server..."
+systemctl enable redis-server || true
+systemctl start redis-server || true
+
+# ============================================================================
+# 1.5. Setup MongoDB via Docker
+# ============================================================================
+log_info "Setting up MongoDB..."
+
+# Generate random password if not set
+if [ -z "${MONGO_PASSWORD:-}" ]; then
+    MONGO_PASSWORD=$(openssl rand -hex 16)
+    log_info "Generated random MongoDB password"
+fi
+
+# Check if MongoDB is already running
+if docker ps | grep -q amarktai-mongo; then
+    log_info "MongoDB container already running"
+else
+    log_info "Starting MongoDB container..."
+    docker run -d \
+        --name amarktai-mongo \
+        --restart unless-stopped \
+        -p 27017:27017 \
+        -v amarktai-mongo-data:/data/db \
+        -e MONGO_INITDB_ROOT_USERNAME=amarktai \
+        -e MONGO_INITDB_ROOT_PASSWORD="$MONGO_PASSWORD" \
+        mongo:7.0 \
+        || log_warning "MongoDB container failed to start (may already exist)"
+    
+    log_info "Waiting for MongoDB to be ready..."
+    sleep 5
+    
+    # Save connection string to .env if not already present
+    if [ -f "$BACKEND_DIR/.env" ]; then
+        if ! grep -q "^MONGO_URL=" "$BACKEND_DIR/.env"; then
+            echo "" >> "$BACKEND_DIR/.env"
+            echo "# MongoDB connection (auto-generated during installation)" >> "$BACKEND_DIR/.env"
+            echo "MONGO_URL=mongodb://amarktai:$MONGO_PASSWORD@localhost:27017" >> "$BACKEND_DIR/.env"
+            log_success "MongoDB connection string added to .env"
+        fi
+    fi
+    
+    log_warning "MongoDB Password: $MONGO_PASSWORD"
+    log_warning "IMPORTANT: Save this password securely!"
+fi
+
+log_success "Database services ready"
 
 # ============================================================================
 # 2. Create Virtual Environment and Install Python Dependencies
@@ -238,7 +291,7 @@ if OPENAPI_JSON=$(curl -s -f http://127.0.0.1:8000/openapi.json 2>/dev/null); th
     REQUIRED_ROUTES=(
         "/api/auth/login"
         "/api/health/ping"
-        "/api/realtime/events"
+        "/api/platforms"
         "/api/system/ping"
     )
     
@@ -258,6 +311,29 @@ if OPENAPI_JSON=$(curl -s -f http://127.0.0.1:8000/openapi.json 2>/dev/null); th
     fi
 else
     log_warning "Could not download OpenAPI spec - service may still be starting"
+fi
+
+# ============================================================================
+# 9. Run Smoke Tests
+# ============================================================================
+log_section "9. Running Smoke Tests"
+
+if [ -f "$PROJECT_ROOT/tools/smoke_test.sh" ]; then
+    log_info "Running comprehensive smoke tests..."
+    
+    # Set environment for smoke test
+    export API_BASE_URL="http://127.0.0.1:8000"
+    export INVITE_CODE="${INVITE_CODE:-AMARKTAI2024}"
+    
+    if bash "$PROJECT_ROOT/tools/smoke_test.sh"; then
+        log_success "Smoke tests PASSED ✅"
+    else
+        log_error "Smoke tests FAILED ❌"
+        log_warning "Installation completed but system validation failed"
+        log_warning "Check smoke test output above for details"
+    fi
+else
+    log_warning "Smoke test script not found - skipping validation"
 fi
 
 # ============================================================================
@@ -282,7 +358,16 @@ echo ""
 log_info "Next Steps:"
 echo "  1. Configure Nginx reverse proxy (see deployment/nginx-amarktai.conf)"
 echo "  2. Set up SSL certificates (Let's Encrypt recommended)"
-echo "  3. Configure MongoDB connection in $BACKEND_DIR/.env"
-echo "  4. Update JWT_SECRET and other secrets in .env"
+echo "  3. Update JWT_SECRET and other secrets in .env"
+echo "  4. Set ENCRYPTION_KEY for API key encryption in .env"
+echo "  5. Update MONGO_URL if using custom MongoDB setup"
+echo ""
+log_info "Required .env Variables:"
+echo "  • MONGO_URL - MongoDB connection string"
+echo "  • REDIS_URL - Redis connection string (optional)"
+echo "  • JWT_SECRET - Secret for JWT token signing"
+echo "  • ENCRYPTION_KEY - Fernet key for API key encryption"
+echo "  • INVITE_CODE - Code required for user registration"
+echo "  • ENABLE_TRADING - Enable live trading (default: false)"
 echo ""
 log_success "Installation complete! 🚀"
