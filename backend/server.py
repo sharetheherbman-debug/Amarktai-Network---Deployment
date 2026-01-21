@@ -2790,26 +2790,122 @@ async def manual_bot_promotion(user_id: str = Depends(get_current_user)):
 
 @api_router.post("/admin/emergency-stop")
 async def admin_emergency_stop(user_id: str = Depends(get_current_user)):
-    """EMERGENCY: Stop ALL trading activity"""
+    """EMERGENCY: HARD STOP - Immediately halt ALL trading activity"""
     try:
-        # Stop trading scheduler
-        trading_scheduler.stop()
+        logger.critical("🚨 EMERGENCY STOP INITIATED")
         
-        # Pause all bots
-        await db.bots_collection.update_many(
+        # 1. Set emergency stop flag in database
+        await db.emergency_stop_collection.update_one(
             {},
-            {"$set": {"status": "paused"}}
+            {"$set": {
+                "enabled": True,
+                "activated_at": datetime.now(timezone.utc).isoformat(),
+                "activated_by": user_id
+            }},
+            upsert=True
         )
         
-        # Broadcast to all users
-        logger.critical("🚨 EMERGENCY STOP ACTIVATED")
+        # 2. Stop trading scheduler immediately
+        try:
+            trading_scheduler.stop()
+            logger.info("✅ Trading scheduler stopped")
+        except Exception as e:
+            logger.error(f"Error stopping trading scheduler: {e}")
+        
+        # 3. Pause all active bots
+        result = await db.bots_collection.update_many(
+            {"status": "active"},
+            {"$set": {
+                "status": "paused",
+                "pause_reason": "emergency_stop",
+                "emergency_stopped_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        logger.info(f"✅ Paused {result.modified_count} bots")
+        
+        # 4. Clear any queued trades
+        try:
+            await db.orders_collection.update_many(
+                {"status": "pending"},
+                {"$set": {
+                    "status": "cancelled",
+                    "cancel_reason": "emergency_stop"
+                }}
+            )
+            logger.info("✅ Cancelled pending orders")
+        except Exception as e:
+            logger.warning(f"Could not cancel pending orders: {e}")
+        
+        # 5. Stop production trading engines
+        try:
+            from engines.trading_engine_production import trading_engine
+            trading_engine.stop()
+            logger.info("✅ Production trading engine stopped")
+        except Exception as e:
+            logger.warning(f"Could not stop trading engine: {e}")
+        
+        try:
+            from engines.autopilot_production import autopilot_production
+            autopilot_production.stop()
+            logger.info("✅ Production autopilot stopped")
+        except Exception as e:
+            logger.warning(f"Could not stop autopilot: {e}")
+        
+        logger.critical("🚨 EMERGENCY STOP ACTIVATED - ALL TRADING HALTED")
         
         return {
+            "success": True,
             "message": "Emergency stop activated - all trading halted",
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "bots_paused": result.modified_count,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "reversible": True
         }
     except Exception as e:
-        logger.error(f"Emergency stop failed: {e}")
+        logger.error(f"Emergency stop failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/admin/emergency-resume")
+async def admin_emergency_resume(user_id: str = Depends(get_current_user)):
+    """Resume trading after emergency stop - REVERSIBLE"""
+    try:
+        logger.warning("⚠️ EMERGENCY RESUME INITIATED")
+        
+        # 1. Clear emergency stop flag
+        await db.emergency_stop_collection.update_one(
+            {},
+            {"$set": {
+                "enabled": False,
+                "resumed_at": datetime.now(timezone.utc).isoformat(),
+                "resumed_by": user_id
+            }},
+            upsert=True
+        )
+        
+        # 2. Restart trading scheduler if enabled
+        enable_trading = env_bool('ENABLE_TRADING', False)
+        enable_schedulers = env_bool('ENABLE_SCHEDULERS', False)
+        
+        if enable_trading and enable_schedulers:
+            try:
+                trading_scheduler.start()
+                logger.info("✅ Trading scheduler restarted")
+            except Exception as e:
+                logger.error(f"Error restarting trading scheduler: {e}")
+        
+        # 3. DO NOT auto-resume bots - require manual review
+        # Bots remain paused for safety - admin must manually unpause after review
+        
+        logger.warning("⚠️ EMERGENCY STOP LIFTED - Bots remain paused for manual review")
+        
+        return {
+            "success": True,
+            "message": "Emergency stop lifted - bots remain paused for manual review",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "note": "Manually unpause bots after review"
+        }
+    except Exception as e:
+        logger.error(f"Emergency resume failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
