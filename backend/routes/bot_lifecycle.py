@@ -12,6 +12,7 @@ from auth import get_current_user
 import database as db
 from websocket_manager import manager
 from realtime_events import rt_events
+from services.bot_quarantine import quarantine_service
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +289,14 @@ async def pause_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Dep
                 }
             }
         )
+        
+        # Place bot in quarantine for auto-retraining (only if not manually paused)
+        # Manual pauses get lower priority quarantine
+        try:
+            if not data or not data.get('manual'):
+                await quarantine_service.quarantine_bot(bot_id, reason)
+        except Exception as e:
+            logger.warning(f"Failed to quarantine bot: {e}")
         
         # Get updated bot
         updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})

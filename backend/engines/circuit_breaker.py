@@ -241,6 +241,13 @@ class CircuitBreaker:
                 }}
             )
             
+            # Place bot in quarantine for auto-retraining
+            try:
+                from services.bot_quarantine import quarantine_service
+                await quarantine_service.quarantine_bot(bot_id, f"Circuit breaker: {reason}")
+            except Exception as e:
+                logger.warning(f"Failed to quarantine bot: {e}")
+            
             # Log to rogue detections
             await db.rogue_detections_collection.insert_one({
                 "user_id": bot['user_id'],

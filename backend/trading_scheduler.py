@@ -14,6 +14,7 @@ import database as db
 from websocket_manager import manager
 from realtime_events import rt_events
 from config import PAPER_SUPPORTED_EXCHANGES
+from services.bot_quarantine import quarantine_service
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,12 @@ class TradingScheduler:
                         "paused_at": datetime.now(timezone.utc).isoformat()
                     }}
                 )
+                
+                # Place bot in quarantine for auto-retraining
+                try:
+                    await quarantine_service.quarantine_bot(bot['id'], BotPauseReason.UNSUPPORTED_EXCHANGE)
+                except Exception as e:
+                    logger.warning(f"Failed to quarantine bot: {e}")
                 
                 # Emit bot status changed event
                 try:
@@ -154,6 +161,12 @@ class TradingScheduler:
                         "paused_at": datetime.now(timezone.utc).isoformat()
                     }}
                 )
+                
+                # Place bot in quarantine for auto-retraining
+                try:
+                    await quarantine_service.quarantine_bot(bot['id'], pause_reason)
+                except Exception as e:
+                    logger.warning(f"Failed to quarantine bot: {e}")
                 
                 # Emit bot status changed event
                 try:
