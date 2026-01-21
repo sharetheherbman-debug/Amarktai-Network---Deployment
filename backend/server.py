@@ -60,132 +60,17 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ FATAL: Database connection failed: {e}")
         raise  # Cannot proceed without database
     
-    # Feature flags for safe plug-and-play deployment
-    enable_trading = env_bool('ENABLE_TRADING', False)
-    enable_autopilot = env_bool('ENABLE_AUTOPILOT', False)
-    enable_ccxt = env_bool('ENABLE_CCXT', True)
-    enable_schedulers = env_bool('ENABLE_SCHEDULERS', False)
-    disable_ai_bodyguard = env_bool('DISABLE_AI_BODYGUARD', False)
-    
-    logger.info(f"🎚️ Feature flags: TRADING={enable_trading}, AUTOPILOT={enable_autopilot}, CCXT={enable_ccxt}, SCHEDULERS={enable_schedulers}, DISABLE_AI_BODYGUARD={disable_ai_bodyguard}")
-    
-    # Track background tasks for clean shutdown
-    background_tasks = []
-    
     # =========================================================================
-    # STEP 2: Start services in deterministic order
+    # STEP 2: Use lifecycle manager for subsystem management
     # =========================================================================
-    
-    # Start autonomous systems based on feature flags
-    if enable_autopilot:
-        try:
-            from autopilot_engine import autopilot
-            await autopilot.start()
-            logger.info("🤖 Autopilot Engine started")
-        except Exception as e:
-            logger.error(f"Failed to start Autopilot Engine: {e}")
-    else:
-        logger.info("🤖 Autopilot Engine disabled (ENABLE_AUTOPILOT=0)")
-    
-    # Only start AI Bodyguard if not explicitly disabled
-    if not disable_ai_bodyguard:
-        try:
-            from ai_bodyguard import bodyguard
-            task = asyncio.create_task(bodyguard.start())
-            background_tasks.append(task)
-            logger.info("🛡️ AI Bodyguard activated")
-        except Exception as e:
-            logger.error(f"Failed to start AI Bodyguard: {e}")
-    else:
-        logger.info("🛡️ AI Bodyguard disabled (DISABLE_AI_BODYGUARD=1)")
+    from services.lifecycle import lifecycle_manager
     
     try:
-        from self_learning import learning_system
-        await learning_system.init_db()
-        logger.info("📚 Self-Learning System initialized")
+        background_tasks = await lifecycle_manager.start_all()
+        logger.info(f"✅ Started {len(lifecycle_manager.subsystems)} subsystems with {len(background_tasks)} background tasks")
     except Exception as e:
-        logger.error(f"Failed to initialize Self-Learning System: {e}")
-    
-    if enable_schedulers:
-        try:
-            from autonomous_scheduler import autonomous_scheduler
-            await autonomous_scheduler.start()
-            logger.info("🤖 Autonomous Scheduler started (lifecycle, capital, regime)")
-        except Exception as e:
-            logger.error(f"Failed to start Autonomous Scheduler: {e}")
-        
-        try:
-            from engines.self_healing import self_healing
-            await self_healing.start()
-            logger.info("🏥 Self-Healing System started")
-        except Exception as e:
-            logger.error(f"Failed to start Self-Healing System: {e}")
-        
-        try:
-            from advanced_orders import advanced_orders
-            await advanced_orders.start()
-            logger.info("📈 Advanced Orders monitoring started")
-        except Exception as e:
-            logger.error(f"Failed to start Advanced Orders: {e}")
-        
-        try:
-            from ai_scheduler import ai_scheduler
-            await ai_scheduler.start()
-            logger.info("🧠 AI Backend Scheduler started - runs nightly at 2 AM")
-        except Exception as e:
-            logger.error(f"Failed to start AI Scheduler: {e}")
-        
-        try:
-            from ai_memory_manager import memory_manager
-            task = asyncio.create_task(memory_manager.run_maintenance())
-            background_tasks.append(task)
-            logger.info("💾 AI Memory Manager started")
-        except Exception as e:
-            logger.error(f"Failed to start AI Memory Manager: {e}")
-    else:
-        logger.info("📅 Schedulers disabled (ENABLE_SCHEDULERS=0)")
-    
-    if enable_trading:
-        # Start trading scheduler only if schedulers are enabled
-        if enable_schedulers:
-            try:
-                trading_scheduler.start()
-                logger.info("💹 Trading Scheduler started")
-            except Exception as e:
-                logger.error(f"Failed to start Trading Scheduler: {e}")
-        else:
-            logger.info("💹 Trading Scheduler disabled (ENABLE_SCHEDULERS=0)")
-        
-        try:
-            from engines.trading_engine_production import trading_engine
-            trading_engine.start()
-            logger.info("💹 Production Trading Engine started")
-        except Exception as e:
-            logger.error(f"Failed to start Trading Engine: {e}")
-        
-        try:
-            from engines.autopilot_production import autopilot_production
-            autopilot_production.start()
-            logger.info("🤖 Production Autopilot started")
-        except Exception as e:
-            logger.error(f"Failed to start Production Autopilot: {e}")
-        
-        try:
-            from engines.risk_management import risk_management
-            risk_management.start()
-            logger.info("🎯 Risk Management started")
-        except Exception as e:
-            logger.error(f"Failed to start Risk Management: {e}")
-    else:
-        logger.info("💹 Trading engines disabled (ENABLE_TRADING=0)")
-    
-    # Start wallet balance monitor (optional)
-    try:
-        from jobs.wallet_balance_monitor import wallet_balance_monitor
-        wallet_balance_monitor.start()
-        logger.info("✅ Wallet balance monitor started")
-    except Exception as e:
-        logger.warning(f"Could not start wallet monitor: {e}")
+        logger.error(f"❌ Error starting subsystems: {e}")
+        # Continue despite errors - some subsystems may have started
     
     # Initialize Fetch.ai and FLOKx integrations if keys available
     try:
@@ -220,101 +105,17 @@ async def lifespan(app: FastAPI):
     yield
     
     # =============================================================================
-    # SHUTDOWN - Each subsystem wrapped in try/except to prevent cascade failures
+    # SHUTDOWN - Use lifecycle manager for clean shutdown
     # =============================================================================
     logger.info("🔴 Shutting down Amarktai Network...")
     
-    # Cancel background tasks first with timeout
-    if background_tasks:
-        logger.info(f"📋 Cancelling {len(background_tasks)} background tasks...")
-        for task in background_tasks:
-            if not task.done():
-                task.cancel()
-        
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(*background_tasks, return_exceptions=True),
-                timeout=5.0
-            )
-            logger.info("✅ Background tasks cancelled")
-        except asyncio.TimeoutError:
-            logger.warning("⚠️ Background task cancellation timed out after 5s")
-        except Exception as e:
-            logger.error(f"Error cancelling background tasks: {e}")
+    from services.lifecycle import lifecycle_manager
     
-    # Stop subsystems based on feature flags
-    if enable_autopilot:
-        try:
-            from autopilot_engine import autopilot
-            await autopilot.stop()  # Now async
-            logger.info("✅ Autopilot Engine stopped")
-        except Exception as e:
-            logger.error(f"Error stopping autopilot: {e}")
-    
-    if not disable_ai_bodyguard:
-        try:
-            from ai_bodyguard import bodyguard
-            bodyguard.stop()
-            logger.info("✅ AI Bodyguard stopped")
-        except Exception as e:
-            logger.error(f"Error stopping bodyguard: {e}")
-    
-    if enable_schedulers:
-        try:
-            from autonomous_scheduler import autonomous_scheduler
-            await autonomous_scheduler.stop()
-            logger.info("✅ Autonomous Scheduler stopped")
-        except Exception as e:
-            logger.error(f"Error stopping autonomous_scheduler: {e}")
-        
-        try:
-            from engines.self_healing import self_healing
-            await self_healing.stop()
-            logger.info("✅ Self-Healing System stopped")
-        except Exception as e:
-            logger.error(f"Error stopping self_healing: {e}")
-        
-        try:
-            from advanced_orders import advanced_orders
-            await advanced_orders.stop()
-            logger.info("✅ Advanced Orders stopped")
-        except Exception as e:
-            logger.error(f"Error stopping advanced_orders: {e}")
-        
-        try:
-            from ai_scheduler import ai_scheduler
-            ai_scheduler.stop()
-            logger.info("✅ AI Scheduler stopped")
-        except Exception as e:
-            logger.error(f"Error stopping ai_scheduler: {e}")
-    
-    if enable_trading:
-        try:
-            trading_scheduler.stop()
-            logger.info("✅ Trading Scheduler stopped")
-        except Exception as e:
-            logger.error(f"Error stopping trading_scheduler: {e}")
-        
-        try:
-            from engines.trading_engine_production import trading_engine
-            trading_engine.stop()
-            logger.info("✅ Trading Engine stopped")
-        except Exception as e:
-            logger.error(f"Error stopping trading_engine: {e}")
-        
-        try:
-            from engines.autopilot_production import autopilot_production
-            autopilot_production.stop()
-            logger.info("✅ Production Autopilot stopped")
-        except Exception as e:
-            logger.error(f"Error stopping autopilot_production: {e}")
-        
-        try:
-            from engines.risk_management import risk_management
-            risk_management.stop()
-            logger.info("✅ Risk Management stopped")
-        except Exception as e:
-            logger.error(f"Error stopping risk_management: {e}")
+    # Stop all subsystems managed by lifecycle manager
+    try:
+        await lifecycle_manager.stop_all()
+    except Exception as e:
+        logger.error(f"Error during lifecycle shutdown: {e}")
     
     # Stop optional services
     try:
@@ -326,6 +127,9 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error stopping reinvest_service: {e}")
     
     # Close CCXT async sessions if trading/ccxt enabled
+    enable_trading = env_bool('ENABLE_TRADING', False)
+    enable_ccxt = env_bool('ENABLE_CCXT', True)
+    
     if enable_ccxt or enable_trading:
         try:
             from paper_trading_engine import paper_engine
