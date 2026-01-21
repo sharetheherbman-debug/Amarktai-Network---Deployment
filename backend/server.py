@@ -56,6 +56,24 @@ async def lifespan(app: FastAPI):
             logger.info("✅ Database connectivity verified")
         except Exception as ping_error:
             logger.warning(f"⚠️ Database ping failed but connection established: {ping_error}")
+        
+        # Boot selftest: verify critical collections are initialized
+        async def boot_selftest():
+            """Verify critical DB collections are initialized"""
+            required = ['users_collection', 'bots_collection', 'trades_collection', 
+                       'capital_injections_collection', 'api_keys_collection']
+            for coll_name in required:
+                if not hasattr(db, coll_name) or getattr(db, coll_name) is None:
+                    logger.error(f"BOOT FAIL: {coll_name} not initialized")
+                    return False
+            logger.info("✅ Boot selftest PASSED - all critical collections initialized")
+            return True
+        
+        selftest_passed = await boot_selftest()
+        if not selftest_passed:
+            logger.error("❌ Boot selftest failed - some collections not initialized")
+            # Continue anyway - collections may be initialized lazily
+            
     except Exception as e:
         logger.error(f"❌ FATAL: Database connection failed: {e}")
         raise  # Cannot proceed without database

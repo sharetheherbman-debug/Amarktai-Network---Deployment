@@ -150,6 +150,23 @@ async def list_user_keys(user_id: str = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/{provider}")
+async def save_key_provider_path(
+    provider: str,
+    data: APIKeySaveRequest,
+    user_id: str = Depends(get_current_user)
+):
+    """Save API key with encryption (path parameter version)
+    
+    Validates provider exists and required fields are provided
+    Encrypts key before storage
+    Emits realtime event on success
+    """
+    # Override provider from path parameter
+    data.provider = provider
+    return await save_key(data, user_id)
+
+
 @router.post("/save")
 async def save_key(
     data: APIKeySaveRequest,
@@ -348,6 +365,69 @@ async def test_key(
         raise
     except Exception as e:
         logger.error(f"Test key error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{provider}")
+async def get_key(
+    provider: str,
+    user_id: str = Depends(get_current_user)
+):
+    """Get masked API key for provider
+    
+    Returns masked key info (never exposes actual key)
+    Includes test status if key has been tested
+    """
+    try:
+        # Validate provider exists
+        provider_def = get_provider(provider)
+        if not provider_def:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown provider: {provider}"
+            )
+        
+        # Get key from database
+        saved_key = await db.api_keys_collection.find_one(
+            {"user_id": str(user_id), "provider": provider},
+            {"_id": 0, "api_key_encrypted": 0, "api_secret_encrypted": 0, "passphrase_encrypted": 0}
+        )
+        
+        if not saved_key:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No API key found for {provider_def.display_name}"
+            )
+        
+        # Build response
+        last_test_ok = saved_key.get("last_test_ok")
+        
+        if last_test_ok is True:
+            status = ProviderStatus.TEST_OK.value
+            status_display = "Test OK ✅"
+        elif last_test_ok is False:
+            status = ProviderStatus.TEST_FAILED.value
+            status_display = f"Test Failed ❌"
+        else:
+            status = ProviderStatus.SAVED_UNTESTED.value
+            status_display = "Saved (untested)"
+        
+        return {
+            "success": True,
+            "provider": provider,
+            "display_name": provider_def.display_name,
+            "status": status,
+            "status_display": status_display,
+            "created_at": saved_key.get("created_at"),
+            "updated_at": saved_key.get("updated_at"),
+            "last_tested_at": saved_key.get("last_tested_at"),
+            "last_test_error": saved_key.get("last_test_error") if last_test_ok is False else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get key error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
