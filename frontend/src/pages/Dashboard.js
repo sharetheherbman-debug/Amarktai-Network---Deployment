@@ -137,6 +137,11 @@ export default function Dashboard() {
   const [showAITools, setShowAITools] = useState(false); // Toggle AI tools submenu
   const [eligibleBots, setEligibleBots] = useState([]);
   const [showPromotionModal, setShowPromotionModal] = useState(false);
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [adminBots, setAdminBots] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [loadingBots, setLoadingBots] = useState(false);
+  const [actionLoading, setActionLoading] = useState({});
   
   const chatEndRef = useRef(null);
   const wsRef = useRef(null);
@@ -304,6 +309,8 @@ export default function Dashboard() {
       loadAllUsers();
       loadSystemStats();
       loadStorageData();
+      loadAdminUsers();
+      loadAdminBots();
     }
   }, [showAdmin]);
 
@@ -1885,6 +1892,167 @@ export default function Dashboard() {
     }
   };
 
+  // Load admin users with full details
+  const loadAdminUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const res = await axios.get(`${API}/admin/users`, axiosConfig);
+      setAdminUsers(res.data.users || []);
+    } catch (err) {
+      showNotification('Failed to load users', 'error');
+      console.error('Load admin users error:', err);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  // Load all bots for admin control
+  const loadAdminBots = async () => {
+    setLoadingBots(true);
+    try {
+      const res = await axios.get(`${API}/admin/bots`, axiosConfig);
+      setAdminBots(res.data.bots || []);
+    } catch (err) {
+      showNotification('Failed to load bots', 'error');
+      console.error('Load admin bots error:', err);
+    } finally {
+      setLoadingBots(false);
+    }
+  };
+
+  // Reset user password
+  const handleResetPassword = async (userId) => {
+    const newPassword = window.prompt('Enter new password for this user (minimum 6 characters):');
+    if (!newPassword) return;
+    
+    if (newPassword.length < 6) {
+      showNotification('Password must be at least 6 characters', 'error');
+      return;
+    }
+
+    setActionLoading(prev => ({ ...prev, [`reset-${userId}`]: true }));
+    try {
+      await axios.post(`${API}/admin/users/${userId}/reset-password`, 
+        { new_password: newPassword }, 
+        axiosConfig
+      );
+      showNotification('Password reset successfully', 'success');
+    } catch (err) {
+      showNotification('Failed to reset password', 'error');
+      console.error('Reset password error:', err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [`reset-${userId}`]: false }));
+    }
+  };
+
+  // Block/Unblock user
+  const handleToggleBlockUser = async (userId, currentStatus) => {
+    const action = currentStatus === 'blocked' ? 'unblock' : 'block';
+    if (!window.confirm(`Are you sure you want to ${action} this user?`)) return;
+
+    setActionLoading(prev => ({ ...prev, [`block-${userId}`]: true }));
+    try {
+      await axios.post(`${API}/admin/users/${userId}/${action}`, {}, axiosConfig);
+      showNotification(`User ${action}ed successfully`, 'success');
+      loadAdminUsers();
+    } catch (err) {
+      showNotification(`Failed to ${action} user`, 'error');
+      console.error(`${action} user error:`, err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [`block-${userId}`]: false }));
+    }
+  };
+
+  // Delete user
+  const handleDeleteUserAdmin = async (userId) => {
+    if (!window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) return;
+
+    setActionLoading(prev => ({ ...prev, [`delete-${userId}`]: true }));
+    try {
+      await axios.delete(`${API}/admin/users/${userId}`, axiosConfig);
+      showNotification('User deleted successfully', 'success');
+      loadAdminUsers();
+    } catch (err) {
+      showNotification('Failed to delete user', 'error');
+      console.error('Delete user error:', err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [`delete-${userId}`]: false }));
+    }
+  };
+
+  // Force logout user
+  const handleForceLogout = async (userId) => {
+    if (!window.confirm('Force logout this user from all sessions?')) return;
+
+    setActionLoading(prev => ({ ...prev, [`logout-${userId}`]: true }));
+    try {
+      await axios.post(`${API}/admin/users/${userId}/logout`, {}, axiosConfig);
+      showNotification('User logged out successfully', 'success');
+    } catch (err) {
+      showNotification('Failed to logout user', 'error');
+      console.error('Force logout error:', err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [`logout-${userId}`]: false }));
+    }
+  };
+
+  // Change bot mode
+  const handleChangeBotMode = async (botId, newMode) => {
+    if (!window.confirm(`Change bot trading mode to ${newMode}?`)) return;
+
+    setActionLoading(prev => ({ ...prev, [`mode-${botId}`]: true }));
+    try {
+      await axios.post(`${API}/admin/bots/${botId}/mode`, 
+        { mode: newMode }, 
+        axiosConfig
+      );
+      showNotification(`Bot mode changed to ${newMode}`, 'success');
+      loadAdminBots();
+    } catch (err) {
+      showNotification('Failed to change bot mode', 'error');
+      console.error('Change bot mode error:', err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [`mode-${botId}`]: false }));
+    }
+  };
+
+  // Pause/Resume bot
+  const handleToggleBotPause = async (botId, currentStatus) => {
+    const action = currentStatus === 'active' ? 'pause' : 'resume';
+    
+    setActionLoading(prev => ({ ...prev, [`pause-${botId}`]: true }));
+    try {
+      await axios.post(`${API}/admin/bots/${botId}/${action}`, {}, axiosConfig);
+      showNotification(`Bot ${action}d successfully`, 'success');
+      loadAdminBots();
+    } catch (err) {
+      showNotification(`Failed to ${action} bot`, 'error');
+      console.error(`${action} bot error:`, err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [`pause-${botId}`]: false }));
+    }
+  };
+
+  // Change bot exchange
+  const handleChangeBotExchange = async (botId, newExchange) => {
+    if (!window.confirm(`Change bot exchange to ${newExchange}?`)) return;
+
+    setActionLoading(prev => ({ ...prev, [`exchange-${botId}`]: true }));
+    try {
+      await axios.post(`${API}/admin/bots/${botId}/exchange`, 
+        { exchange: newExchange }, 
+        axiosConfig
+      );
+      showNotification(`Bot exchange changed to ${newExchange}`, 'success');
+      loadAdminBots();
+    } catch (err) {
+      showNotification('Failed to change bot exchange', 'error');
+      console.error('Change bot exchange error:', err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [`exchange-${botId}`]: false }));
+    }
+  };
+
   const renderWelcome = () => (
     <section className="section active">
       <div className="card welcome-container">
@@ -3141,6 +3309,319 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+          
+          {/* User Management Table - Interactive */}
+          <div style={{marginTop: '24px', padding: '20px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--line)'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px'}}>
+              <h3 style={{margin: 0, color: 'var(--accent)'}}>👥 User Management</h3>
+              <button
+                onClick={loadAdminUsers}
+                disabled={loadingUsers}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '0.85rem',
+                  background: '#3b82f6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: loadingUsers ? 'not-allowed' : 'pointer',
+                  opacity: loadingUsers ? 0.6 : 1,
+                  fontWeight: 600
+                }}
+              >
+                {loadingUsers ? '⏳ Loading...' : '🔄 Refresh'}
+              </button>
+            </div>
+            
+            {loadingUsers ? (
+              <div style={{textAlign: 'center', padding: '40px', color: 'var(--muted)'}}>
+                Loading users...
+              </div>
+            ) : adminUsers.length === 0 ? (
+              <div style={{textAlign: 'center', padding: '40px', color: 'var(--muted)'}}>
+                No users found
+              </div>
+            ) : (
+              <div style={{overflowX: 'auto'}}>
+                <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem'}}>
+                  <thead>
+                    <tr style={{borderBottom: '2px solid var(--line)'}}>
+                      <th style={{padding: '12px', textAlign: 'left', color: 'var(--muted)', fontWeight: 600}}>Username</th>
+                      <th style={{padding: '12px', textAlign: 'left', color: 'var(--muted)', fontWeight: 600}}>Email</th>
+                      <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Role</th>
+                      <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Status</th>
+                      <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>API Keys</th>
+                      <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Bots</th>
+                      <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminUsers.map(usr => (
+                      <tr key={usr.id} style={{borderBottom: '1px solid var(--line)'}}>
+                        <td style={{padding: '12px'}}>{usr.first_name || 'N/A'}</td>
+                        <td style={{padding: '12px'}}>{usr.email}</td>
+                        <td style={{padding: '12px', textAlign: 'center'}}>
+                          <span style={{
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            background: usr.role === 'admin' ? '#8b5cf6' : 'var(--glass)',
+                            color: usr.role === 'admin' ? 'white' : 'var(--text)'
+                          }}>
+                            {usr.role || 'user'}
+                          </span>
+                        </td>
+                        <td style={{padding: '12px', textAlign: 'center'}}>
+                          <span style={{
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            background: usr.status === 'blocked' ? 'var(--error)' : 'var(--success)',
+                            color: 'white'
+                          }}>
+                            {usr.status === 'blocked' ? '🚫 Blocked' : '✓ Active'}
+                          </span>
+                        </td>
+                        <td style={{padding: '12px', textAlign: 'center'}}>
+                          {usr.api_keys_count > 0 ? `✓ ${usr.api_keys_count}` : '—'}
+                        </td>
+                        <td style={{padding: '12px', textAlign: 'center', fontWeight: 600}}>
+                          {usr.bots_count || 0}
+                        </td>
+                        <td style={{padding: '12px', textAlign: 'center'}}>
+                          <div style={{display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'wrap'}}>
+                            <button
+                              onClick={() => handleResetPassword(usr.id)}
+                              disabled={actionLoading[`reset-${usr.id}`]}
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: '0.75rem',
+                                background: actionLoading[`reset-${usr.id}`] ? '#666' : '#3b82f6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: actionLoading[`reset-${usr.id}`] ? 'not-allowed' : 'pointer',
+                                opacity: actionLoading[`reset-${usr.id}`] ? 0.6 : 1,
+                                fontWeight: 600
+                              }}
+                            >
+                              {actionLoading[`reset-${usr.id}`] ? '...' : '🔑 Reset PW'}
+                            </button>
+                            <button
+                              onClick={() => handleToggleBlockUser(usr.id, usr.status)}
+                              disabled={actionLoading[`block-${usr.id}`]}
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: '0.75rem',
+                                background: actionLoading[`block-${usr.id}`] ? '#666' : (usr.status === 'blocked' ? 'var(--success)' : '#f59e0b'),
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: actionLoading[`block-${usr.id}`] ? 'not-allowed' : 'pointer',
+                                opacity: actionLoading[`block-${usr.id}`] ? 0.6 : 1,
+                                fontWeight: 600
+                              }}
+                            >
+                              {actionLoading[`block-${usr.id}`] ? '...' : (usr.status === 'blocked' ? '✓ Unblock' : '🚫 Block')}
+                            </button>
+                            <button
+                              onClick={() => handleDeleteUserAdmin(usr.id)}
+                              disabled={actionLoading[`delete-${usr.id}`]}
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: '0.75rem',
+                                background: actionLoading[`delete-${usr.id}`] ? '#666' : 'var(--error)',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: actionLoading[`delete-${usr.id}`] ? 'not-allowed' : 'pointer',
+                                opacity: actionLoading[`delete-${usr.id}`] ? 0.6 : 1,
+                                fontWeight: 600
+                              }}
+                            >
+                              {actionLoading[`delete-${usr.id}`] ? '...' : '🗑️ Delete'}
+                            </button>
+                            <button
+                              onClick={() => handleForceLogout(usr.id)}
+                              disabled={actionLoading[`logout-${usr.id}`]}
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: '0.75rem',
+                                background: actionLoading[`logout-${usr.id}`] ? '#666' : '#ef4444',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: actionLoading[`logout-${usr.id}`] ? 'not-allowed' : 'pointer',
+                                opacity: actionLoading[`logout-${usr.id}`] ? 0.6 : 1,
+                                fontWeight: 600
+                              }}
+                            >
+                              {actionLoading[`logout-${usr.id}`] ? '...' : '🚪 Logout'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          
+          {/* Bot Override Panel - Interactive */}
+          <div style={{marginTop: '24px', padding: '20px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--line)'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px'}}>
+              <h3 style={{margin: 0, color: 'var(--accent)'}}>🤖 Bot Override Controls</h3>
+              <button
+                onClick={loadAdminBots}
+                disabled={loadingBots}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '0.85rem',
+                  background: '#3b82f6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: loadingBots ? 'not-allowed' : 'pointer',
+                  opacity: loadingBots ? 0.6 : 1,
+                  fontWeight: 600
+                }}
+              >
+                {loadingBots ? '⏳ Loading...' : '🔄 Refresh'}
+              </button>
+            </div>
+            
+            {loadingBots ? (
+              <div style={{textAlign: 'center', padding: '40px', color: 'var(--muted)'}}>
+                Loading bots...
+              </div>
+            ) : adminBots.length === 0 ? (
+              <div style={{textAlign: 'center', padding: '40px', color: 'var(--muted)'}}>
+                No bots found
+              </div>
+            ) : (
+              <div style={{overflowX: 'auto'}}>
+                <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem'}}>
+                  <thead>
+                    <tr style={{borderBottom: '2px solid var(--line)'}}>
+                      <th style={{padding: '12px', textAlign: 'left', color: 'var(--muted)', fontWeight: 600}}>Bot Name</th>
+                      <th style={{padding: '12px', textAlign: 'left', color: 'var(--muted)', fontWeight: 600}}>User</th>
+                      <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Exchange</th>
+                      <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Mode</th>
+                      <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Status</th>
+                      <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Controls</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminBots.map(bot => (
+                      <tr key={bot.id} style={{borderBottom: '1px solid var(--line)'}}>
+                        <td style={{padding: '12px', fontWeight: 600}}>{bot.name}</td>
+                        <td style={{padding: '12px'}}>
+                          <div>{bot.user_name || 'Unknown'}</div>
+                          <div style={{fontSize: '0.75rem', color: 'var(--muted)'}}>{bot.user_email}</div>
+                        </td>
+                        <td style={{padding: '12px', textAlign: 'center'}}>
+                          <select
+                            value={bot.exchange}
+                            onChange={(e) => handleChangeBotExchange(bot.id, e.target.value)}
+                            disabled={actionLoading[`exchange-${bot.id}`]}
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '0.75rem',
+                              background: 'var(--glass)',
+                              color: 'var(--text)',
+                              border: '1px solid var(--line)',
+                              borderRadius: '4px',
+                              cursor: actionLoading[`exchange-${bot.id}`] ? 'not-allowed' : 'pointer',
+                              opacity: actionLoading[`exchange-${bot.id}`] ? 0.6 : 1,
+                              fontWeight: 600
+                            }}
+                          >
+                            <option value="binance">Binance</option>
+                            <option value="luno">Luno</option>
+                            <option value="kucoin">KuCoin</option>
+                            <option value="valr">VALR</option>
+                            <option value="ovex">OVEX</option>
+                          </select>
+                        </td>
+                        <td style={{padding: '12px', textAlign: 'center'}}>
+                          <div style={{display: 'flex', gap: '4px', justifyContent: 'center'}}>
+                            <button
+                              onClick={() => handleChangeBotMode(bot.id, 'paper')}
+                              disabled={actionLoading[`mode-${bot.id}`] || bot.trading_mode === 'paper'}
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: '0.75rem',
+                                background: bot.trading_mode === 'paper' ? 'var(--success)' : 'var(--glass)',
+                                color: bot.trading_mode === 'paper' ? 'white' : 'var(--text)',
+                                border: '1px solid var(--line)',
+                                borderRadius: '4px',
+                                cursor: (actionLoading[`mode-${bot.id}`] || bot.trading_mode === 'paper') ? 'not-allowed' : 'pointer',
+                                opacity: (actionLoading[`mode-${bot.id}`] || bot.trading_mode === 'paper') ? 0.6 : 1,
+                                fontWeight: 600
+                              }}
+                            >
+                              📝 Paper
+                            </button>
+                            <button
+                              onClick={() => handleChangeBotMode(bot.id, 'live')}
+                              disabled={actionLoading[`mode-${bot.id}`] || bot.trading_mode === 'live'}
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: '0.75rem',
+                                background: bot.trading_mode === 'live' ? '#f59e0b' : 'var(--glass)',
+                                color: bot.trading_mode === 'live' ? 'white' : 'var(--text)',
+                                border: '1px solid var(--line)',
+                                borderRadius: '4px',
+                                cursor: (actionLoading[`mode-${bot.id}`] || bot.trading_mode === 'live') ? 'not-allowed' : 'pointer',
+                                opacity: (actionLoading[`mode-${bot.id}`] || bot.trading_mode === 'live') ? 0.6 : 1,
+                                fontWeight: 600
+                              }}
+                            >
+                              💰 Live
+                            </button>
+                          </div>
+                        </td>
+                        <td style={{padding: '12px', textAlign: 'center'}}>
+                          <span style={{
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            background: bot.status === 'active' ? 'var(--success)' : (bot.status === 'paused' ? '#f59e0b' : 'var(--error)'),
+                            color: 'white'
+                          }}>
+                            {bot.status === 'active' ? '▶ Active' : (bot.status === 'paused' ? '⏸ Paused' : '⏹ Stopped')}
+                          </span>
+                        </td>
+                        <td style={{padding: '12px', textAlign: 'center'}}>
+                          <button
+                            onClick={() => handleToggleBotPause(bot.id, bot.status)}
+                            disabled={actionLoading[`pause-${bot.id}`]}
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '0.75rem',
+                              background: actionLoading[`pause-${bot.id}`] ? '#666' : (bot.status === 'active' ? '#f59e0b' : 'var(--success)'),
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: actionLoading[`pause-${bot.id}`] ? 'not-allowed' : 'pointer',
+                              opacity: actionLoading[`pause-${bot.id}`] ? 0.6 : 1,
+                              fontWeight: 600
+                            }}
+                          >
+                            {actionLoading[`pause-${bot.id}`] ? '...' : (bot.status === 'active' ? '⏸ Pause' : '▶ Resume')}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
           
           {/* Bot Override for Testing */}
           <div style={{marginTop: '24px', padding: '20px', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.05) 100%)', borderRadius: '8px', border: '2px solid #f59e0b'}}>
