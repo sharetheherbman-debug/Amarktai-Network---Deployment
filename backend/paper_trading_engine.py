@@ -514,21 +514,25 @@ class PaperTradingEngine:
                 return {"success": False, "bot_id": bot_id, "error": reason}
             
             # 2. CHECK DATA SOURCE (PUBLIC vs AUTHENTICATED)
-            data_source = f"{exchange.upper()}_PUBLIC"  # Default to public
-            try:
-                # Check if user has API keys for this exchange
-                api_key = await db.api_keys_collection.find_one({
-                    "user_id": user_id,
-                    "provider": exchange
-                })
-                
-                if api_key and api_key.get("last_test_ok"):
-                    data_source = f"REAL_{exchange.upper()}"
-                    logger.debug(f"Bot {bot_id[:8]} using authenticated data from {exchange}")
-                else:
-                    logger.debug(f"Bot {bot_id[:8]} using public data (no verified API keys)")
-            except Exception as e:
-                logger.debug(f"Could not check API keys for {exchange}: {e}")
+            # Use cached data_source from bot_data if available, otherwise check database
+            data_source = bot_data.get('data_source')
+            if not data_source:
+                # Fallback to checking database (only if not cached in bot_data)
+                data_source = f"{exchange.upper()}_PUBLIC"  # Default to public
+                try:
+                    # Check if user has API keys for this exchange
+                    api_key = await db.api_keys_collection.find_one({
+                        "user_id": user_id,
+                        "provider": exchange
+                    })
+                    
+                    if api_key and api_key.get("last_test_ok"):
+                        data_source = f"REAL_{exchange.upper()}"
+                        logger.debug(f"Bot {bot_id[:8]} using authenticated data from {exchange}")
+                    else:
+                        logger.debug(f"Bot {bot_id[:8]} using public data (no verified API keys)")
+                except Exception as e:
+                    logger.debug(f"Could not check API keys for {exchange}: {e}")
             
             # Get ALL available pairs dynamically
             available_pairs = await self.get_available_pairs(exchange)

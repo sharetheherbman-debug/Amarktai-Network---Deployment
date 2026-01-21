@@ -466,6 +466,9 @@ async def get_live_training_bay(user_id: str = Depends(get_current_user)):
 async def get_training_history(user_id: str = Depends(get_current_user)):
     """Get training history for user's bots
     
+    Note: For optimal performance, ensure a compound index exists on
+    learning_logs_collection: (user_id, type, created_at)
+    
     Args:
         user_id: Current user ID from auth
         
@@ -474,6 +477,7 @@ async def get_training_history(user_id: str = Depends(get_current_user)):
     """
     try:
         # Query training runs from database
+        # Recommended index: db.learning_logs_collection.create_index([("user_id", 1), ("type", 1), ("created_at", -1)])
         training_runs = await db.learning_logs_collection.find({
             "user_id": user_id,
             "type": "training_run"
