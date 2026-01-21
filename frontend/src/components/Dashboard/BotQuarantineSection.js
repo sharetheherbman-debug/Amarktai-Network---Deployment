@@ -77,7 +77,12 @@ const BotQuarantineSection = () => {
       
       <div className="space-y-4">
         {quarantinedBots.map((bot) => {
-          const progressPercent = 100 - ((bot.remaining_seconds / (bot.remaining_seconds + (Date.now() / 1000 - new Date(bot.quarantined_at).getTime() / 1000))) * 100);
+          // Calculate progress safely to avoid division by zero
+          const now = Date.now() / 1000;
+          const quarantinedAt = new Date(bot.quarantined_at).getTime() / 1000;
+          const elapsed = Math.max(0, now - quarantinedAt);
+          const totalDuration = elapsed + bot.remaining_seconds;
+          const progressPercent = totalDuration > 0 ? (elapsed / totalDuration) * 100 : 0;
           
           return (
             <div key={bot.bot_id} className="bg-black bg-opacity-30 p-4 rounded-lg">
