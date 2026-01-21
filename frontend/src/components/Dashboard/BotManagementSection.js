@@ -73,6 +73,17 @@ export const BotManagementSection = ({ bots, token, onBotsUpdate }) => {
     return status === 'active' ? '#10b981' : '#6b7280';
   };
 
+  const calculateTimeRemaining = (retrainingUntil) => {
+    const now = new Date();
+    const until = new Date(retrainingUntil);
+    const diff = Math.max(0, Math.floor((until - now) / 1000));
+    
+    const hours = Math.floor(diff / 3600);
+    const minutes = Math.floor((diff % 3600) / 60);
+    
+    return `${hours}h ${minutes}m remaining`;
+  };
+
   return (
     <div className="bots-list">
       {bots.length === 0 ? (
@@ -114,6 +125,52 @@ export const BotManagementSection = ({ bots, token, onBotsUpdate }) => {
                   </span>
                   <span className="bot-tag">{bot.exchange}</span>
                 </div>
+                
+                {/* Quarantine Status */}
+                {bot.status === 'quarantined' && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '8px',
+                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(245, 158, 11, 0.5)'
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.75rem',
+                      color: '#fbbf24'
+                    }}>
+                      <span>
+                        🔒 In Quarantine (Attempt #{bot.quarantine_count})
+                      </span>
+                      {bot.retraining_until && (
+                        <span style={{ fontFamily: 'monospace' }}>
+                          {calculateTimeRemaining(bot.retraining_until)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Pause Status */}
+                {bot.status === 'paused' && bot.pause_reason && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '8px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(239, 68, 68, 0.5)'
+                  }}>
+                    <span style={{
+                      fontSize: '0.75rem',
+                      color: '#fca5a5'
+                    }}>
+                      ⏸️ Paused: {bot.pause_reason}
+                    </span>
+                  </div>
+                )}
               </div>
               
               <div className="bot-metrics">

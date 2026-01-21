@@ -23,6 +23,8 @@ import PrometheusMetrics from '../components/PrometheusMetrics';
 import APIKeySettings from '../components/APIKeySettings';
 import PlatformSelector from '../components/PlatformSelector';
 import ErrorBoundary from '../components/ErrorBoundary';
+import BotQuarantineSection from '../components/Dashboard/BotQuarantineSection';
+import BotTrainingSection from '../components/Dashboard/BotTrainingSection';
 import { API_BASE, wsUrl } from '../lib/api.js';
 import { useRealtimeEvent } from '../hooks/useRealtime';
 import { post, get } from '../lib/apiClient';
@@ -475,6 +477,27 @@ export default function Dashboard() {
         }));
         // Update countdown when profit changes
         loadCountdown();
+        break;
+      
+      case 'overview_updated':
+        // Update overview data from WebSocket
+        if (data.overview) {
+          setMetrics(prev => ({
+            ...prev,
+            totalProfit: data.overview.portfolio_value ? `R${data.overview.portfolio_value.toFixed(2)}` : prev.totalProfit,
+            activeBots: data.overview.active_bots !== undefined ? `${data.overview.active_bots}` : prev.activeBots,
+            exposure: data.overview.exposure ? `${data.overview.exposure}%` : prev.exposure,
+            riskLevel: data.overview.risk_level || prev.riskLevel
+          }));
+          
+          if (data.overview.todays_pnl !== undefined) {
+            // Update today's P&L if provided
+            setBalances(prev => ({
+              ...prev,
+              todays_pnl: data.overview.todays_pnl
+            }));
+          }
+        }
         break;
       
       case 'system_mode_update':
@@ -3348,6 +3371,18 @@ export default function Dashboard() {
     </section>
   );
 
+  const renderQuarantine = () => (
+    <section className="section active">
+      <BotQuarantineSection />
+    </section>
+  );
+
+  const renderTraining = () => (
+    <section className="section active">
+      <BotTrainingSection />
+    </section>
+  );
+
   const renderLiveTradeFeed = () => {
     // Group trades by exchange
     const tradesByExchange = {
@@ -4334,6 +4369,8 @@ export default function Dashboard() {
             <a href="#" className={activeSection === 'welcome' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('welcome'); }}>🚀 Welcome</a>
             <a href="#" className={activeSection === 'api' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('api'); }}>🔑 API Setup</a>
             <a href="#" className={activeSection === 'bots' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('bots'); }}>🤖 Bot Management</a>
+            <a href="#" className={activeSection === 'quarantine' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('quarantine'); }}>🔒 Bot Quarantine</a>
+            <a href="#" className={activeSection === 'training' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('training'); }}>🎓 Bot Training</a>
             <a href="#" className={activeSection === 'system' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('system'); }}>🎮 System Mode</a>
             <a href="#" className={activeSection === 'graphs' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('graphs'); }}>📈 Profit & Performance</a>
             <a href="#" className={activeSection === 'trades' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('trades'); }}>📊 Live Trades</a>
@@ -4411,6 +4448,8 @@ export default function Dashboard() {
         {activeSection === 'overview' && renderOverview()}
         {activeSection === 'api' && renderApiSetup()}
         {activeSection === 'bots' && renderBots()}
+        {activeSection === 'quarantine' && renderQuarantine()}
+        {activeSection === 'training' && renderTraining()}
         {activeSection === 'system' && renderSystemMode()}
         {activeSection === 'graphs' && renderProfitGraphs()}
         {activeSection === 'trades' && renderLiveTradeFeed()}

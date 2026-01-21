@@ -23,6 +23,7 @@ export default function PrometheusMetrics() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedMetric, setSelectedMetric] = useState('latency');
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const lastUpdate = useLastUpdate('system_health');
 
   // Parse Prometheus text format
@@ -127,15 +128,29 @@ export default function PrometheusMetrics() {
       const token = localStorage.getItem('token');
       
       // Fetch Prometheus metrics
-      const metricsResponse = await get('/metrics', {
+      const response = await fetch(`${API_BASE}/metrics`, {
         headers: { 
           'Accept': 'text/plain',
           'Authorization': `Bearer ${token}`
         }
       });
 
-      setMetrics(metricsResponse);
-      const parsed = parsePrometheusMetrics(metricsResponse);
+      // Check content type
+      const contentType = response.headers.get('content-type');
+      
+      let metricsText;
+      if (contentType?.includes('application/json')) {
+        // Handle JSON response
+        const jsonData = await response.json();
+        // Convert JSON to text format if needed, or handle differently
+        metricsText = JSON.stringify(jsonData, null, 2);
+      } else {
+        // Handle text response
+        metricsText = await response.text();
+      }
+
+      setMetrics(metricsText);
+      const parsed = parsePrometheusMetrics(metricsText);
       setParsedMetrics(parsed);
       
       // Fetch system health
