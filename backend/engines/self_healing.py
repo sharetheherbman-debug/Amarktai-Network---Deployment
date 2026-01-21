@@ -46,11 +46,11 @@ class SelfHealingSystem:
             return False, "OK"
         
         except Exception as e:
-            logger.error(f"Detect excessive loss error: {e}")
+            logger.error(f"Detect excessive loss error: {e}", exc_info=True)
             return False, "Error"
     
     async def detect_stuck_bot(self, bot: dict) -> tuple[bool, str]:
-        """Detect if bot hasn't traded in 24 hours despite being active"""
+        """Detect if bot hasn't traded in 24 hours despite being active - ROBUST timezone handling"""
         try:
             if bot.get('status') != 'active':
                 return False, "OK"
@@ -60,24 +60,60 @@ class SelfHealingSystem:
                 # New bot, give it 24 hours
                 created = bot.get('created_at')
                 if created:
-                    created_dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
-                    hours_since_created = (datetime.now(timezone.utc) - created_dt).total_seconds() / 3600
-                    if hours_since_created > 24:
-                        return True, "🚨 Bot stuck: No trades in 24 hours since creation"
+                    try:
+                        # Handle both timezone-aware and naive datetime strings
+                        if isinstance(created, str):
+                            # Try parsing with Z suffix first
+                            if created.endswith('Z'):
+                                created_dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                            else:
+                                created_dt = datetime.fromisoformat(created)
+                                # If naive, assume UTC
+                                if created_dt.tzinfo is None:
+                                    created_dt = created_dt.replace(tzinfo=timezone.utc)
+                        elif isinstance(created, datetime):
+                            created_dt = created
+                            if created_dt.tzinfo is None:
+                                created_dt = created_dt.replace(tzinfo=timezone.utc)
+                        else:
+                            return False, "OK"  # Unknown format, skip check
+                            
+                        hours_since_created = (datetime.now(timezone.utc) - created_dt).total_seconds() / 3600
+                        if hours_since_created > 24:
+                            return True, "🚨 Bot stuck: No trades in 24 hours since creation"
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"Date parsing error in detect_stuck_bot: {e}")
+                        return False, "OK"  # Skip check on parse errors
                 return False, "OK"
             
-            if isinstance(last_trade, str):
-                last_trade = datetime.fromisoformat(last_trade.replace('Z', '+00:00'))
-            
-            hours_since_trade = (datetime.now(timezone.utc) - last_trade).total_seconds() / 3600
-            
-            if hours_since_trade > 24:
-                return True, f"🚨 Bot stuck: No trades in {hours_since_trade:.1f} hours"
-            
-            return False, "OK"
+            try:
+                # Handle both string and datetime types with timezone awareness
+                if isinstance(last_trade, str):
+                    if last_trade.endswith('Z'):
+                        last_trade_dt = datetime.fromisoformat(last_trade.replace('Z', '+00:00'))
+                    else:
+                        last_trade_dt = datetime.fromisoformat(last_trade)
+                        if last_trade_dt.tzinfo is None:
+                            last_trade_dt = last_trade_dt.replace(tzinfo=timezone.utc)
+                elif isinstance(last_trade, datetime):
+                    last_trade_dt = last_trade
+                    if last_trade_dt.tzinfo is None:
+                        last_trade_dt = last_trade_dt.replace(tzinfo=timezone.utc)
+                else:
+                    return False, "OK"  # Unknown type, skip check
+                
+                hours_since_trade = (datetime.now(timezone.utc) - last_trade_dt).total_seconds() / 3600
+                
+                if hours_since_trade > 24:
+                    return True, f"🚨 Bot stuck: No trades in {hours_since_trade:.1f} hours"
+                
+                return False, "OK"
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Date parsing error for last_trade_time: {e}")
+                return False, "OK"  # Skip check on parse errors
         
         except Exception as e:
-            logger.error(f"Detect stuck bot error: {e}")
+            logger.error(f"Detect stuck bot error: {e}", exc_info=True)
             return False, "Error"
     
     async def detect_abnormal_trading(self, bot: dict) -> tuple[bool, str]:
@@ -92,7 +128,7 @@ class SelfHealingSystem:
             return False, "OK"
         
         except Exception as e:
-            logger.error(f"Detect abnormal trading error: {e}")
+            logger.error(f"Detect abnormal trading error: {e}", exc_info=True)
             return False, "Error"
     
     async def detect_capital_anomaly(self, bot: dict) -> tuple[bool, str]:
@@ -109,7 +145,7 @@ class SelfHealingSystem:
             return False, "OK"
         
         except Exception as e:
-            logger.error(f"Detect capital anomaly error: {e}")
+            logger.error(f"Detect capital anomaly error: {e}", exc_info=True)
             return False, "Error"
     
     async def fix_rogue_bot(self, bot: dict, issue: str) -> bool:
@@ -148,34 +184,39 @@ class SelfHealingSystem:
             return False
     
     async def scan_all_bots(self):
-        """Scan all active bots for issues"""
+        """Scan all active bots for issues - NEVER crash the system"""
         try:
             bots = await db.bots_collection.find({"status": "active"}, {"_id": 0}).to_list(1000)
             
             rogue_count = 0
             
             for bot in bots:
-                # Run all detection rules
-                for detection_rule in self.detection_rules:
-                    is_rogue, issue = await detection_rule(bot)
-                    
-                    if is_rogue:
-                        logger.warning(f"⚠️ Rogue bot detected: {bot.get('name')} - {issue}")
+                try:
+                    # Run all detection rules
+                    for detection_rule in self.detection_rules:
+                        is_rogue, issue = await detection_rule(bot)
                         
-                        # Auto-fix
-                        if await self.fix_rogue_bot(bot, issue):
-                            rogue_count += 1
-                        
-                        break  # Stop checking other rules for this bot
+                        if is_rogue:
+                            logger.warning(f"⚠️ Rogue bot detected: {bot.get('name')} - {issue}")
+                            
+                            # Auto-fix
+                            if await self.fix_rogue_bot(bot, issue):
+                                rogue_count += 1
+                            
+                            break  # Stop checking other rules for this bot
+                except Exception as bot_error:
+                    logger.error(f"Error scanning bot {bot.get('id', 'unknown')}: {bot_error}", exc_info=True)
+                    continue  # Continue with next bot
             
             if rogue_count > 0:
                 logger.info(f"🛡️ Self-Healing: Fixed {rogue_count} rogue bots")
         
         except Exception as e:
-            logger.error(f"Scan all bots error: {e}")
+            logger.error(f"Scan all bots error: {e}", exc_info=True)
+            # Never crash - log and continue
     
     async def healing_loop(self):
-        """Main self-healing loop - runs every 30 minutes"""
+        """Main self-healing loop - runs every 30 minutes - NEVER crash"""
         logger.info("🛡️ Self-Healing system started")
         
         while self.is_running:
@@ -185,9 +226,12 @@ class SelfHealingSystem:
                 # Wait 30 minutes
                 await asyncio.sleep(1800)
             
+            except asyncio.CancelledError:
+                logger.info("🛡️ Self-Healing system cancelled")
+                break
             except Exception as e:
-                logger.error(f"Healing loop error: {e}")
-                await asyncio.sleep(300)  # Wait 5 minutes on error
+                logger.error(f"Healing loop error: {e}", exc_info=True)
+                await asyncio.sleep(300)  # Wait 5 minutes on error, then retry
     
     def start(self):
         """Start self-healing system"""

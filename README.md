@@ -1665,6 +1665,83 @@ For issues and questions:
 2. Review configuration: `.env` and nginx config
 3. Run smoke tests: `bash deployment/smoke_test.sh`
 
+---
+
+## 🔥 Production Smoke Test
+
+After deployment or restart, run the smoke check script to validate system health:
+
+### Quick Smoke Test
+
+```bash
+# Test local API (default: http://127.0.0.1:8000)
+python3 scripts/smoke_check.py
+
+# Test remote API
+python3 scripts/smoke_check.py http://your-server:8000
+```
+
+### Expected Output
+
+```
+============================================================
+🔥 AMARKTAI NETWORK - PRODUCTION SMOKE TEST
+============================================================
+Time: 2026-01-21 14:30:00
+
+ℹ Testing API at: http://127.0.0.1:8000
+
+Critical Checks:
+------------------------------------------------------------
+✓ Base URL: OK (200)
+✓ Health check: healthy
+
+Additional Checks:
+------------------------------------------------------------
+✓ System status endpoint: reachable
+
+============================================================
+✓ SMOKE TEST PASSED: 3/3 checks successful
+============================================================
+```
+
+### What the Smoke Test Validates
+
+1. **API Availability**: Base URL responds
+2. **Health Endpoint**: `/api/health` returns healthy status
+3. **System Status**: `/api/system_status` is reachable (may return 401 if not authenticated, which is expected)
+
+### Manual Verification
+
+After smoke test passes, verify:
+
+```bash
+# Check systemd service
+sudo systemctl status amarktai-api
+
+# Check recent logs for errors
+sudo journalctl -u amarktai-api -n 100 --no-pager | grep -i error
+
+# Verify scheduler is ticking (if ENABLE_SCHEDULERS=true)
+sudo journalctl -u amarktai-api -f | grep -i "scheduler\|tick"
+
+# Check MongoDB connectivity
+docker exec amarktai-mongo mongosh --eval "db.adminCommand('ping')"
+```
+
+### Pre-Live Checklist
+
+Before enabling live trading (ENABLE_LIVE_TRADING=true):
+
+- [ ] Paper trading has run for minimum 7 days
+- [ ] No critical errors in logs for 24+ hours
+- [ ] Smoke test passes consistently
+- [ ] Emergency stop tested and works
+- [ ] Bots have positive win rates (>52%)
+- [ ] Exchange API keys configured and tested
+- [ ] Wallet balances verified
+- [ ] Trade size limits configured correctly
+
 ## 📄 License
 
 All rights reserved.

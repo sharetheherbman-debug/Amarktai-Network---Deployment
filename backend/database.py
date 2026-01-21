@@ -107,6 +107,13 @@ async def connect():
         # Initialize database (create indexes)
         await init_db()
         
+        # Run startup baseline field repair for bots
+        try:
+            from migrations.repair_baseline_fields import repair_on_startup
+            await repair_on_startup()
+        except Exception as repair_error:
+            logger.warning(f"Baseline field repair failed (non-critical): {repair_error}")
+        
         logger.info("✅ All collections and indexes initialized")
         
     except Exception as e:

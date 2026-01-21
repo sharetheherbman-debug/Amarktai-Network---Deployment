@@ -127,7 +127,7 @@ class FractionalKellyCalculator:
                 f"(using {position_fraction:.2%} after fraction & clamp)"
             )
         
-        # Don't trade if Kelly is negative (negative edge)
+        # Don't trade if Kelly is negative (negative edge) UNLESS in bootstrap mode
         if full_kelly <= 0:
             logger.warning(
                 f"Negative Kelly edge detected: {full_kelly:.2%} "
@@ -169,16 +169,35 @@ class FractionalKellyCalculator:
         else:
             reward_risk_ratio = abs(avg_profit / avg_loss)
         
-        # Ensure minimum viable stats
+        # Ensure minimum viable stats with bootstrap trading
         min_trades = 20
+        bootstrap_threshold = 5  # Trade history < 5 triggers bootstrap mode
         total_trades = bot_stats.get('total_trades', 0)
         
+        # BOOTSTRAP MODE: Allow minimum size trades for new bots to generate learning data
+        if total_trades < bootstrap_threshold:
+            logger.info(
+                f"🔧 Bootstrap mode enabled: {total_trades} trades < {bootstrap_threshold} threshold. "
+                f"Using minimum position size to generate learning data."
+            )
+            # Use minimum position size for bootstrap trades
+            position_size = capital * self.min_position_size
+            return position_size, {
+                'bootstrap': True,
+                'reason': 'insufficient_trade_history',
+                'total_trades': total_trades,
+                'position_size': position_size,
+                'position_fraction': self.min_position_size,
+                'capital': capital,
+                'recommendation': 'bootstrap_trade'
+            }
+        
         if total_trades < min_trades:
-            # Reduce confidence for insufficient data
+            # Reduce confidence for insufficient data (but allow trading)
             data_confidence = total_trades / min_trades
             confidence = confidence * data_confidence
             logger.info(
-                f"Insufficient trade history ({total_trades}/{min_trades}), "
+                f"Low trade history ({total_trades}/{min_trades}), "
                 f"reducing confidence to {confidence:.2%}"
             )
         
