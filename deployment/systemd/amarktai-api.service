@@ -9,6 +9,7 @@ User=www-data
 Group=www-data
 WorkingDirectory=/var/amarktai/app/backend
 Environment="PATH=/var/amarktai/app/backend/.venv/bin"
+Environment="PYTHONDONTWRITEBYTECODE=1"
 EnvironmentFile=/var/amarktai/app/backend/.env
 ExecStart=/var/amarktai/app/backend/.venv/bin/uvicorn server:app --host 127.0.0.1 --port 8000
 Restart=always
