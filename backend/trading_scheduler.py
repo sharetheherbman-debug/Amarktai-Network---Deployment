@@ -12,7 +12,9 @@ from engines.trading_engine_live import live_trading_engine
 from engines.trade_staggerer import trade_staggerer
 import database as db
 from websocket_manager import manager
+from realtime_events import rt_events
 from config import PAPER_SUPPORTED_EXCHANGES
+from services.bot_quarantine import quarantine_service
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,23 @@ class TradingScheduler:
                         "paused_at": datetime.now(timezone.utc).isoformat()
                     }}
                 )
+                
+                # Place bot in quarantine for auto-retraining
+                try:
+                    await quarantine_service.quarantine_bot(bot['id'], BotPauseReason.UNSUPPORTED_EXCHANGE)
+                except Exception as e:
+                    logger.warning(f"Failed to quarantine bot: {e}")
+                
+                # Emit bot status changed event
+                try:
+                    await rt_events.bot_status_changed(
+                        bot['user_id'], 
+                        bot['id'], 
+                        "paused", 
+                        BotPauseReason.UNSUPPORTED_EXCHANGE
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to emit bot_status_changed event: {e}")
             
             active_bots = supported_bots
             
@@ -142,6 +161,23 @@ class TradingScheduler:
                         "paused_at": datetime.now(timezone.utc).isoformat()
                     }}
                 )
+                
+                # Place bot in quarantine for auto-retraining
+                try:
+                    await quarantine_service.quarantine_bot(bot['id'], pause_reason)
+                except Exception as e:
+                    logger.warning(f"Failed to quarantine bot: {e}")
+                
+                # Emit bot status changed event
+                try:
+                    await rt_events.bot_status_changed(
+                        user_id, 
+                        bot['id'], 
+                        "paused", 
+                        pause_reason
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to emit bot_status_changed event: {e}")
             
             if not active_bots:
                 return
@@ -194,15 +230,33 @@ class TradingScheduler:
                     # Register trade complete
                     await trade_staggerer.register_trade_complete(bot_id, bot.get('exchange'))
                     
-                    # Send WebSocket update
+                    # Send WebSocket update via rt_events for enhanced tracking
                     if result and isinstance(result, dict):
+                        trade_data = result.get('trade', {})
+                        if trade_data:
+                            # Broadcast trade execution event
+                            try:
+                                await rt_events.trade_executed(bot['user_id'], {
+                                    "bot_id": bot['id'],
+                                    "bot_name": bot['name'],
+                                    "pair": trade_data.get('pair', 'unknown'),
+                                    "side": trade_data.get('side', 'unknown'),
+                                    "profit_loss": trade_data.get('profit_loss', 0),
+                                    "new_capital": result.get('new_capital', 0),
+                                    "total_profit": result.get('total_profit', 0),
+                                    "timestamp": datetime.now(timezone.utc).isoformat()
+                                })
+                            except Exception as e:
+                                logger.warning(f"Failed to emit trade_executed event: {e}")
+                        
+                        # Legacy WebSocket update (keep for backwards compatibility)
                         await manager.send_message(bot['user_id'], {
                             "type": "trade_executed",
                             "bot_id": result['bot_id'],
                             "bot_name": bot['name'],
                             "new_capital": result.get('new_capital', 0),
                             "total_profit": result.get('total_profit', 0),
-                            "trade": result.get('trade', {})
+                            "trade": trade_data
                         })
                     
                 except Exception as e:

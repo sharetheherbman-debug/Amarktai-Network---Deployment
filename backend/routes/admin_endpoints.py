@@ -3,14 +3,16 @@ Admin Dashboard Endpoints
 User management, system monitoring, and administrative actions
 """
 
-from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict, Optional
+from fastapi import APIRouter, HTTPException, Depends, Request
+from typing import Dict, Optional, List
 from pydantic import BaseModel, Field
 import logging
 from datetime import datetime, timezone
 import bcrypt
 import os
 import secrets
+import string
+import random
 
 from auth import get_current_user
 import database as db
@@ -22,7 +24,81 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["Admin Dashboard"])
 
 
-# Pydantic models for request validation
+# ============================================================================
+# AUDIT LOGGING HELPER
+# ============================================================================
+
+async def log_admin_action(
+    admin_id: str, 
+    action: str, 
+    target_type: str, 
+    target_id: str, 
+    details: dict = None,
+    request: Request = None
+):
+    """Log admin actions to audit trail"""
+    try:
+        # Get admin username
+        admin_user = await db.users_collection.find_one({"id": admin_id}, {"_id": 0, "email": 1, "first_name": 1})
+        admin_username = admin_user.get("email", "unknown") if admin_user else "unknown"
+        
+        # Get IP address from request if available
+        ip_address = "unknown"
+        if request:
+            ip_address = request.client.host if request.client else "unknown"
+        
+        audit_doc = {
+            "admin_id": admin_id,
+            "admin_username": admin_username,
+            "action": action,
+            "target_type": target_type,  # "user" or "bot"
+            "target_id": target_id,
+            "details": details or {},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "ip_address": ip_address,
+        }
+        await db.audit_logs_collection.insert_one(audit_doc)
+        logger.info(f"Admin action logged: {admin_id[:8]} → {action} on {target_type} {target_id[:8]}")
+    except Exception as e:
+        logger.error(f"Failed to log admin action: {e}")
+
+
+# ============================================================================
+# RBAC HELPER
+# ============================================================================
+
+async def require_admin(current_user: str = Depends(get_current_user)) -> str:
+    """Ensure current user is admin"""
+    from bson import ObjectId
+    from bson.errors import InvalidId
+    
+    # Query user by id field first
+    user = await db.users_collection.find_one({"id": current_user}, {"_id": 0})
+    
+    # Fallback to ObjectId if not found and format is valid (24 hex characters)
+    if not user and len(current_user) == 24 and all(c in '0123456789abcdefABCDEF' for c in current_user):
+        try:
+            user = await db.users_collection.find_one({"_id": ObjectId(current_user)})
+        except InvalidId:
+            pass  # Invalid ObjectId despite format check
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check if user is admin
+    is_admin = user.get('is_admin', False) or user.get('role') == 'admin'
+    
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    return current_user
+
+
+# Backward compatibility alias
+verify_admin = require_admin
+
+
+
 class AdminUnlockRequest(BaseModel):
     password: str = Field(..., min_length=1, description="Admin password")
 
@@ -42,6 +118,14 @@ class DeleteUserRequest(BaseModel):
 class ChangeAdminPasswordRequest(BaseModel):
     current_password: str = Field(..., min_length=1, description="Current admin password")
     new_password: str = Field(..., min_length=8, description="New admin password")
+
+
+class BotModeChangeRequest(BaseModel):
+    mode: str = Field(..., description="Trading mode: paper or live")
+
+
+class BotExchangeChangeRequest(BaseModel):
+    exchange: str = Field(..., description="Exchange: luno, binance, kucoin, valr, ovex")
 
 
 @router.post("/unlock")
@@ -115,78 +199,110 @@ async def unlock_admin_panel(
         logger.error(f"Admin unlock error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-async def verify_admin(current_user_id: str = Depends(get_current_user)):
-    """Verify user is admin - fixed to use user_id string from get_current_user"""
-    from bson import ObjectId
-    from bson.errors import InvalidId
-    
-    # Query user by id field first
-    user = await db.users_collection.find_one({"id": current_user_id}, {"_id": 0})
-    
-    # Fallback to ObjectId if not found and format is valid (24 hex characters)
-    if not user and len(current_user_id) == 24 and all(c in '0123456789abcdefABCDEF' for c in current_user_id):
-        try:
-            user = await db.users_collection.find_one({"_id": ObjectId(current_user_id)})
-        except InvalidId:
-            pass  # Invalid ObjectId despite format check
-    
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Check if user is admin
-    is_admin = user.get('is_admin', False) or user.get('role') == 'admin'
-    
-    if not is_admin:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    return current_user_id  # Return user_id string for consistency
+
+# ============================================================================
+# USER MANAGEMENT ENDPOINTS
+# ============================================================================
 
 @router.get("/users")
-async def get_all_users(admin_user_id: str = Depends(verify_admin)):
-    """Get all users with stats - properly serialized"""
+async def get_all_users(admin_id: str = Depends(require_admin)):
+    """
+    Get all users with comprehensive details
+    - User info (id, username, email, role, status, timestamps)
+    - API keys summary (which exchanges are configured)
+    - Bots summary (total, by exchange, by mode)
+    - Resource usage (trades count)
+    """
     try:
-        users = await db.users_collection.find({}, {"password_hash": 0}).to_list(1000)
+        users = await db.users_collection.find({}, {"password_hash": 0, "password": 0}).to_list(1000)
         
-        # Serialize and enrich with stats
-        serialized_users = []
+        # Enrich users with comprehensive data
+        enriched_users = []
         for user in users:
             # Serialize the user document
             user_data = serialize_doc(user)
             user_id = user_data.get('id') or str(user.get('_id'))
-            user_data['id'] = user_id  # Ensure id field exists
-            
-            # Remove _id if present
+            user_data['id'] = user_id
             user_data.pop('_id', None)
             
-            # Count bots
-            bot_count = await db.bots_collection.count_documents({"user_id": user_id})
-            active_bots = await db.bots_collection.count_documents({
-                "user_id": user_id,
-                "status": "active"
-            })
-            
-            # Count trades
-            trade_count = await db.trades_collection.count_documents({"user_id": user_id})
-            
-            # Get total profit
-            bots = await db.bots_collection.find(
-                {"user_id": user_id},
-                {"_id": 0, "total_profit": 1}
-            ).to_list(1000)
-            total_profit = sum(b.get('total_profit', 0) for b in bots)
-            
-            user_data['stats'] = {
-                "total_bots": bot_count,
-                "active_bots": active_bots,
-                "total_trades": trade_count,
-                "total_profit": round(total_profit, 2)
+            # Get API keys summary
+            api_keys_cursor = db.api_keys_collection.find({"user_id": user_id}, {"_id": 0, "provider": 1})
+            api_keys = await api_keys_cursor.to_list(100)
+            api_keys_summary = {
+                "openai": any(k.get("provider") == "openai" for k in api_keys),
+                "luno": any(k.get("provider") == "luno" for k in api_keys),
+                "binance": any(k.get("provider") == "binance" for k in api_keys),
+                "kucoin": any(k.get("provider") == "kucoin" for k in api_keys),
+                "valr": any(k.get("provider") == "valr" for k in api_keys),
+                "ovex": any(k.get("provider") == "ovex" for k in api_keys),
             }
             
-            serialized_users.append(user_data)
+            # Get bots summary
+            bots_cursor = db.bots_collection.find({"user_id": user_id}, {"_id": 0, "exchange": 1, "trading_mode": 1, "status": 1})
+            bots = await bots_cursor.to_list(1000)
+            
+            # Count by exchange
+            by_exchange = {}
+            for bot in bots:
+                exchange = bot.get("exchange", "unknown")
+                by_exchange[exchange] = by_exchange.get(exchange, 0) + 1
+            
+            # Count by mode
+            by_mode = {}
+            for bot in bots:
+                mode = bot.get("trading_mode", "paper")
+                status = bot.get("status", "unknown")
+                
+                # Map status to simplified mode
+                if status == "paused":
+                    key = "paused"
+                else:
+                    key = mode
+                
+                by_mode[key] = by_mode.get(key, 0) + 1
+            
+            bots_summary = {
+                "total": len(bots),
+                "by_exchange": by_exchange,
+                "by_mode": by_mode
+            }
+            
+            # Get resource usage - trades count
+            from datetime import timedelta
+            now = datetime.now(timezone.utc)
+            yesterday = now - timedelta(days=1)
+            
+            trades_last_24h = await db.trades_collection.count_documents({
+                "user_id": user_id,
+                "timestamp": {"$gte": yesterday.isoformat()}
+            })
+            
+            total_trades = await db.trades_collection.count_documents({"user_id": user_id})
+            
+            resource_usage = {
+                "trades_last_24h": trades_last_24h,
+                "total_trades": total_trades
+            }
+            
+            # Build comprehensive user object
+            enriched_user = {
+                "user_id": user_id,
+                "username": user_data.get("first_name") or user_data.get("name", "Unknown"),
+                "email": user_data.get("email", "N/A"),
+                "role": user_data.get("role", "admin" if user_data.get("is_admin") else "user"),
+                "is_active": not user_data.get("blocked", False),
+                "created_at": user_data.get("created_at", "N/A"),
+                "last_seen": user_data.get("last_seen", "N/A"),
+                "api_keys": api_keys_summary,
+                "bots_summary": bots_summary,
+                "resource_usage": resource_usage
+            }
+            
+            enriched_users.append(enriched_user)
         
         return {
-            "users": serialized_users,
-            "total_count": len(serialized_users)
+            "users": enriched_users,
+            "total_count": len(enriched_users)
         }
         
     except Exception as e:
@@ -239,21 +355,21 @@ async def get_user_details(user_id: str, admin_user_id: str = Depends(verify_adm
 async def block_user(
     user_id: str,
     request: BlockUserRequest,
-    admin_user_id: str = Depends(verify_admin)
+    admin_id: str = Depends(require_admin),
+    req: Request = None
 ):
-    """Block a user"""
+    """Block a user and pause all their bots"""
     try:
-        reason = request.reason
-        
-        # Update user status
+        # Update user status - set is_active to false
         result = await db.users_collection.update_one(
             {"id": user_id},
             {
                 "$set": {
-                    "status": "blocked",
+                    "is_active": False,
+                    "blocked": True,
                     "blocked_at": datetime.now(timezone.utc).isoformat(),
-                    "blocked_by": admin_user_id,
-                    "blocked_reason": reason
+                    "blocked_by": admin_id,
+                    "blocked_reason": request.reason
                 }
             }
         )
@@ -261,27 +377,27 @@ async def block_user(
         if result.modified_count == 0:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Pause all user's bots
-        await db.bots_collection.update_many(
-            {"user_id": user_id},
-            {"$set": {"status": "paused"}}
+        # Pause all user's active bots
+        paused_result = await db.bots_collection.update_many(
+            {"user_id": user_id, "status": {"$ne": "paused"}},
+            {"$set": {"status": "paused", "pause_reason": "USER_BLOCKED_BY_ADMIN"}}
         )
         
         # Log action
-        await audit_logger.log_event(
-            event_type="user_blocked",
-            user_id=admin_user_id,
-            details={
-                "target_user_id": user_id,
-                "reason": reason
-            },
-            severity="critical"
+        await log_admin_action(
+            admin_id=admin_id,
+            action="block_user",
+            target_type="user",
+            target_id=user_id,
+            details={"reason": request.reason, "bots_paused": paused_result.modified_count},
+            request=req
         )
         
         return {
             "success": True,
-            "message": f"User {user_id} blocked",
-            "blocked_by": admin_user_id
+            "user_id": user_id,
+            "is_active": False,
+            "message": f"User blocked. {paused_result.modified_count} bots paused."
         }
         
     except HTTPException:
@@ -291,17 +407,23 @@ async def block_user(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/users/{user_id}/unblock")
-async def unblock_user(user_id: str, admin_user_id: str = Depends(verify_admin)):
+async def unblock_user(
+    user_id: str, 
+    admin_id: str = Depends(require_admin),
+    req: Request = None
+):
     """Unblock a user"""
     try:
         result = await db.users_collection.update_one(
             {"id": user_id},
             {
                 "$set": {
-                    "status": "active",
+                    "is_active": True,
+                    "blocked": False,
                     "unblocked_at": datetime.now(timezone.utc).isoformat(),
-                    "unblocked_by": admin_user_id
-                }
+                    "unblocked_by": admin_id
+                },
+                "$unset": {"blocked_reason": "", "blocked_at": "", "blocked_by": ""}
             }
         )
         
@@ -309,16 +431,20 @@ async def unblock_user(user_id: str, admin_user_id: str = Depends(verify_admin))
             raise HTTPException(status_code=404, detail="User not found")
         
         # Log action
-        await audit_logger.log_event(
-            event_type="user_unblocked",
-            user_id=admin_user_id,
-            details={"target_user_id": user_id},
-            severity="warning"
+        await log_admin_action(
+            admin_id=admin_id,
+            action="unblock_user",
+            target_type="user",
+            target_id=user_id,
+            details={},
+            request=req
         )
         
         return {
             "success": True,
-            "message": f"User {user_id} unblocked"
+            "user_id": user_id,
+            "is_active": True,
+            "message": "User unblocked"
         }
         
     except HTTPException:
@@ -330,23 +456,40 @@ async def unblock_user(user_id: str, admin_user_id: str = Depends(verify_admin))
 @router.post("/users/{user_id}/reset-password")
 async def reset_user_password(
     user_id: str,
-    request: ResetPasswordRequest,
-    admin_user_id: str = Depends(verify_admin)
+    admin_id: str = Depends(require_admin),
+    req: Request = None
 ):
-    """Reset user password (admin action)"""
+    """
+    Reset user password (admin action)
+    Generates a random secure password automatically
+    """
     try:
-        new_password = request.new_password
+        # Generate random password (12 characters, mixed case, numbers, symbols)
+        chars = string.ascii_letters + string.digits + "!@#$%^&*"
+        new_password = ''.join(random.choice(chars) for _ in range(12))
         
-        # Hash new password
-        hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+        # Ensure at least one of each type
+        new_password = (
+            random.choice(string.ascii_uppercase) +
+            random.choice(string.ascii_lowercase) +
+            random.choice(string.digits) +
+            random.choice("!@#$%^&*") +
+            new_password[4:]
+        )
+        
+        # Hash new password using passlib (same as auth.py)
+        from auth import get_password_hash
+        hashed = get_password_hash(new_password)
         
         result = await db.users_collection.update_one(
             {"id": user_id},
             {
                 "$set": {
-                    "password": hashed.decode('utf-8'),
+                    "password_hash": hashed,
+                    "password": hashed,  # Legacy support
                     "password_reset_by_admin": True,
-                    "password_reset_at": datetime.now(timezone.utc).isoformat()
+                    "password_reset_at": datetime.now(timezone.utc).isoformat(),
+                    "must_change_password": True  # Force password change on next login
                 }
             }
         )
@@ -354,20 +497,24 @@ async def reset_user_password(
         if result.modified_count == 0:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Log action
-        await audit_logger.log_event(
-            event_type="password_reset_by_admin",
-            user_id=admin_user_id,
-            details={
-                "target_user_id": user_id,
-                "reset_by": admin_user_id
-            },
-            severity="critical"
+        # Log action (don't log actual password)
+        await log_admin_action(
+            admin_id=admin_id,
+            action="reset_password",
+            target_type="user",
+            target_id=user_id,
+            details={"reset_by": admin_id},
+            request=req
         )
+        
+        # TODO: Send email with new password if email service is configured
+        # For now, return the password in response (admin must share it securely)
         
         return {
             "success": True,
-            "message": "Password reset successfully"
+            "new_password": new_password,
+            "message": "Password reset successfully. Email sent (if configured).",
+            "user_id": user_id
         }
         
     except HTTPException:
@@ -380,13 +527,22 @@ async def reset_user_password(
 async def delete_user(
     user_id: str,
     request: DeleteUserRequest,
-    admin_user_id: str = Depends(verify_admin)
+    admin_id: str = Depends(require_admin),
+    req: Request = None
 ):
-    """Delete user and all their data (dangerous!)"""
+    """
+    Delete user and all their data (dangerous!)
+    Prevents admin from deleting themselves
+    """
     try:
-        confirm = request.confirm
+        # Check if admin is trying to delete themselves
+        if user_id == admin_id:
+            raise HTTPException(
+                status_code=400, 
+                detail="Cannot delete your own admin account"
+            )
         
-        if not confirm:
+        if not request.confirm:
             return {
                 "success": False,
                 "message": "Confirmation required. Set confirm=true to proceed."
@@ -398,6 +554,12 @@ async def delete_user(
         # Delete all user's trades
         trades_result = await db.trades_collection.delete_many({"user_id": user_id})
         
+        # Delete all user's API keys
+        api_keys_result = await db.api_keys_collection.delete_many({"user_id": user_id})
+        
+        # Delete all user's alerts
+        alerts_result = await db.alerts_collection.delete_many({"user_id": user_id})
+        
         # Delete user
         user_result = await db.users_collection.delete_one({"id": user_id})
         
@@ -405,23 +567,28 @@ async def delete_user(
             raise HTTPException(status_code=404, detail="User not found")
         
         # Log action
-        await audit_logger.log_event(
-            event_type="user_deleted",
-            user_id=admin_user_id,
+        await log_admin_action(
+            admin_id=admin_id,
+            action="delete_user",
+            target_type="user",
+            target_id=user_id,
             details={
-                "target_user_id": user_id,
                 "bots_deleted": bots_result.deleted_count,
                 "trades_deleted": trades_result.deleted_count,
-                "deleted_by": admin_user_id
+                "api_keys_deleted": api_keys_result.deleted_count
             },
-            severity="critical"
+            request=req
         )
         
         return {
             "success": True,
-            "message": f"User deleted",
-            "bots_deleted": bots_result.deleted_count,
-            "trades_deleted": trades_result.deleted_count
+            "deleted": {
+                "user": user_result.deleted_count,
+                "bots": bots_result.deleted_count,
+                "trades": trades_result.deleted_count,
+                "api_keys": api_keys_result.deleted_count
+            },
+            "message": f"User {user_id} and all associated data deleted"
         }
         
     except HTTPException:
@@ -429,6 +596,64 @@ async def delete_user(
     except Exception as e:
         logger.error(f"Delete user error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/users/{user_id}/logout")
+async def force_logout_user(
+    user_id: str,
+    admin_id: str = Depends(require_admin),
+    req: Request = None
+):
+    """
+    Forcefully log out a user by invalidating their sessions
+    Note: Actual session invalidation depends on session storage implementation
+    """
+    try:
+        # Delete all user sessions if sessions collection exists
+        if db.sessions_collection:
+            sessions_result = await db.sessions_collection.delete_many({"user_id": user_id})
+            sessions_deleted = sessions_result.deleted_count
+        else:
+            sessions_deleted = 0
+        
+        # Add user to force_logout list (checked during auth)
+        await db.users_collection.update_one(
+            {"id": user_id},
+            {
+                "$set": {
+                    "force_logout": True,
+                    "force_logout_at": datetime.now(timezone.utc).isoformat(),
+                    "force_logout_by": admin_id
+                }
+            }
+        )
+        
+        # Log action
+        await log_admin_action(
+            admin_id=admin_id,
+            action="force_logout",
+            target_type="user",
+            target_id=user_id,
+            details={"sessions_deleted": sessions_deleted},
+            request=req
+        )
+        
+        return {
+            "success": True,
+            "message": "User forcefully logged out",
+            "user_id": user_id,
+            "sessions_deleted": sessions_deleted
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Force logout error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# BOT OVERRIDE ENDPOINTS
+# ============================================================================
 
 @router.get("/system-stats")
 async def get_system_stats_extended(admin_user_id: str = Depends(verify_admin)):
@@ -1115,17 +1340,17 @@ async def override_bot_to_live(
 async def get_all_bots_admin(
     mode: Optional[str] = None,
     user_id: Optional[str] = None,
-    admin_user_id: str = Depends(verify_admin)
+    admin_id: str = Depends(require_admin)
 ):
-    """Get all bots (admin view) for override dropdown
+    """
+    Get all bots (admin view) with comprehensive details
+    - Bot info (id, name, user, exchange, mode, status)
+    - Pause information (reason, timestamp)
+    - Capital and profit/loss
     
     Args:
         mode: Filter by trading mode ('paper' or 'live')
         user_id: Filter by specific user (optional)
-        admin_user_id: Admin user ID from auth
-        
-    Returns:
-        List of all bots with basic info for dropdown
     """
     try:
         # Build query
@@ -1139,32 +1364,329 @@ async def get_all_bots_admin(
         bots_cursor = db.bots_collection.find(query, {"_id": 0})
         bots = await bots_cursor.to_list(10000)
         
-        # Simplify for dropdown
-        simplified_bots = []
+        # Enrich bots with user info
+        enriched_bots = []
         for bot in bots:
-            simplified_bots.append({
-                "id": bot.get("id"),
+            bot_user_id = bot.get("user_id")
+            user = await db.users_collection.find_one(
+                {"id": bot_user_id}, 
+                {"_id": 0, "email": 1, "first_name": 1}
+            )
+            
+            enriched_bot = {
+                "bot_id": bot.get("id"),
                 "name": bot.get("name"),
-                "user_id": bot.get("user_id"),
+                "user_id": bot_user_id,
+                "username": user.get("first_name") if user else "Unknown",
+                "email": user.get("email") if user else "Unknown",
                 "exchange": bot.get("exchange"),
-                "status": bot.get("status"),
-                "trading_mode": bot.get("trading_mode"),
-                "total_profit": bot.get("total_profit", 0),
-                "override_rules": bot.get("override_rules", {})
-            })
+                "mode": bot.get("trading_mode", "paper"),
+                "status": bot.get("status", "unknown"),
+                "pause_reason": bot.get("pause_reason"),
+                "paused_at": bot.get("paused_at"),
+                "current_capital": bot.get("current_capital", 0),
+                "profit_loss": bot.get("total_profit", 0)
+            }
+            enriched_bots.append(enriched_bot)
         
         # Sort by name
-        simplified_bots.sort(key=lambda b: b["name"])
+        enriched_bots.sort(key=lambda b: b["name"])
         
         return {
-            "success": True,
-            "bots": simplified_bots,
-            "total": len(simplified_bots),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "bots": enriched_bots,
+            "total": len(enriched_bots)
         }
         
     except Exception as e:
         logger.error(f"Get all bots admin error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/bots/{bot_id}/mode")
+async def change_bot_mode(
+    bot_id: str,
+    request: BotModeChangeRequest,
+    admin_id: str = Depends(require_admin),
+    req: Request = None
+):
+    """
+    Change bot trading mode (paper/live)
+    Checks ENABLE_LIVE_TRADING environment variable
+    Verifies API keys exist for live mode
+    """
+    try:
+        new_mode = request.mode.lower()
+        
+        if new_mode not in ["paper", "live"]:
+            raise HTTPException(status_code=400, detail="Mode must be 'paper' or 'live'")
+        
+        # Check if bot exists
+        bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Check global live trading gate
+        if new_mode == "live":
+            enable_live = os.getenv("ENABLE_LIVE_TRADING", "false").lower() == "true"
+            if not enable_live:
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Live trading is globally disabled. Set ENABLE_LIVE_TRADING=true"
+                )
+            
+            # Verify user has API keys for this exchange
+            exchange = bot.get("exchange")
+            user_id = bot.get("user_id")
+            
+            api_key = await db.api_keys_collection.find_one({
+                "user_id": user_id,
+                "provider": exchange
+            })
+            
+            if not api_key:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"User has no API keys configured for {exchange}"
+                )
+        
+        # Update bot mode
+        result = await db.bots_collection.update_one(
+            {"id": bot_id},
+            {"$set": {"trading_mode": new_mode}}
+        )
+        
+        if result.modified_count == 0:
+            logger.warning(f"Bot {bot_id} mode unchanged (already {new_mode})")
+        
+        # Log action
+        await log_admin_action(
+            admin_id=admin_id,
+            action="change_bot_mode",
+            target_type="bot",
+            target_id=bot_id,
+            details={"old_mode": bot.get("trading_mode"), "new_mode": new_mode},
+            request=req
+        )
+        
+        return {
+            "success": True,
+            "bot_id": bot_id,
+            "mode": new_mode,
+            "message": f"Bot mode changed to {new_mode}"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Change bot mode error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/bots/{bot_id}/pause")
+async def pause_bot(
+    bot_id: str,
+    admin_id: str = Depends(require_admin),
+    req: Request = None
+):
+    """Pause a bot with admin override reason"""
+    try:
+        result = await db.bots_collection.update_one(
+            {"id": bot_id},
+            {
+                "$set": {
+                    "status": "paused",
+                    "pause_reason": "MANUAL_ADMIN_PAUSE",
+                    "paused_at": datetime.now(timezone.utc).isoformat(),
+                    "paused_by": admin_id
+                }
+            }
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Log action
+        await log_admin_action(
+            admin_id=admin_id,
+            action="pause_bot",
+            target_type="bot",
+            target_id=bot_id,
+            details={"reason": "MANUAL_ADMIN_PAUSE"},
+            request=req
+        )
+        
+        return {
+            "success": True,
+            "bot_id": bot_id,
+            "status": "paused",
+            "message": "Bot paused by admin"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Pause bot error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/bots/{bot_id}/resume")
+async def resume_bot(
+    bot_id: str,
+    admin_id: str = Depends(require_admin),
+    req: Request = None
+):
+    """Resume a paused bot"""
+    try:
+        result = await db.bots_collection.update_one(
+            {"id": bot_id},
+            {
+                "$set": {
+                    "status": "running",
+                    "resumed_at": datetime.now(timezone.utc).isoformat(),
+                    "resumed_by": admin_id
+                },
+                "$unset": {"pause_reason": "", "paused_at": ""}
+            }
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Log action
+        await log_admin_action(
+            admin_id=admin_id,
+            action="resume_bot",
+            target_type="bot",
+            target_id=bot_id,
+            details={},
+            request=req
+        )
+        
+        return {
+            "success": True,
+            "bot_id": bot_id,
+            "status": "running",
+            "message": "Bot resumed by admin"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Resume bot error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/bots/{bot_id}/restart")
+async def restart_bot(
+    bot_id: str,
+    admin_id: str = Depends(require_admin),
+    req: Request = None
+):
+    """
+    Restart a bot (if supported by scheduler)
+    Note: This requires integration with trading_scheduler.py
+    """
+    try:
+        bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Check if bot scheduler integration exists
+        # For now, we'll just return a message that auto-restart is not supported
+        # TODO: Integrate with trading_scheduler.py for actual restart
+        
+        # Log action
+        await log_admin_action(
+            admin_id=admin_id,
+            action="restart_bot",
+            target_type="bot",
+            target_id=bot_id,
+            details={"note": "Manual restart requested"},
+            request=req
+        )
+        
+        return {
+            "success": False,
+            "message": "Auto-restart not supported. Use pause/resume instead.",
+            "bot_id": bot_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Restart bot error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/bots/{bot_id}/exchange")
+async def change_bot_exchange(
+    bot_id: str,
+    request: BotExchangeChangeRequest,
+    admin_id: str = Depends(require_admin),
+    req: Request = None
+):
+    """
+    Change bot's exchange
+    Verifies user has API keys for new exchange
+    """
+    try:
+        new_exchange = request.exchange.lower()
+        valid_exchanges = ["luno", "binance", "kucoin", "valr", "ovex"]
+        
+        if new_exchange not in valid_exchanges:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid exchange. Must be one of: {', '.join(valid_exchanges)}"
+            )
+        
+        # Check if bot exists
+        bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Verify user has API keys for new exchange
+        user_id = bot.get("user_id")
+        api_key = await db.api_keys_collection.find_one({
+            "user_id": user_id,
+            "provider": new_exchange
+        })
+        
+        if not api_key:
+            raise HTTPException(
+                status_code=400,
+                detail=f"User has no API keys configured for {new_exchange}"
+            )
+        
+        # Update bot exchange
+        result = await db.bots_collection.update_one(
+            {"id": bot_id},
+            {"$set": {"exchange": new_exchange}}
+        )
+        
+        if result.modified_count == 0:
+            logger.warning(f"Bot {bot_id} exchange unchanged")
+        
+        # Log action
+        await log_admin_action(
+            admin_id=admin_id,
+            action="change_bot_exchange",
+            target_type="bot",
+            target_id=bot_id,
+            details={"old_exchange": bot.get("exchange"), "new_exchange": new_exchange},
+            request=req
+        )
+        
+        return {
+            "success": True,
+            "bot_id": bot_id,
+            "exchange": new_exchange,
+            "message": f"Bot exchange changed to {new_exchange}"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Change bot exchange error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

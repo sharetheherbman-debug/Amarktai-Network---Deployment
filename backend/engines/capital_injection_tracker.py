@@ -12,9 +12,6 @@ import database as db
 
 logger = logging.getLogger(__name__)
 
-# Create collection for tracking capital injections
-capital_injections_collection = db.capital_injections
-
 class CapitalInjectionTracker:
     """
     Tracks all capital injections separate from trading profits
@@ -44,7 +41,12 @@ class CapitalInjectionTracker:
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
-            await capital_injections_collection.insert_one(injection_doc)
+            # Check if collection is initialized
+            if not hasattr(db, 'capital_injections_collection') or db.capital_injections_collection is None:
+                logger.error("capital_injections_collection not initialized")
+                return False
+            
+            await db.capital_injections_collection.insert_one(injection_doc)
             
             # Update bot's total_injections field
             await db.bots_collection.update_one(
@@ -65,7 +67,12 @@ class CapitalInjectionTracker:
     async def get_bot_injections(self, bot_id: str) -> float:
         """Get total capital injected into a bot"""
         try:
-            injections = await capital_injections_collection.find(
+            # Check if collection is initialized
+            if not hasattr(db, 'capital_injections_collection') or db.capital_injections_collection is None:
+                logger.error("capital_injections_collection not initialized")
+                return 0.0
+            
+            injections = await db.capital_injections_collection.find(
                 {"bot_id": bot_id},
                 {"_id": 0}
             ).to_list(1000)
@@ -179,7 +186,12 @@ class CapitalInjectionTracker:
                 bot_ids = [b['id'] for b in bots]
                 query["bot_id"] = {"$in": bot_ids}
             
-            injections = await capital_injections_collection.find(
+            # Check if collection is initialized
+            if not hasattr(db, 'capital_injections_collection') or db.capital_injections_collection is None:
+                logger.error("capital_injections_collection not initialized")
+                return []
+            
+            injections = await db.capital_injections_collection.find(
                 query,
                 {"_id": 0}
             ).sort("timestamp", -1).limit(limit).to_list(limit)

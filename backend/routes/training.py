@@ -1,7 +1,7 @@
 """
 Training Pipeline for New Bots
 Ensures new bots never start live without training
-Minimal implementation with safety-first approach
+Enhanced with training run management and history tracking
 """
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
 import logging
 import os
+import uuid
 
 from auth import get_current_user
 import database as db
@@ -458,5 +459,264 @@ async def get_live_training_bay(user_id: str = Depends(get_current_user)):
         
     except Exception as e:
         logger.error(f"Get live training bay error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/history")
+async def get_training_history(user_id: str = Depends(get_current_user)):
+    """Get training history for user's bots
+    
+    Note: For optimal performance, ensure a compound index exists on
+    learning_logs_collection: (user_id, type, created_at)
+    
+    Args:
+        user_id: Current user ID from auth
+        
+    Returns:
+        Training history with runs and their results
+    """
+    try:
+        # Query training runs from database
+        # Recommended index: db.learning_logs_collection.create_index([("user_id", 1), ("type", 1), ("created_at", -1)])
+        training_runs = await db.learning_logs_collection.find({
+            "user_id": user_id,
+            "type": "training_run"
+        }).sort("created_at", -1).limit(50).to_list(50)
+        
+        history = []
+        for run in training_runs:
+            history.append({
+                "run_id": run.get("run_id"),
+                "bot_id": run.get("bot_id"),
+                "bot_name": run.get("bot_name"),
+                "exchange": run.get("exchange"),
+                "mode": run.get("mode", "paper"),
+                "duration": run.get("duration_hours", 0),
+                "final_pnl": run.get("final_pnl_pct", 0.0),
+                "status": run.get("status", "completed"),
+                "started_at": run.get("started_at"),
+                "completed_at": run.get("completed_at"),
+                "trades_executed": run.get("trades_executed", 0)
+            })
+        
+        return {
+            "success": True,
+            "history": history,
+            "total": len(history)
+        }
+        
+    except Exception as e:
+        logger.error(f"Get training history error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/start")
+async def start_training(
+    bot_id: str,
+    duration_hours: Optional[int] = 1,
+    user_id: str = Depends(get_current_user)
+):
+    """Start training run for a bot
+    
+    Args:
+        bot_id: Bot ID to train
+        duration_hours: Training duration in hours
+        user_id: Current user ID from auth
+        
+    Returns:
+        Training run information
+    """
+    try:
+        # Verify bot exists and belongs to user
+        bot = await db.bots_collection.find_one({
+            "id": bot_id,
+            "user_id": user_id
+        })
+        
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Create training run
+        run_id = str(uuid.uuid4())
+        training_run = {
+            "run_id": run_id,
+            "bot_id": bot_id,
+            "bot_name": bot.get("name"),
+            "user_id": user_id,
+            "exchange": bot.get("exchange"),
+            "mode": "training",
+            "type": "training_run",
+            "duration_hours": duration_hours,
+            "status": "running",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "initial_capital": bot.get("current_capital", 1000.0),
+            "trades_executed": 0
+        }
+        
+        await db.learning_logs_collection.insert_one(training_run)
+        
+        # Update bot status to training
+        await db.bots_collection.update_one(
+            {"id": bot_id},
+            {
+                "$set": {
+                    "status": "training",
+                    "current_training_run": run_id,
+                    "training_in_progress": True
+                }
+            }
+        )
+        
+        logger.info(f"Started training run {run_id[:8]} for bot {bot_id[:8]}")
+        
+        return {
+            "success": True,
+            "run_id": run_id,
+            "message": f"Training started for {duration_hours} hours"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Start training error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{run_id}/status")
+async def get_training_status(
+    run_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """Get status of a training run
+    
+    Args:
+        run_id: Training run ID
+        user_id: Current user ID from auth
+        
+    Returns:
+        Training run status and progress
+    """
+    try:
+        # Get training run
+        training_run = await db.learning_logs_collection.find_one({
+            "run_id": run_id,
+            "user_id": user_id
+        })
+        
+        if not training_run:
+            raise HTTPException(status_code=404, detail="Training run not found")
+        
+        # Calculate progress
+        started_at = datetime.fromisoformat(training_run["started_at"].replace('Z', '+00:00'))
+        duration_hours = training_run.get("duration_hours", 1)
+        elapsed = (datetime.now(timezone.utc) - started_at).total_seconds() / 3600
+        progress = min(100, (elapsed / duration_hours) * 100)
+        
+        # Get current bot stats
+        bot = await db.bots_collection.find_one({"id": training_run["bot_id"]})
+        current_pnl = 0.0
+        trades_executed = 0
+        
+        if bot:
+            initial_capital = training_run.get("initial_capital", 1000.0)
+            current_capital = bot.get("current_capital", initial_capital)
+            current_pnl = ((current_capital - initial_capital) / initial_capital) * 100 if initial_capital > 0 else 0
+            trades_executed = bot.get("trades_count", 0)
+        
+        return {
+            "success": True,
+            "run_id": run_id,
+            "status": training_run.get("status"),
+            "progress_pct": round(progress, 1),
+            "elapsed_hours": round(elapsed, 2),
+            "total_hours": duration_hours,
+            "current_pnl": round(current_pnl, 2),
+            "trades_executed": trades_executed
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get training status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{run_id}/stop")
+async def stop_training(
+    run_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """Stop a training run
+    
+    Args:
+        run_id: Training run ID
+        user_id: Current user ID from auth
+        
+    Returns:
+        Stop confirmation
+    """
+    try:
+        # Get training run
+        training_run = await db.learning_logs_collection.find_one({
+            "run_id": run_id,
+            "user_id": user_id
+        })
+        
+        if not training_run:
+            raise HTTPException(status_code=404, detail="Training run not found")
+        
+        # Get final bot stats
+        bot = await db.bots_collection.find_one({"id": training_run["bot_id"]})
+        final_pnl_pct = 0.0
+        trades_executed = 0
+        
+        if bot:
+            initial_capital = training_run.get("initial_capital", 1000.0)
+            current_capital = bot.get("current_capital", initial_capital)
+            final_pnl_pct = ((current_capital - initial_capital) / initial_capital) * 100 if initial_capital > 0 else 0
+            trades_executed = bot.get("trades_count", 0)
+        
+        # Update training run status
+        await db.learning_logs_collection.update_one(
+            {"run_id": run_id},
+            {
+                "$set": {
+                    "status": "stopped",
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "final_pnl_pct": final_pnl_pct,
+                    "trades_executed": trades_executed
+                }
+            }
+        )
+        
+        # Update bot status back to paused
+        bot_id = training_run["bot_id"]
+        await db.bots_collection.update_one(
+            {"id": bot_id},
+            {
+                "$set": {
+                    "status": "paused",
+                    "training_in_progress": False
+                },
+                "$unset": {
+                    "current_training_run": ""
+                }
+            }
+        )
+        
+        logger.info(f"Stopped training run {run_id[:8]} - Final P&L: {final_pnl_pct:.2f}%")
+        
+        return {
+            "success": True,
+            "message": "Training stopped",
+            "final_pnl_pct": round(final_pnl_pct, 2),
+            "trades_executed": trades_executed
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Stop training error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -287,6 +287,50 @@ class RealTimeEvents:
             "message": f"{emoji} System switched to {mode.upper()} mode"
         })
         logger.info(f"📡 Real-time: mode_switched to {mode} for user {user_id[:8]}")
+    
+    @staticmethod
+    async def bot_status_changed(user_id: str, bot_id: str, status: str, reason: str = None):
+        """Broadcast when bot status changes (started/paused/stopped/error)"""
+        emoji_map = {
+            "active": "▶️",
+            "paused": "⏸️",
+            "stopped": "⏹️",
+            "error": "❌",
+            "training": "🎓"
+        }
+        emoji = emoji_map.get(status, "🔄")
+        message = f"{emoji} Bot status changed to {status.upper()}"
+        if reason:
+            message += f" - {reason}"
+        
+        await manager.send_message(user_id, {
+            "type": "bot_status_changed",
+            "bot_id": bot_id,
+            "status": status,
+            "reason": reason,
+            "message": message
+        })
+        logger.info(f"📡 Real-time: bot_status_changed ({bot_id[:8]}, {status}) for user {user_id[:8]}")
+    
+    @staticmethod
+    async def metrics_updated(user_id: str, metrics: dict):
+        """Broadcast metrics updates (P&L, win rate, positions)"""
+        await manager.send_message(user_id, {
+            "type": "metrics_updated",
+            "metrics": metrics,
+            "message": "📊 Metrics updated"
+        })
+        logger.debug(f"📡 Real-time: metrics_updated for user {user_id[:8]}")
+    
+    @staticmethod
+    async def overview_updated(user_id: str, overview: dict):
+        """Broadcast overview summary (portfolio value, active bots, etc.)"""
+        await manager.send_message(user_id, {
+            "type": "overview_updated",
+            "overview": overview,
+            "message": "📈 Overview updated"
+        })
+        logger.debug(f"📡 Real-time: overview_updated for user {user_id[:8]}")
 
 # Global instance
 rt_events = RealTimeEvents()

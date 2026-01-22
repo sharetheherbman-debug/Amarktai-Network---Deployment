@@ -43,6 +43,143 @@ from risk_engine import risk_engine
 
 logger = logging.getLogger(__name__)
 
+# EXCHANGE FEE STRUCTURES (realistic simulation)
+EXCHANGE_FEES = {
+    "binance": {"maker": 0.001, "taker": 0.001},  # 0.1%
+    "kucoin": {"maker": 0.001, "taker": 0.001},   # 0.1%
+    "luno": {"maker": 0.0, "taker": 0.001},       # 0.1% taker
+    "valr": {"maker": 0.0, "taker": 0.00075},     # 0.075% taker
+    "ovex": {"maker": 0.001, "taker": 0.002}      # 0.1% maker, 0.2% taker
+}
+
+# EXCHANGE SYMBOL RULES (basic validation rules)
+EXCHANGE_RULES = {
+    "binance": {
+        "BTCUSDT": {
+            "min_order_size": 0.0001,
+            "max_order_size": 100.0,
+            "min_notional": 10.0,
+            "price_precision": 2,
+            "quantity_precision": 8,
+            "tick_size": 0.01,
+            "step_size": 0.00000001
+        },
+        "ETHUSDT": {
+            "min_order_size": 0.001,
+            "max_order_size": 1000.0,
+            "min_notional": 10.0,
+            "price_precision": 2,
+            "quantity_precision": 6,
+            "tick_size": 0.01,
+            "step_size": 0.000001
+        }
+    },
+    "luno": {
+        "BTCZAR": {
+            "min_order_size": 0.0001,
+            "max_order_size": 100.0,
+            "min_notional": 10.0,
+            "price_precision": 2,
+            "quantity_precision": 8,
+            "tick_size": 0.01,
+            "step_size": 0.00000001
+        },
+        "ETHZAR": {
+            "min_order_size": 0.001,
+            "max_order_size": 1000.0,
+            "min_notional": 10.0,
+            "price_precision": 2,
+            "quantity_precision": 6,
+            "tick_size": 0.01,
+            "step_size": 0.000001
+        }
+    }
+}
+
+def calculate_slippage(order_size_usd: float, daily_volume_usd: float = 1000000000) -> float:
+    """
+    Calculate slippage based on order size vs volume
+    
+    Args:
+        order_size_usd: Order size in USD
+        daily_volume_usd: Daily volume in USD (default 1B for major pairs)
+    
+    Returns:
+        Slippage as decimal (e.g., 0.0001 = 0.01%)
+    """
+    order_pct = order_size_usd / daily_volume_usd if daily_volume_usd > 0 else 0
+    
+    if order_pct < 0.01:  # < 1% of volume
+        return 0.0001  # 0.01% slippage
+    elif order_pct < 0.05:  # 1-5% of volume
+        return 0.0005  # 0.05% slippage
+    else:  # > 5% of volume
+        return 0.001  # 0.1%+ slippage
+
+def validate_order(exchange: str, symbol: str, quantity: float, price: float) -> Tuple[bool, str]:
+    """
+    Validate order against exchange rules
+    
+    Args:
+        exchange: Exchange name
+        symbol: Trading pair symbol
+        quantity: Order quantity
+        price: Order price
+    
+    Returns:
+        Tuple of (is_valid, message)
+    """
+    # Normalize symbol format
+    normalized_symbol = symbol.replace('/', '')
+    
+    rules = EXCHANGE_RULES.get(exchange, {}).get(normalized_symbol)
+    if not rules:
+        # No rules defined - assume valid
+        return True, "No rules defined"
+    
+    # Check min/max order size
+    if quantity < rules["min_order_size"]:
+        return False, f"Order size {quantity} below minimum {rules['min_order_size']}"
+    
+    if quantity > rules["max_order_size"]:
+        return False, f"Order size {quantity} exceeds maximum {rules['max_order_size']}"
+    
+    # Check min notional
+    notional = quantity * price
+    if notional < rules["min_notional"]:
+        return False, f"Order notional {notional} below minimum {rules['min_notional']}"
+    
+    # Check quantity precision
+    quantity_str = str(quantity)
+    if '.' in quantity_str:
+        decimals = len(quantity_str.split('.')[1])
+        if decimals > rules["quantity_precision"]:
+            return False, f"Quantity precision {decimals} exceeds maximum {rules['quantity_precision']}"
+    
+    return True, "Valid"
+
+def validate_trade_pnl(trade_pnl: float, bot_capital: float) -> bool:
+    """
+    Ensure P&L is realistic
+    
+    Args:
+        trade_pnl: Trade profit/loss
+        bot_capital: Bot capital
+    
+    Returns:
+        True if P&L is valid
+    """
+    if abs(trade_pnl) > bot_capital:
+        logger.error(f"ANOMALY: Trade P&L {trade_pnl} exceeds bot capital {bot_capital}")
+        return False
+    
+    pnl_pct = (trade_pnl / bot_capital) * 100 if bot_capital > 0 else 0
+    if abs(pnl_pct) > 50:  # > 50% gain/loss in single trade
+        logger.warning(f"ANOMALY: Single trade P&L {pnl_pct}% is suspicious")
+        return False
+    
+    return True
+
 class PaperTradingEngine:
     """Accurate paper trading - profits = what you'd make live"""
     
@@ -343,13 +480,59 @@ class PaperTradingEngine:
             user_id = bot_data.get('user_id')
             risk_mode = bot_data.get('risk_mode', 'safe')
             current_capital = bot_data.get('current_capital', 1000)
+            initial_capital = bot_data.get('initial_capital', 1000)
             exchange = bot_data.get('exchange', 'luno')
+            
+            # Get capital constraints
+            max_position_pct = bot_data.get('max_position_pct', 0.05)  # 5% per trade
+            max_daily_trades = bot_data.get('max_daily_trades', 20)
+            max_drawdown_pct = bot_data.get('max_drawdown_pct', 0.15)  # 15%
+            circuit_breaker_loss_pct = bot_data.get('circuit_breaker_loss_pct', 0.10)  # 10%
+            
+            # Check circuit breaker - daily loss limit
+            daily_pnl_pct = ((current_capital - initial_capital) / initial_capital) if initial_capital > 0 else 0
+            if daily_pnl_pct < -circuit_breaker_loss_pct:
+                logger.warning(f"Circuit breaker triggered: {bot_data['name'][:15]} - daily loss {daily_pnl_pct*100:.1f}% exceeds {circuit_breaker_loss_pct*100:.1f}%")
+                return {"success": False, "bot_id": bot_id, "error": f"Circuit breaker: daily loss limit exceeded"}
+            
+            # Check max drawdown
+            max_drawdown = bot_data.get('max_drawdown', 0)
+            if max_drawdown > max_drawdown_pct:
+                logger.warning(f"Max drawdown exceeded: {bot_data['name'][:15]} - {max_drawdown*100:.1f}% > {max_drawdown_pct*100:.1f}%")
+                return {"success": False, "bot_id": bot_id, "error": f"Max drawdown limit exceeded"}
+            
+            # Check daily trade limit
+            trades_today = bot_data.get('trades_today', 0)
+            if trades_today >= max_daily_trades:
+                logger.warning(f"Daily trade limit reached: {bot_data['name'][:15]} - {trades_today}/{max_daily_trades}")
+                return {"success": False, "bot_id": bot_id, "error": f"Daily trade limit reached"}
             
             # 1. CHECK RATE LIMITER
             can_trade, reason = rate_limiter.can_trade(bot_id, exchange)
             if not can_trade:
                 logger.warning(f"Rate limit: {bot_data['name'][:15]} - {reason}")
                 return {"success": False, "bot_id": bot_id, "error": reason}
+            
+            # 2. CHECK DATA SOURCE (PUBLIC vs AUTHENTICATED)
+            # Use cached data_source from bot_data if available, otherwise check database
+            data_source = bot_data.get('data_source')
+            if not data_source:
+                # Fallback to checking database (only if not cached in bot_data)
+                data_source = f"{exchange.upper()}_PUBLIC"  # Default to public
+                try:
+                    # Check if user has API keys for this exchange
+                    api_key = await db.api_keys_collection.find_one({
+                        "user_id": user_id,
+                        "provider": exchange
+                    })
+                    
+                    if api_key and api_key.get("last_test_ok"):
+                        data_source = f"REAL_{exchange.upper()}"
+                        logger.debug(f"Bot {bot_id[:8]} using authenticated data from {exchange}")
+                    else:
+                        logger.debug(f"Bot {bot_id[:8]} using public data (no verified API keys)")
+                except Exception as e:
+                    logger.debug(f"Could not check API keys for {exchange}: {e}")
             
             # Get ALL available pairs dynamically
             available_pairs = await self.get_available_pairs(exchange)
@@ -478,6 +661,12 @@ class PaperTradingEngine:
             crypto_amount = trade_amount / current_price
             entry_price = current_price
             
+            # Validate order against exchange rules
+            is_valid, validation_msg = validate_order(exchange, symbol, crypto_amount, entry_price)
+            if not is_valid:
+                logger.warning(f"Order validation failed: {validation_msg}")
+                return {"success": False, "bot_id": bot_id, "error": f"Order validation failed: {validation_msg}"}
+            
             # REALISTIC EXIT - Based on actual market volatility
             # Use real price movement simulation based on historical volatility
             # BTC typically moves 0.5-2% per trade timeframe
@@ -540,19 +729,23 @@ class PaperTradingEngine:
             gross_profit = (exit_price - entry_price) * crypto_amount
             profit_pct = ((exit_price - entry_price) / entry_price) * 100
             
-            # 3. SIMULATE REAL FEES
-            fee_rate = get_fee_rate(exchange, 'taker')  # Assume taker fee
+            # 3. SIMULATE REAL FEES - Enhanced with exchange-specific rates
+            # Use exchange-specific fee structure
+            exchange_fee_struct = EXCHANGE_FEES.get(exchange, {"maker": 0.001, "taker": 0.001})
+            fee_rate = exchange_fee_struct.get('taker', 0.001)  # Assume taker fee
             fees = trade_amount * fee_rate * 2  # Entry + exit
             
-            # 4. SIMULATE SLIPPAGE (0.05-0.2% depending on market conditions)
-            # Higher slippage on volatile markets and larger trades
-            base_slippage = 0.001  # 0.1% base
-            if trade_amount > 5000:  # Large orders
-                base_slippage = 0.002  # 0.2%
-            if abs(profit_pct) > 2:  # Volatile market
-                base_slippage *= 1.5
+            # 4. SIMULATE SLIPPAGE - Enhanced calculation based on order size vs volume
+            # Calculate slippage based on order size and market depth
+            daily_volume_usd = 1000000000  # Assume 1B daily volume for major pairs
+            order_size_usd = trade_amount  # Approximate USD value
             
-            slippage_cost = trade_amount * base_slippage
+            slippage_rate = calculate_slippage(order_size_usd, daily_volume_usd)
+            slippage_cost = trade_amount * slippage_rate
+            
+            # Additional slippage for volatile markets
+            if abs(profit_pct) > 2:  # Volatile market
+                slippage_cost *= 1.5
             
             # 5. SIMULATE ORDER FAILURES (2-5% of orders fail in reality)
             order_success_rate = 0.97  # 97% success rate
@@ -571,6 +764,15 @@ class PaperTradingEngine:
             # Recalculate with all realistic factors
             gross_profit = (exit_price - entry_price) * crypto_amount
             net_profit = gross_profit - fees - slippage_cost
+            
+            # P&L SANITY CHECK - Validate trade is realistic
+            if not validate_trade_pnl(net_profit, current_capital):
+                logger.error(f"P&L validation failed: net_profit={net_profit}, capital={current_capital}")
+                return {
+                    "success": False,
+                    "bot_id": bot_id,
+                    "error": "Trade P&L failed sanity check - unrealistic profit/loss"
+                }
             
             # SMART TRADING: Check minimum profit threshold (ignore R0.30 wins)
             from config import MIN_TRADE_PROFIT_THRESHOLD_ZAR
@@ -617,8 +819,9 @@ class PaperTradingEngine:
                 "quality_score": quality_score,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "trade_type": "BUY->SELL",
-                "data_source": "REAL_" + exchange.upper(),
+                "data_source": data_source,  # Use determined data source
                 "fee_rate": round(fee_rate * 100, 3),  # Display as percentage
+                "slippage_rate": round(slippage_rate * 100, 4),  # Display slippage as percentage
                 # AI Intelligence metadata
                 "ai_regime": regime.get('regime', 'unknown'),
                 "ai_confidence": round(regime.get('confidence', 0), 2),

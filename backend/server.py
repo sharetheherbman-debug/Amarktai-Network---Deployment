@@ -56,6 +56,24 @@ async def lifespan(app: FastAPI):
             logger.info("✅ Database connectivity verified")
         except Exception as ping_error:
             logger.warning(f"⚠️ Database ping failed but connection established: {ping_error}")
+        
+        # Boot selftest: verify critical collections are initialized
+        async def boot_selftest():
+            """Verify critical DB collections are initialized"""
+            required = ['users_collection', 'bots_collection', 'trades_collection', 
+                       'capital_injections_collection', 'api_keys_collection']
+            for coll_name in required:
+                if not hasattr(db, coll_name) or getattr(db, coll_name) is None:
+                    logger.error(f"BOOT FAIL: {coll_name} not initialized")
+                    return False
+            logger.info("✅ Boot selftest PASSED - all critical collections initialized")
+            return True
+        
+        selftest_passed = await boot_selftest()
+        if not selftest_passed:
+            logger.error("❌ Boot selftest failed - some collections not initialized")
+            # Continue anyway - collections may be initialized lazily
+            
     except Exception as e:
         logger.error(f"❌ FATAL: Database connection failed: {e}")
         raise  # Cannot proceed without database
@@ -100,6 +118,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Could not start Reinvestment Scheduler: {e}")
     
+    # Start Bot Quarantine Service
+    try:
+        from services.bot_quarantine import quarantine_service
+        quarantine_task = asyncio.create_task(quarantine_service.run())
+        logger.info("🔒 Bot Quarantine Service started")
+    except Exception as e:
+        logger.warning(f"Could not start Bot Quarantine Service: {e}")
+    
     logger.info("🚀 All autonomous systems operational")
     
     yield
@@ -125,6 +151,14 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Reinvestment Service stopped")
     except Exception as e:
         logger.error(f"Error stopping reinvest_service: {e}")
+    
+    # Stop Bot Quarantine Service
+    try:
+        from services.bot_quarantine import quarantine_service
+        quarantine_service.stop()
+        logger.info("✅ Bot Quarantine Service stopped")
+    except Exception as e:
+        logger.error(f"Error stopping quarantine service: {e}")
     
     # Close CCXT async sessions if trading/ccxt enabled
     enable_trading = env_bool('ENABLE_TRADING', False)
@@ -2972,6 +3006,7 @@ routers_to_mount = [
     ("routes.user_api_keys", "User API Keys"),
     ("routes.api_keys_canonical", "Canonical API Keys"),
     ("routes.dashboard_aliases", "Dashboard Aliases"),
+    ("routes.quarantine", "Bot Quarantine"),
     ("routes.decision_trace", "Decision Trace"),
     ("routes.compatibility_endpoints", "Compatibility"),
 ]

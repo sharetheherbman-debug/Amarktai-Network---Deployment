@@ -2,104 +2,86 @@ import React, { useState, useEffect } from 'react';
 import './APIKeySettings.css';
 
 const APIKeySettings = () => {
-  const [apiKeys, setApiKeys] = useState({
-    openai: '',
-    flock: '',
-    fetch_wallet: ''
-  });
-  
-  const [keyStatus, setKeyStatus] = useState({
-    openai: { configured: false, status: 'none' },
-    flock: { configured: false, status: 'none' },
-    fetch_wallet: { configured: false, status: 'none' }
-  });
-  
-  const [paymentConfig, setPaymentConfig] = useState({
-    enabled: false,
-    wallet_seed: '',
-    daily_budget_fet: 100,
-    network: 'testnet',
-    max_single_transaction_fet: 50,
-    has_wallet: false
-  });
-  
-  const [showSeeds, setShowSeeds] = useState({
-    fetch_wallet: false
-  });
-  
+  // All 6 supported providers
+  const PROVIDERS = [
+    { id: 'openai', name: 'OpenAI', icon: '🤖', fields: ['api_key'] },
+    { id: 'luno', name: 'Luno', icon: '🇿🇦', fields: ['api_key', 'api_secret'] },
+    { id: 'binance', name: 'Binance', icon: '🟡', fields: ['api_key', 'api_secret'] },
+    { id: 'kucoin', name: 'KuCoin', icon: '🟢', fields: ['api_key', 'api_secret', 'passphrase'] },
+    { id: 'valr', name: 'VALR', icon: '🇿🇦', fields: ['api_key', 'api_secret'] },
+    { id: 'ovex', name: 'OVEX', icon: '🇿🇦', fields: ['api_key', 'api_secret'] }
+  ];
+
+  const [providers, setProviders] = useState([]);
+  const [formData, setFormData] = useState({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [showKeys, setShowKeys] = useState({});
   
   const token = localStorage.getItem('token');
   
   useEffect(() => {
-    fetchKeyStatus();
-    fetchPaymentConfig();
+    fetchAllProviders();
   }, []);
   
-  const fetchKeyStatus = async () => {
+  const fetchAllProviders = async () => {
     try {
-      const services = ['openai', 'flock', 'fetch_wallet'];
-      for (const service of services) {
-        const response = await fetch(`/api/user/api-keys/${service}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setKeyStatus(prev => ({
-            ...prev,
-            [service]: {
-              configured: data.user_configured,
-              status: data.status
-            }
-          }));
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching key status:', error);
-    }
-  };
-  
-  const fetchPaymentConfig = async () => {
-    try {
-      const response = await fetch('/api/user/payment-config', {
+      const response = await fetch('/api/keys/list', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      
       if (response.ok) {
         const data = await response.json();
-        setPaymentConfig(data);
+        setProviders(data.keys || []);
+      } else {
+        console.error('Failed to fetch providers');
       }
     } catch (error) {
-      console.error('Error fetching payment config:', error);
+      console.error('Error fetching providers:', error);
     }
   };
   
-  const saveApiKey = async (service) => {
-    const key = apiKeys[service];
-    if (!key || key.trim() === '') {
+  const handleInputChange = (provider, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [provider]: {
+        ...prev[provider],
+        [field]: value
+      }
+    }));
+  };
+  
+  const saveApiKey = async (providerId) => {
+    const data = formData[providerId];
+    if (!data || !data.api_key || data.api_key.trim() === '') {
       showMessage('error', 'API key cannot be empty');
       return;
     }
     
     setLoading(true);
     try {
-      const response = await fetch('/api/user/api-keys', {
+      const response = await fetch(`/api/keys/${providerId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ service, key })
+        body: JSON.stringify({
+          provider: providerId,
+          api_key: data.api_key,
+          api_secret: data.api_secret || null,
+          passphrase: data.passphrase || null
+        })
       });
       
-      const data = await response.json();
+      const result = await response.json();
       
       if (response.ok) {
-        showMessage('success', data.message);
-        setApiKeys(prev => ({ ...prev, [service]: '' }));
-        fetchKeyStatus();
+        showMessage('success', result.message || 'API key saved successfully');
+        setFormData(prev => ({ ...prev, [providerId]: {} }));
+        fetchAllProviders();
       } else {
-        showMessage('error', data.detail || 'Failed to save API key');
+        showMessage('error', result.detail || 'Failed to save API key');
       }
     } catch (error) {
       showMessage('error', 'Error saving API key: ' + error.message);
@@ -108,80 +90,56 @@ const APIKeySettings = () => {
     }
   };
   
-  const deleteApiKey = async (service) => {
-    if (!window.confirm(`Delete your ${service} API key? System default will be used if available.`)) {
-      return;
-    }
-    
+  const testApiKey = async (providerId) => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/user/api-keys/${service}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok && data.success) {
-        showMessage('success', data.message);
-        fetchKeyStatus();
-      } else {
-        showMessage('error', data.message || 'Failed to delete API key');
-      }
-    } catch (error) {
-      showMessage('error', 'Error deleting API key: ' + error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const generateWallet = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch('/api/user/generate-wallet', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok && data.success) {
-        setApiKeys(prev => ({ ...prev, fetch_wallet: data.mnemonic }));
-        setPaymentConfig(prev => ({ ...prev, wallet_seed: data.mnemonic }));
-        showMessage('success', `Wallet generated: ${data.address}`);
-        alert(`IMPORTANT: Save your mnemonic securely!\n\n${data.mnemonic}\n\n${data.warning}`);
-      } else {
-        showMessage('error', 'Failed to generate wallet');
-      }
-    } catch (error) {
-      showMessage('error', 'Error generating wallet: ' + error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const savePaymentConfig = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch('/api/user/payment-config', {
+      const response = await fetch('/api/keys/test', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(paymentConfig)
+        body: JSON.stringify({ provider: providerId })
       });
       
-      const data = await response.json();
+      const result = await response.json();
       
-      if (response.ok && data.success) {
-        showMessage('success', data.message);
-        fetchPaymentConfig();
+      if (result.success) {
+        showMessage('success', result.message || 'API key test passed ✅');
       } else {
-        showMessage('error', data.detail || 'Failed to save payment configuration');
+        showMessage('error', result.message || 'API key test failed ❌');
+      }
+      
+      fetchAllProviders();
+    } catch (error) {
+      showMessage('error', 'Error testing API key: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const deleteApiKey = async (providerId, providerName) => {
+    if (!window.confirm(`Delete your ${providerName} API key?`)) {
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/keys/${providerId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        showMessage('success', result.message || 'API key deleted successfully');
+        fetchAllProviders();
+      } else {
+        showMessage('error', result.message || 'Failed to delete API key');
       }
     } catch (error) {
-      showMessage('error', 'Error saving payment config: ' + error.message);
+      showMessage('error', 'Error deleting API key: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -192,230 +150,192 @@ const APIKeySettings = () => {
     setTimeout(() => setMessage({ type: '', text: '' }), 5000);
   };
   
-  const getStatusBadge = (status) => {
-    if (status === 'user') {
-      return <span className="badge badge-user">Your Key</span>;
-    } else if (status === 'system') {
-      return <span className="badge badge-system">System Default</span>;
-    } else {
-      return <span className="badge badge-none">Not Configured</span>;
+  const getStatusColor = (status) => {
+    switch(status) {
+      case 'test_ok': return '#22c55e';
+      case 'test_failed': return '#ef4444';
+      case 'saved_untested': return '#f59e0b';
+      default: return '#6b7280';
+    }
+  };
+  
+  const getStatusIcon = (status) => {
+    switch(status) {
+      case 'test_ok': return '✅';
+      case 'test_failed': return '❌';
+      case 'saved_untested': return '⚠️';
+      default: return '⚪';
     }
   };
   
   return (
     <div className="api-key-settings">
-      <h2>API Key Configuration</h2>
-      <p className="subtitle">Configure your own API keys or use system defaults</p>
+      <h2 style={{marginBottom: '20px', fontSize: '1.5rem', fontWeight: 'bold'}}>
+        🔑 API Key Management
+      </h2>
       
       {message.text && (
-        <div className={`message message-${message.type}`}>
+        <div className={`message ${message.type}`} style={{
+          padding: '12px 16px',
+          marginBottom: '20px',
+          borderRadius: '6px',
+          backgroundColor: message.type === 'success' ? '#22c55e20' : '#ef444420',
+          border: `1px solid ${message.type === 'success' ? '#22c55e' : '#ef4444'}`,
+          color: message.type === 'success' ? '#22c55e' : '#ef4444'
+        }}>
           {message.text}
         </div>
       )}
       
-      {/* OpenAI API Key */}
-      <div className="api-key-section">
-        <div className="section-header">
-          <h3>OpenAI API Key</h3>
-          {getStatusBadge(keyStatus.openai.status)}
-        </div>
-        <p className="description">
-          For AI-powered sentiment analysis and decision-making. Optional - uses system key if not provided.
-        </p>
-        <div className="input-group">
-          <input
-            type="password"
-            autoComplete="new-password"
-            placeholder="sk-..."
-            value={apiKeys.openai}
-            onChange={(e) => setApiKeys(prev => ({ ...prev, openai: e.target.value }))}
-            disabled={loading}
-          />
-          <button 
-            onClick={() => saveApiKey('openai')}
-            disabled={loading || !apiKeys.openai}
-            className="btn btn-primary"
-          >
-            Save
-          </button>
-          {keyStatus.openai.configured && (
-            <button 
-              onClick={() => deleteApiKey('openai')}
-              disabled={loading}
-              className="btn btn-danger"
-            >
-              Delete
-            </button>
-          )}
-        </div>
-      </div>
-      
-      {/* FLock.io API Key */}
-      <div className="api-key-section">
-        <div className="section-header">
-          <h3>FLock.io API Key</h3>
-          {getStatusBadge(keyStatus.flock.status)}
-        </div>
-        <p className="description">
-          For vertical-specific trading intelligence. Optional - uses system key if not provided.
-        </p>
-        <div className="input-group">
-          <input
-            type="password"
-            autoComplete="new-password"
-            placeholder="flock_..."
-            value={apiKeys.flock}
-            onChange={(e) => setApiKeys(prev => ({ ...prev, flock: e.target.value }))}
-            disabled={loading}
-          />
-          <button 
-            onClick={() => saveApiKey('flock')}
-            disabled={loading || !apiKeys.flock}
-            className="btn btn-primary"
-          >
-            Save
-          </button>
-          {keyStatus.flock.configured && (
-            <button 
-              onClick={() => deleteApiKey('flock')}
-              disabled={loading}
-              className="btn btn-danger"
-            >
-              Delete
-            </button>
-          )}
-        </div>
-      </div>
-      
-      {/* Fetch.ai Wallet */}
-      <div className="api-key-section wallet-section">
-        <div className="section-header">
-          <h3>Fetch.ai Payment Wallet</h3>
-          {getStatusBadge(keyStatus.fetch_wallet.status)}
-        </div>
-        <p className="description">
-          For autonomous payments (alpha signals, gas fees, data feeds). Configure your own wallet or use system default.
-        </p>
-        
-        <div className="wallet-controls">
-          <button 
-            onClick={generateWallet}
-            disabled={loading}
-            className="btn btn-secondary"
-          >
-            🔑 Generate New Wallet
-          </button>
+      <div style={{display: 'grid', gap: '20px'}}>
+        {PROVIDERS.map(provider => {
+          const providerStatus = providers.find(p => p.provider === provider.id);
+          const status = providerStatus?.status || 'not_configured';
           
-          {paymentConfig.has_wallet && (
-            <span className="wallet-status">
-              ✅ Wallet Configured
-            </span>
-          )}
-        </div>
-        
-        {apiKeys.fetch_wallet && (
-          <div className="wallet-seed-section">
-            <label>Wallet Seed (24 words)</label>
-            <div className="input-group">
-              <textarea
-                rows="3"
-                placeholder="word1 word2 word3 ..."
-                value={showSeeds.fetch_wallet ? apiKeys.fetch_wallet : '••••••••••••••••••••'}
-                onChange={(e) => setApiKeys(prev => ({ ...prev, fetch_wallet: e.target.value }))}
-                disabled={loading}
-              />
-              <button 
-                onClick={() => setShowSeeds(prev => ({ ...prev, fetch_wallet: !prev.fetch_wallet }))}
-                className="btn btn-secondary btn-small"
-              >
-                {showSeeds.fetch_wallet ? '👁️ Hide' : '👁️ Show'}
-              </button>
+          return (
+            <div key={provider.id} style={{
+              padding: '20px',
+              background: 'var(--panel)',
+              borderRadius: '8px',
+              border: '1px solid var(--line)'
+            }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '16px'
+              }}>
+                <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                  <span style={{fontSize: '1.5rem'}}>{provider.icon}</span>
+                  <div>
+                    <h3 style={{margin: 0, fontSize: '1.1rem', fontWeight: 'bold'}}>
+                      {provider.name}
+                    </h3>
+                    <div style={{
+                      fontSize: '0.75rem',
+                      color: getStatusColor(status),
+                      marginTop: '4px'
+                    }}>
+                      {getStatusIcon(status)} {providerStatus?.status_display || 'Not configured'}
+                    </div>
+                  </div>
+                </div>
+                
+                {status !== 'not_configured' && (
+                  <div style={{display: 'flex', gap: '8px'}}>
+                    <button
+                      onClick={() => testApiKey(provider.id)}
+                      disabled={loading}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '0.85rem',
+                        background: '#3b82f6',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Test
+                    </button>
+                    <button
+                      onClick={() => deleteApiKey(provider.id, provider.name)}
+                      disabled={loading}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '0.85rem',
+                        background: '#ef4444',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </div>
+              
+              <div style={{display: 'grid', gap: '12px'}}>
+                {provider.fields.map(field => (
+                  <div key={field}>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '0.85rem',
+                      marginBottom: '6px',
+                      color: 'var(--muted)'
+                    }}>
+                      {field === 'api_key' ? 'API Key' :
+                       field === 'api_secret' ? 'API Secret' :
+                       field === 'passphrase' ? 'Passphrase' : field}
+                    </label>
+                    <input
+                      type={showKeys[`${provider.id}_${field}`] ? 'text' : 'password'}
+                      value={formData[provider.id]?.[field] || ''}
+                      onChange={(e) => handleInputChange(provider.id, field, e.target.value)}
+                      placeholder={`Enter ${field.replace('_', ' ')}`}
+                      disabled={loading}
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        fontSize: '0.9rem',
+                        background: 'var(--glass)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '4px',
+                        color: 'var(--text)'
+                      }}
+                    />
+                  </div>
+                ))}
+                
+                <button
+                  onClick={() => saveApiKey(provider.id)}
+                  disabled={loading}
+                  style={{
+                    padding: '10px 16px',
+                    fontSize: '0.9rem',
+                    background: '#22c55e',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  {loading ? 'Saving...' : 'Save API Key'}
+                </button>
+              </div>
+              
+              <div style={{
+                marginTop: '12px',
+                padding: '8px',
+                background: 'var(--glass)',
+                borderRadius: '4px',
+                fontSize: '0.75rem',
+                color: 'var(--muted)'
+              }}>
+                Required fields: {provider.fields.join(', ')}
+              </div>
             </div>
-            <button 
-              onClick={() => {
-                setPaymentConfig(prev => ({ ...prev, wallet_seed: apiKeys.fetch_wallet }));
-                saveApiKey('fetch_wallet');
-              }}
-              disabled={loading || !apiKeys.fetch_wallet}
-              className="btn btn-primary"
-            >
-              Save Wallet Seed
-            </button>
-          </div>
-        )}
-        
-        {/* Payment Configuration */}
-        <div className="payment-config">
-          <h4>Payment Agent Settings</h4>
-          
-          <div className="config-row">
-            <label>
-              <input
-                type="checkbox"
-                checked={paymentConfig.enabled}
-                onChange={(e) => setPaymentConfig(prev => ({ ...prev, enabled: e.target.checked }))}
-                disabled={loading}
-              />
-              Enable Autonomous Payments
-            </label>
-          </div>
-          
-          <div className="config-row">
-            <label>Network</label>
-            <select
-              value={paymentConfig.network}
-              onChange={(e) => setPaymentConfig(prev => ({ ...prev, network: e.target.value }))}
-              disabled={loading}
-            >
-              <option value="testnet">Testnet</option>
-              <option value="mainnet">Mainnet</option>
-            </select>
-          </div>
-          
-          <div className="config-row">
-            <label>Daily Budget (FET)</label>
-            <input
-              type="number"
-              min="10"
-              max="10000"
-              value={paymentConfig.daily_budget_fet}
-              onChange={(e) => setPaymentConfig(prev => ({ ...prev, daily_budget_fet: parseFloat(e.target.value) }))}
-              disabled={loading}
-            />
-          </div>
-          
-          <div className="config-row">
-            <label>Max Single Transaction (FET)</label>
-            <input
-              type="number"
-              min="1"
-              max="1000"
-              value={paymentConfig.max_single_transaction_fet}
-              onChange={(e) => setPaymentConfig(prev => ({ ...prev, max_single_transaction_fet: parseFloat(e.target.value) }))}
-              disabled={loading}
-            />
-          </div>
-          
-          <button 
-            onClick={savePaymentConfig}
-            disabled={loading}
-            className="btn btn-primary"
-          >
-            Save Payment Configuration
-          </button>
-        </div>
+          );
+        })}
       </div>
       
-      {/* System Keys Info */}
-      <div className="info-section">
-        <h3>ℹ️ About API Keys</h3>
-        <ul>
-          <li><strong>Your Keys:</strong> Encrypted and stored securely. Only you can access them.</li>
-          <li><strong>System Defaults:</strong> Shared keys provided by the platform (if configured).</li>
-          <li><strong>Fallback:</strong> If you don't provide a key, system default is used automatically.</li>
-          <li><strong>Privacy:</strong> Your keys are never shared with other users.</li>
-          <li><strong>Costs:</strong> Using your own keys means you pay for your own API usage.</li>
-        </ul>
+      <div style={{
+        marginTop: '20px',
+        padding: '16px',
+        background: 'var(--panel)',
+        borderRadius: '8px',
+        border: '1px solid #3b82f6',
+        fontSize: '0.85rem',
+        color: 'var(--muted)'
+      }}>
+        <h4 style={{margin: '0 0 8px 0', color: '#3b82f6'}}>ℹ️ Security Note</h4>
+        <p style={{margin: 0}}>
+          All API keys are encrypted at rest using industry-standard encryption.
+          Keys are never stored in plaintext and are only used for authenticated API calls.
+        </p>
       </div>
     </div>
   );
