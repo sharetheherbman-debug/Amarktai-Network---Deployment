@@ -14,6 +14,7 @@ import logging
 
 import database as db
 from engines.wallet_manager import wallet_manager
+from utils.trading_gates import check_trading_mode_enabled
 from config import *
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,16 @@ class BotSpawner:
     async def spawn_bot(self, user_id: str, config: Dict) -> Dict:
         """Spawn a single bot with capital validation"""
         try:
+            # TRADING MODE GATE: Check if any trading mode is enabled before spawning bots
+            trading_enabled, mode_or_reason = check_trading_mode_enabled()
+            if not trading_enabled:
+                logger.warning(f"Bot spawn blocked: {mode_or_reason}")
+                return {
+                    "success": False,
+                    "error": mode_or_reason,
+                    "error_code": "TRADING_MODE_DISABLED"
+                }
+            
             from services.capital_validator import capital_validator
             
             # Validate funding FIRST before attempting to spawn

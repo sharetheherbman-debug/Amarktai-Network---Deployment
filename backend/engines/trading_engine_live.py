@@ -13,6 +13,7 @@ import logging
 import database as db
 from ccxt_service import CCXTService
 from engines.risk_management import risk_management
+from utils.trading_gates import enforce_live_trading_gates, TradingGateError
 from config import *
 
 logger = logging.getLogger(__name__)
@@ -165,6 +166,17 @@ class LiveTradingEngine:
         try:
             user_id = bot_data['user_id']
             exchange_name = bot_data['exchange'].lower()
+            
+            # TRADING MODE GATE: Check if live trading before placing real orders
+            if not paper_mode:
+                try:
+                    await enforce_live_trading_gates(user_id, exchange_name)
+                except TradingGateError as e:
+                    logger.error(f"Live trading gate check failed: {e}")
+                    return {
+                        "success": False,
+                        "error": str(e)
+                    }
             
             # Get exchange instance
             if user_id not in self.active_exchanges:

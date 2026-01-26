@@ -13,6 +13,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from utils.env_utils import env_bool
+from utils.trading_gates import check_autopilot_gates
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +33,10 @@ class AutopilotEngine:
         
     async def start(self):
         """Start the autopilot engine - idempotent, respects feature flags"""
-        # Check feature flag first - use robust parsing
-        enable_autopilot = env_bool('ENABLE_AUTOPILOT', False)
-        enable_schedulers = env_bool('ENABLE_SCHEDULERS', False)
-        
-        if not enable_autopilot:
-            logger.info("🤖 Autopilot Engine disabled (ENABLE_AUTOPILOT not truthy)")
+        # AUTOPILOT GATE: Check if autopilot can run
+        can_run, message = check_autopilot_gates()
+        if not can_run:
+            logger.info(f"🤖 Autopilot Engine not started: {message}")
             return
         
         # Prevent multiple starts
@@ -45,6 +44,9 @@ class AutopilotEngine:
             logger.info("🤖 Autopilot Engine already running, skipping start")
             return
             
+        # Check if schedulers should be enabled (separate flag)
+        enable_schedulers = env_bool('ENABLE_SCHEDULERS', False)
+        
         try:
             await self.init_db()
             self.running = True

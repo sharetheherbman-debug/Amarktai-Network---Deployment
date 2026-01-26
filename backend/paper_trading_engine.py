@@ -42,6 +42,7 @@ from exchange_limits import get_fee_rate
 from rate_limiter import rate_limiter
 from risk_engine import risk_engine
 from services.order_validation import order_validator
+from utils.trading_gates import enforce_trading_gates, TradingGateError
 
 logger = logging.getLogger(__name__)
 
@@ -461,6 +462,13 @@ class PaperTradingEngine:
     async def execute_smart_trade(self, bot_id: str, bot_data: Dict) -> Dict:
         """Execute trade with AI INTELLIGENCE, RISK ENGINE, RATE LIMITER, and FEE SIMULATION"""
         try:
+            # TRADING MODE GATE: Check if trading is enabled
+            try:
+                enforce_trading_gates("paper")
+            except TradingGateError as e:
+                logger.error(f"Trading gate check failed: {e}")
+                return {"success": False, "bot_id": bot_id, "error": str(e)}
+            
             # Update status tracking
             self.is_running = True
             self.last_tick_time = datetime.now(timezone.utc).isoformat()
