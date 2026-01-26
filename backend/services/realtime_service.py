@@ -242,6 +242,26 @@ class RealtimeService:
                     
         except Exception as e:
             logger.error(f"Error broadcasting batch updates: {e}")
+    
+    async def broadcast_emergency_stop(self, user_id: str, enabled: bool):
+        """Broadcast emergency stop status change
+        
+        Args:
+            user_id: User ID
+            enabled: Whether emergency stop is enabled
+        """
+        try:
+            await manager.send_message(user_id, {
+                "type": "emergency_stop",
+                "enabled": enabled,
+                "message": f"🚨 Emergency stop {'activated' if enabled else 'deactivated'}"
+            })
+            
+            # Also broadcast system mode update
+            await self.broadcast_system_mode_change(user_id, "emergency_stop", enabled)
+            
+        except Exception as e:
+            logger.error(f"Error broadcasting emergency stop: {e}")
 
 
 # Global singleton instance

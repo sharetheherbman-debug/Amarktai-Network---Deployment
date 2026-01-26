@@ -9,8 +9,8 @@ import sys
 import os
 from datetime import datetime, timezone
 
-# Add backend to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
+# Add parent directory to path (migrations -> backend -> project root -> backend)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import database as db
 from logger_config import logger
