@@ -15,6 +15,7 @@ from websocket_manager import manager
 from realtime_events import rt_events
 from config import PAPER_SUPPORTED_EXCHANGES
 from services.bot_quarantine import quarantine_service
+from services.system_gate import system_gate
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,12 @@ class TradingScheduler:
     async def execute_bot_trades(self):
         """Execute trades using staggered queue - CONTINUOUS OPERATION"""
         try:
+            # Check system gate first
+            should_run, gate_reason = system_gate.validate_scheduler_tick()
+            if not should_run:
+                logger.debug(f"Scheduler tick skipped: {gate_reason}")
+                return
+            
             logger.info("📊 Paper tick start")
             
             # Get all active bots

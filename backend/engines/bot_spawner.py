@@ -113,8 +113,23 @@ class BotSpawner:
             return {"error": str(e)}
     
     async def spawn_bot(self, user_id: str, config: Dict) -> Dict:
-        """Spawn a single bot"""
+        """Spawn a single bot with capital validation"""
         try:
+            from services.capital_validator import capital_validator
+            
+            # Validate funding FIRST before attempting to spawn
+            is_valid, error_code, error_msg = await capital_validator.validate_bot_funding(
+                user_id, config['capital']
+            )
+            
+            if not is_valid:
+                logger.warning(f"Bot spawn blocked: {error_msg} (code: {error_code})")
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "error_code": error_code
+                }
+            
             bot_id = str(uuid4())
             
             # Allocate funds from master wallet
@@ -137,6 +152,7 @@ class BotSpawner:
                 "risk_mode": config['risk_mode'],
                 "initial_capital": config['capital'],
                 "current_capital": config['capital'],
+                "allocated_capital": config['capital'],  # Track allocated capital
                 "total_profit": 0,
                 "trades_count": 0,
                 "win_count": 0,
@@ -152,7 +168,17 @@ class BotSpawner:
             
             await db.bots_collection.insert_one(bot_doc)
             
-            logger.info(f"🤖 Spawned {config['name']} on {config['exchange']} with R{config['capital']:.2f}")
+            # Atomically allocate capital using capital validator
+            success, alloc_msg = await capital_validator.allocate_capital_to_bot(
+                user_id, bot_id, config['capital']
+            )
+            
+            if not success:
+                # Rollback: delete bot if allocation failed
+                await db.bots_collection.delete_one({"id": bot_id})
+                return {"success": False, "error": f"Capital allocation failed: {alloc_msg}"}
+            
+            logger.info(f"🤖 Spawned {config['name']} on {config['exchange']} with R{config['capital']:.2f} allocated")
             
             return {
                 "success": True,

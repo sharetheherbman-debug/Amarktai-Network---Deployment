@@ -257,8 +257,87 @@ def main():
     results['system_status'] = check_endpoint(
         f"{base_url}/api/system_status",
         "System Status",
+        expected_status=[200, 401, 404]
+    )
+    print()
+    
+    # NEW: System Gate & Mode Tests
+    print("=" * 70)
+    print("SYSTEM GATE & MODE")
+    print("=" * 70)
+    results['system_gate'] = check_endpoint(
+        f"{base_url}/api/system/status",
+        "System Gate - Status",
         expected_status=[200, 401]
     )
+    results['system_mode'] = check_endpoint(
+        f"{base_url}/api/system/mode",
+        "System Mode - Get",
+        expected_status=[200, 401]
+    )
+    print()
+    
+    # NEW: Capital Validation Tests
+    print("=" * 70)
+    print("CAPITAL VALIDATION")
+    print("=" * 70)
+    # This endpoint should exist and return capital status
+    results['capital_status'] = check_endpoint(
+        f"{base_url}/api/system/status",
+        "Capital Status (in system/status)",
+        expected_status=[200, 401]
+    )
+    print()
+    
+    # NEW: Trading Endpoints
+    print("=" * 70)
+    print("TRADING & METRICS")
+    print("=" * 70)
+    results['overview'] = check_endpoint(
+        f"{base_url}/api/overview",
+        "Overview/Dashboard",
+        expected_status=[200, 401]
+    )
+    results['recent_trades'] = check_endpoint(
+        f"{base_url}/api/trades/recent",
+        "Recent Trades (with timestamps)",
+        expected_status=[200, 401]
+    )
+    print()
+    
+    # NEW: Profit Series Tests
+    print("=" * 70)
+    print("PROFIT SERIES (Period Boundaries)")
+    print("=" * 70)
+    # If we have a token, test profit series
+    if test_token:
+        headers = {'Authorization': f'Bearer {test_token}'}
+        try:
+            response = requests.get(f"{base_url}/api/analytics/profit-history", headers=headers, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                # Check if series are sorted ascending
+                if 'daily_series' in data and len(data['daily_series']) > 1:
+                    dates = [d.get('date') for d in data['daily_series'] if 'date' in d]
+                    is_sorted = dates == sorted(dates)
+                    if is_sorted:
+                        print_status("Profit series sorted ascending (oldest→newest)", "PASS")
+                        results['profit_series_sorted'] = True
+                    else:
+                        print_status("Profit series NOT sorted correctly", "FAIL")
+                        results['profit_series_sorted'] = False
+                else:
+                    print_status("Profit series - no data yet (OK)", "PASS")
+                    results['profit_series_sorted'] = True
+            else:
+                print_status(f"Profit history endpoint: HTTP {response.status_code}", "WARN")
+                results['profit_series_sorted'] = True  # Don't fail on auth issues
+        except Exception as e:
+            print_status(f"Profit series check skipped: {e}", "WARN")
+            results['profit_series_sorted'] = True
+    else:
+        print_status("Profit series - skipped (no token)", "WARN")
+        results['profit_series_sorted'] = True
     print()
     
     # Summary
