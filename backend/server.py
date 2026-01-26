@@ -3065,7 +3065,7 @@ routers_to_mount = [
     ("routes.system", "System"),
     ("routes.trades", "Trades"),  # CRITICAL - Trade history
     ("routes.health", "Health"),
-    ("routes.profits", "Profits"),
+    # REMOVED: routes.profits - duplicate of ledger_endpoints
     ("routes.system_status", "System Status"),
     ("routes.phase5_endpoints", "Phase 5"),
     ("routes.phase6_endpoints", "Phase 6"),
@@ -3073,7 +3073,7 @@ routers_to_mount = [
     ("routes.capital_tracking_endpoints", "Capital Tracking"),
     ("routes.emergency_stop_endpoints", "Emergency Stop"),
     ("routes.wallet_endpoints", "Wallet Hub"),
-    ("routes.system_health_endpoints", "System Health"),
+    # REMOVED: routes.system_health_endpoints - has duplicate /health/ping
     ("routes.admin_endpoints", "Admin"),
     ("routes.bot_lifecycle", "Bot Lifecycle"),  # CRITICAL - Bot management
     ("routes.training", "Bot Training"),  # CRITICAL - Training system
@@ -3084,7 +3084,7 @@ routers_to_mount = [
     ("routes.two_factor_auth", "2FA"),
     ("routes.genetic_algorithm", "Genetic Algorithm"),
     ("routes.dashboard_endpoints", "Dashboard"),
-    ("routes.api_key_management", "API Key Management"),
+    # REMOVED: routes.api_key_management - duplicate of keys
     ("routes.daily_report", "Daily Report"),
     ("routes.ledger_endpoints", "Ledger"),  # CRITICAL - Source of truth for PnL
     ("routes.order_endpoints", "Orders"),
@@ -3092,12 +3092,13 @@ routers_to_mount = [
     ("routes.limits_management", "Limits Management"),
     ("routes.advanced_trading_endpoints", "Advanced Trading"),
     ("routes.payment_agent_endpoints", "Payment Agent"),
-    ("routes.user_api_keys", "User API Keys"),
-    ("routes.api_keys_canonical", "Canonical API Keys"),
+    # REMOVED: routes.user_api_keys - duplicate of keys
+    # REMOVED: routes.api_keys_canonical - duplicate of keys
     ("routes.dashboard_aliases", "Dashboard Aliases"),
     ("routes.quarantine", "Bot Quarantine"),  # CRITICAL - Quarantine system
     ("routes.decision_trace", "Decision Trace"),
     ("routes.compatibility_endpoints", "Compatibility"),
+    # REMOVED: routes.bots - duplicate of bot_lifecycle
 ]
 
 # Mount realtime router only if enabled via feature flag
