@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """
 Test script for trading mode gates
 Verifies that gates properly block/allow trading based on environment variables

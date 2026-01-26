@@ -34,10 +34,8 @@ def check_trading_mode_enabled() -> Tuple[bool, str]:
     
     if paper_trading:
         return True, "paper"
-    if live_trading:
-        return True, "live"
     
-    return True, "unknown"
+    return True, "live"
 
 
 def check_autopilot_gates() -> Tuple[bool, str]:
@@ -185,7 +183,7 @@ async def enforce_live_trading_gates(user_id: str, exchange: str) -> None:
     Enforce all gates for live trading before placing real orders.
     
     Args:
-        user_id: User ID
+        user_id: User ID (will be truncated in logs for security)
         exchange: Exchange name
     
     Raises:
