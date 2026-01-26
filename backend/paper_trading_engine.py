@@ -23,6 +23,7 @@ REALISM FEATURES (95% Live Accuracy):
 ✅ Order failure rate (3% rejection - matches real 97% fill rate)
 ✅ Execution delay (±0.05% price movement during 50-200ms latency)
 ✅ 4-Source AI Intelligence (Market Regime, ML Predictor, Flokx, Fetch.ai)
+✅ Centralized order validation (precision, min notional, exchange rules)
 
 EXPECTED RESULTS: 
 - Daily: R800-1,500 profit (with 29 bots, R29k capital)
@@ -40,6 +41,7 @@ import database as db
 from exchange_limits import get_fee_rate
 from rate_limiter import rate_limiter
 from risk_engine import risk_engine
+from services.order_validation import order_validator
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +120,7 @@ def calculate_slippage(order_size_usd: float, daily_volume_usd: float = 10000000
 
 def validate_order(exchange: str, symbol: str, quantity: float, price: float) -> Tuple[bool, str]:
     """
-    Validate order against exchange rules
+    Validate order against exchange rules using centralized validator
     
     Args:
         exchange: Exchange name
@@ -129,32 +131,18 @@ def validate_order(exchange: str, symbol: str, quantity: float, price: float) ->
     Returns:
         Tuple of (is_valid, message)
     """
-    # Normalize symbol format
-    normalized_symbol = symbol.replace('/', '')
+    # Use centralized order validator
+    is_valid, error_msg, adjusted_params = order_validator.validate_order(
+        exchange=exchange.lower(),
+        symbol=symbol,
+        side="buy",  # Side doesn't matter for validation
+        quantity=quantity,
+        price=price,
+        order_type="market"
+    )
     
-    rules = EXCHANGE_RULES.get(exchange, {}).get(normalized_symbol)
-    if not rules:
-        # No rules defined - assume valid
-        return True, "No rules defined"
-    
-    # Check min/max order size
-    if quantity < rules["min_order_size"]:
-        return False, f"Order size {quantity} below minimum {rules['min_order_size']}"
-    
-    if quantity > rules["max_order_size"]:
-        return False, f"Order size {quantity} exceeds maximum {rules['max_order_size']}"
-    
-    # Check min notional
-    notional = quantity * price
-    if notional < rules["min_notional"]:
-        return False, f"Order notional {notional} below minimum {rules['min_notional']}"
-    
-    # Check quantity precision
-    quantity_str = str(quantity)
-    if '.' in quantity_str:
-        decimals = len(quantity_str.split('.')[1])
-        if decimals > rules["quantity_precision"]:
-            return False, f"Quantity precision {decimals} exceeds maximum {rules['quantity_precision']}"
+    if not is_valid:
+        return False, error_msg
     
     return True, "Valid"
 
