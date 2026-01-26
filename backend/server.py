@@ -722,6 +722,67 @@ async def update_system_mode(data: dict, user_id: str = Depends(get_current_user
         logger.error(f"System mode update error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@api_router.get("/system/status")
+async def get_system_status(user_id: str = Depends(get_current_user)):
+    """
+    Get comprehensive system status including trading gates
+    Returns detailed information about system operational state
+    """
+    try:
+        from services.system_gate import system_gate
+        from services.capital_validator import capital_validator
+        
+        # Get system gate status
+        system_status = await system_gate.get_system_status()
+        
+        # Get user capital status
+        capital_status = await capital_validator.get_user_capital_status(user_id)
+        
+        # Get user info
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
+        
+        return {
+            "system": system_status,
+            "capital": capital_status,
+            "user": {
+                "emergency_stop": user.get("emergency_stop", False) if user else False,
+                "autopilot_enabled": user.get("autopilot_enabled", False) if user else False,
+                "bodyguard_enabled": user.get("bodyguard_enabled", True) if user else True
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting system status: {e}")
+        return {
+            "system": {
+                "trading_allowed": False,
+                "mode": "error",
+                "reason": f"System error: {str(e)}"
+            },
+            "capital": {
+                "available_balance": 0,
+                "error": str(e)
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+@api_router.post("/system/emergency-stop")
+async def toggle_emergency_stop(data: dict, user_id: str = Depends(get_current_user)):
+    """Enable or disable emergency stop for a user"""
+    try:
+        from services.system_gate import system_gate
+        
+        enabled = data.get("enabled", True)
+        success, message = await system_gate.set_emergency_stop(user_id, enabled)
+        
+        if success:
+            return {"success": True, "message": message}
+        else:
+            raise HTTPException(status_code=400, detail=message)
+    except Exception as e:
+        logger.error(f"Emergency stop error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ============================================================================
 # OVERVIEW & DASHBOARD
 # ============================================================================
@@ -781,20 +842,33 @@ async def get_metrics(user_id: str = Depends(get_current_user)):
 
 @api_router.get("/trades/recent")
 async def get_recent_trades(limit: int = 50, user_id: str = Depends(get_current_user)):
-    """Get recent trades for live feed - NO LIMIT"""
+    """Get recent trades for live feed with ISO timestamps"""
     try:
         trades = await db.trades_collection.find(
             {"user_id": user_id},
             {"_id": 0}
         ).sort("timestamp", -1).limit(limit).to_list(limit)
         
+        # Ensure all trades have ISO timestamp format
+        for trade in trades:
+            if "timestamp" in trade and isinstance(trade["timestamp"], datetime):
+                trade["timestamp"] = trade["timestamp"].isoformat()
+            elif "timestamp" not in trade:
+                trade["timestamp"] = datetime.now(timezone.utc).isoformat()
+        
         return {
             "trades": trades,
-            "count": len(trades)
+            "count": len(trades),
+            "last_updated": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         logger.error(f"Recent trades error: {e}")
-        return {"trades": [], "count": 0}
+        return {
+            "trades": [],
+            "count": 0,
+            "error": str(e),
+            "last_updated": datetime.now(timezone.utc).isoformat()
+        }
 
 # ============================================================================
 # API KEYS

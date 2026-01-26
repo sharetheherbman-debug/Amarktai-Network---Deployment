@@ -104,7 +104,10 @@ class ProfitService:
         days: int = 7,
         trading_mode: Optional[str] = None
     ) -> List[Dict]:
-        """Get daily profit series for chart
+        """Get daily profit series for chart with proper period boundaries
+        
+        Daily buckets start at 00:00 UTC
+        Returns sorted ascending (oldest → newest)
         
         Args:
             user_id: User ID
@@ -112,12 +115,13 @@ class ProfitService:
             trading_mode: Filter by mode
             
         Returns:
-            List of dicts with date and profit
+            List of dicts with date and profit, sorted ascending
         """
         try:
-            # Calculate start date
+            # Calculate start date at beginning of day (00:00 UTC)
             now = datetime.now(timezone.utc)
-            start_date = now - timedelta(days=days)
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            start_date = today_start - timedelta(days=days - 1)  # Include today
             
             # Build query
             query = {
@@ -136,7 +140,7 @@ class ProfitService:
             )
             trades = await trades_cursor.to_list(10000)
             
-            # Group by date
+            # Group by date (day boundary at 00:00 UTC)
             daily_profits = defaultdict(float)
             
             for trade in trades:
@@ -144,15 +148,16 @@ class ProfitService:
                 if isinstance(timestamp, str):
                     try:
                         dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                        # Bucket by day start (00:00 UTC)
                         date_str = dt.strftime('%Y-%m-%d')
                         daily_profits[date_str] += trade.get("profit_loss", 0)
                     except:
                         pass
             
-            # Build result list
+            # Build result list sorted ascending (oldest → newest)
             result = []
             for i in range(days):
-                date = (now - timedelta(days=days - i - 1)).strftime('%Y-%m-%d')
+                date = (start_date + timedelta(days=i)).strftime('%Y-%m-%d')
                 result.append({
                     "date": date,
                     "profit": round(daily_profits.get(date, 0), 2)
@@ -162,6 +167,183 @@ class ProfitService:
             
         except Exception as e:
             logger.error(f"Get daily profit series error: {e}")
+            return []
+    
+    @staticmethod
+    async def get_weekly_profit_series(
+        user_id: str,
+        weeks: int = 4,
+        trading_mode: Optional[str] = None
+    ) -> List[Dict]:
+        """Get weekly profit series for chart with proper period boundaries
+        
+        Weekly buckets start Monday 00:00 UTC
+        Returns sorted ascending (oldest → newest)
+        
+        Args:
+            user_id: User ID
+            weeks: Number of weeks to include
+            trading_mode: Filter by mode
+            
+        Returns:
+            List of dicts with week_start, week_end, and profit, sorted ascending
+        """
+        try:
+            # Calculate start date (Monday 00:00 UTC)
+            now = datetime.now(timezone.utc)
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            # Find most recent Monday
+            days_since_monday = today_start.weekday()  # Monday = 0
+            current_week_start = today_start - timedelta(days=days_since_monday)
+            
+            # Go back weeks-1 more weeks
+            start_date = current_week_start - timedelta(weeks=weeks - 1)
+            
+            # Build query
+            query = {
+                "user_id": user_id,
+                "status": "closed",
+                "timestamp": {"$gte": start_date.isoformat()}
+            }
+            
+            if trading_mode:
+                query["trading_mode"] = trading_mode
+            
+            # Get trades
+            trades_cursor = db.trades_collection.find(
+                query,
+                {"_id": 0, "profit_loss": 1, "timestamp": 1}
+            )
+            trades = await trades_cursor.to_list(10000)
+            
+            # Group by week
+            weekly_profits = defaultdict(float)
+            
+            for trade in trades:
+                timestamp = trade.get("timestamp")
+                if isinstance(timestamp, str):
+                    try:
+                        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                        # Find week start (Monday)
+                        days_since_monday = dt.weekday()
+                        week_start = dt - timedelta(days=days_since_monday)
+                        week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+                        week_key = week_start.strftime('%Y-%m-%d')
+                        weekly_profits[week_key] += trade.get("profit_loss", 0)
+                    except:
+                        pass
+            
+            # Build result list sorted ascending
+            result = []
+            for i in range(weeks):
+                week_start = start_date + timedelta(weeks=i)
+                week_end = week_start + timedelta(days=6)
+                week_key = week_start.strftime('%Y-%m-%d')
+                
+                result.append({
+                    "week_start": week_start.strftime('%Y-%m-%d'),
+                    "week_end": week_end.strftime('%Y-%m-%d'),
+                    "profit": round(weekly_profits.get(week_key, 0), 2)
+                })
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Get weekly profit series error: {e}")
+            return []
+    
+    @staticmethod
+    async def get_monthly_profit_series(
+        user_id: str,
+        months: int = 6,
+        trading_mode: Optional[str] = None
+    ) -> List[Dict]:
+        """Get monthly profit series for chart with proper period boundaries
+        
+        Monthly buckets start day 1 00:00 UTC
+        Returns sorted ascending (oldest → newest)
+        
+        Args:
+            user_id: User ID
+            months: Number of months to include
+            trading_mode: Filter by mode
+            
+        Returns:
+            List of dicts with month, year, and profit, sorted ascending
+        """
+        try:
+            # Calculate start date (first day of month, months ago)
+            now = datetime.now(timezone.utc)
+            current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            
+            # Go back months-1 more months
+            # Simple calculation: subtract months from current
+            year = current_month_start.year
+            month = current_month_start.month
+            
+            for _ in range(months - 1):
+                month -= 1
+                if month < 1:
+                    month = 12
+                    year -= 1
+            
+            start_date = current_month_start.replace(year=year, month=month)
+            
+            # Build query
+            query = {
+                "user_id": user_id,
+                "status": "closed",
+                "timestamp": {"$gte": start_date.isoformat()}
+            }
+            
+            if trading_mode:
+                query["trading_mode"] = trading_mode
+            
+            # Get trades
+            trades_cursor = db.trades_collection.find(
+                query,
+                {"_id": 0, "profit_loss": 1, "timestamp": 1}
+            )
+            trades = await trades_cursor.to_list(10000)
+            
+            # Group by month
+            monthly_profits = defaultdict(float)
+            
+            for trade in trades:
+                timestamp = trade.get("timestamp")
+                if isinstance(timestamp, str):
+                    try:
+                        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                        # Bucket by month start (day 1)
+                        month_key = dt.strftime('%Y-%m')
+                        monthly_profits[month_key] += trade.get("profit_loss", 0)
+                    except:
+                        pass
+            
+            # Build result list sorted ascending
+            result = []
+            current = start_date
+            for i in range(months):
+                month_key = current.strftime('%Y-%m')
+                
+                result.append({
+                    "month": current.month,
+                    "year": current.year,
+                    "month_label": current.strftime('%b %Y'),
+                    "profit": round(monthly_profits.get(month_key, 0), 2)
+                })
+                
+                # Move to next month
+                if current.month == 12:
+                    current = current.replace(year=current.year + 1, month=1)
+                else:
+                    current = current.replace(month=current.month + 1)
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Get monthly profit series error: {e}")
             return []
     
     @staticmethod
