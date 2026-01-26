@@ -41,46 +41,6 @@ async def get_pnl_timeseries(
     except Exception as e:
         logger.error(f"PnL timeseries error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-                        "cumulative_pnl": round(cumulative_pnl, 2),
-                        "period_pnl": round(bucket_pnl, 2),
-                        "trade_count": len(bucket_trades)
-                    })
-                
-                # Move to next bucket
-                current_bucket_start += interval_delta
-                bucket_trades = []
-            
-            # Add trade to current bucket
-            bucket_trades.append(trade)
-        
-        # Close final bucket
-        if bucket_trades:
-            bucket_pnl = sum(t.get('profit_loss', 0) for t in bucket_trades)
-            cumulative_pnl += bucket_pnl
-            
-            datapoints.append({
-                "timestamp": current_bucket_start.isoformat(),
-                "cumulative_pnl": round(cumulative_pnl, 2),
-                "period_pnl": round(bucket_pnl, 2),
-                "trade_count": len(bucket_trades)
-            })
-        
-        return {
-            "range": range,
-            "interval": interval,
-            "datapoints": datapoints,
-            "summary": {
-                "total_pnl": round(cumulative_pnl, 2),
-                "trade_count": len(trades),
-                "start_time": start_time.isoformat(),
-                "end_time": now.isoformat(),
-                "total_datapoints": len(datapoints)
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Get PnL timeseries error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/capital_breakdown")

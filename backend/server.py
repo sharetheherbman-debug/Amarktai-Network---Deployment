@@ -3042,15 +3042,30 @@ app.include_router(api_router, prefix="/api")
 # ============================================================================
 # Each router is mounted exactly once without additional prefix wrapping.
 # Routers already define their own /api/... prefixes in their route files.
+
+# Define CRITICAL routers - these MUST mount successfully or server fails to start
+CRITICAL_ROUTERS = {
+    "routes.auth",  # Already mounted via api_router earlier
+    "routes.keys",
+    "routes.trades", 
+    "routes.bot_lifecycle",
+    "routes.realtime",
+    "routes.system_mode",
+    "routes.ledger_endpoints",
+    "routes.analytics_api",
+    "routes.training",
+    "routes.quarantine"
+}
+
 routers_to_mount = [
-    ("routes.keys", "API Keys (Unified)"),  # New unified keys router - takes precedence
-    ("routes.system_mode", "System Mode"),  # New unified mode management
+    ("routes.keys", "API Keys (Unified)"),  # CRITICAL - New unified keys router
+    ("routes.system_mode", "System Mode"),  # CRITICAL - Mode management
     ("routes.platforms", "Platforms"),  # Platform drilldown
     ("routes.build_info", "Build Info"),  # Build version info
     ("routes.system", "System"),
-    ("routes.trades", "Trades"),
+    ("routes.trades", "Trades"),  # CRITICAL - Trade history
     ("routes.health", "Health"),
-    ("routes.profits", "Profits"),
+    # REMOVED: routes.profits - duplicate of ledger_endpoints
     ("routes.system_status", "System Status"),
     ("routes.phase5_endpoints", "Phase 5"),
     ("routes.phase6_endpoints", "Phase 6"),
@@ -3058,55 +3073,78 @@ routers_to_mount = [
     ("routes.capital_tracking_endpoints", "Capital Tracking"),
     ("routes.emergency_stop_endpoints", "Emergency Stop"),
     ("routes.wallet_endpoints", "Wallet Hub"),
-    ("routes.system_health_endpoints", "System Health"),
+    # REMOVED: routes.system_health_endpoints - has duplicate /health/ping
     ("routes.admin_endpoints", "Admin"),
-    ("routes.bot_lifecycle", "Bot Lifecycle"),
-    ("routes.training", "Bot Training"),
+    ("routes.bot_lifecycle", "Bot Lifecycle"),  # CRITICAL - Bot management
+    ("routes.training", "Bot Training"),  # CRITICAL - Training system
     ("routes.system_limits", "System Limits"),
     ("routes.live_trading_gate", "Live Trading Gate"),
-    ("routes.analytics_api", "Analytics API"),
+    ("routes.analytics_api", "Analytics API"),  # CRITICAL - PnL analytics
     ("routes.ai_chat", "AI Chat"),
     ("routes.two_factor_auth", "2FA"),
     ("routes.genetic_algorithm", "Genetic Algorithm"),
     ("routes.dashboard_endpoints", "Dashboard"),
-    ("routes.api_key_management", "API Key Management"),
+    # REMOVED: routes.api_key_management - duplicate of keys
     ("routes.daily_report", "Daily Report"),
-    ("routes.ledger_endpoints", "Ledger"),
+    ("routes.ledger_endpoints", "Ledger"),  # CRITICAL - Source of truth for PnL
     ("routes.order_endpoints", "Orders"),
     ("routes.alerts", "Alerts"),
     ("routes.limits_management", "Limits Management"),
     ("routes.advanced_trading_endpoints", "Advanced Trading"),
     ("routes.payment_agent_endpoints", "Payment Agent"),
-    ("routes.user_api_keys", "User API Keys"),
-    ("routes.api_keys_canonical", "Canonical API Keys"),
+    # REMOVED: routes.user_api_keys - duplicate of keys
+    # REMOVED: routes.api_keys_canonical - duplicate of keys
     ("routes.dashboard_aliases", "Dashboard Aliases"),
-    ("routes.quarantine", "Bot Quarantine"),
+    ("routes.quarantine", "Bot Quarantine"),  # CRITICAL - Quarantine system
     ("routes.decision_trace", "Decision Trace"),
     ("routes.compatibility_endpoints", "Compatibility"),
+    # REMOVED: routes.bots - duplicate of bot_lifecycle
 ]
 
 # Mount realtime router only if enabled via feature flag
 if env_bool("ENABLE_REALTIME", True):
-    routers_to_mount.append(("routes.realtime", "Realtime Events"))
+    routers_to_mount.append(("routes.realtime", "Realtime Events"))  # CRITICAL when enabled
 
 mounted_routers = []
 failed_routers = []
+critical_failures = []
 
 for module_path, display_name in routers_to_mount:
+    is_critical = module_path in CRITICAL_ROUTERS
+    
     try:
         # Import the module and get its 'router' attribute
         module = __import__(module_path, fromlist=['router'])
         router_obj = getattr(module, 'router')
         app.include_router(router_obj)
         mounted_routers.append(display_name)
-        logger.info(f"✅ Mounted: {display_name}")
+        logger.info(f"✅ Mounted: {display_name}{' (CRITICAL)' if is_critical else ''}")
     except AttributeError as e:
         # Handle case where module doesn't export 'router'
-        failed_routers.append((display_name, f"No 'router' attribute: {e}"))
-        logger.error(f"❌ Failed to mount {display_name}: No 'router' attribute found")
+        error_msg = f"No 'router' attribute: {e}"
+        failed_routers.append((display_name, error_msg))
+        logger.error(f"❌ Failed to mount {display_name}: {error_msg}")
+        if is_critical:
+            critical_failures.append((display_name, error_msg))
     except Exception as e:
-        failed_routers.append((display_name, str(e)))
-        logger.error(f"❌ Failed to mount {display_name}: {e}")
+        error_msg = str(e)
+        failed_routers.append((display_name, error_msg))
+        logger.error(f"❌ Failed to mount {display_name}: {error_msg}")
+        if is_critical:
+            critical_failures.append((display_name, error_msg))
+
+# FAIL LOUDLY if any critical router failed to mount
+if critical_failures:
+    logger.error("="*80)
+    logger.error("🔥 FATAL: Critical router(s) failed to mount!")
+    logger.error("="*80)
+    for name, error in critical_failures:
+        logger.error(f"   - {name}: {error}")
+    logger.error("="*80)
+    logger.error("Cannot start server without critical routers.")
+    logger.error("Fix the errors above before deploying.")
+    logger.error("="*80)
+    raise RuntimeError(f"Critical router mount failure: {', '.join([f[0] for f in critical_failures])}")
 
 # Start daily report scheduler if it was loaded
 try:
@@ -3115,6 +3153,44 @@ try:
     logger.info("✅ Daily report scheduler started")
 except Exception as e:
     logger.warning(f"Could not start daily report scheduler: {e}")
+
+# ============================================================================
+# ROUTE COLLISION DETECTION - Fail boot if duplicate routes exist
+# ============================================================================
+route_registry = {}
+collision_found = False
+
+for route in app.routes:
+    # Skip non-API routes (like root, docs, openapi, etc.)
+    if not hasattr(route, 'methods') or not hasattr(route, 'path'):
+        continue
+    
+    for method in route.methods:
+        if method in ['HEAD', 'OPTIONS']:  # Skip auto-generated methods
+            continue
+        
+        route_key = f"{method} {route.path}"
+        
+        if route_key in route_registry:
+            logger.error(f"❌ ROUTE COLLISION DETECTED: {route_key}")
+            logger.error(f"   Previously registered at: {route_registry[route_key]}")
+            logger.error(f"   Attempting to register again")
+            collision_found = True
+        else:
+            # Store route info
+            route_registry[route_key] = getattr(route, 'name', 'unknown')
+
+if collision_found:
+    logger.error("="*80)
+    logger.error("🔥 FATAL: Route collisions detected!")
+    logger.error("="*80)
+    logger.error("Multiple routers are registering the same endpoint.")
+    logger.error("This WILL cause unpredictable behavior in production.")
+    logger.error("Review the duplicate endpoint logs above and fix before deploying.")
+    logger.error("="*80)
+    raise RuntimeError("Route collision detected - cannot start server")
+
+logger.info(f"✅ Route collision check passed - {len(route_registry)} unique routes registered")
 
 # Summary
 logger.info(f"📊 Router mounting complete: {len(mounted_routers)} mounted, {len(failed_routers)} failed")

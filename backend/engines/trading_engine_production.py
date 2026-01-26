@@ -7,6 +7,7 @@ from datetime import datetime, timezone, timedelta
 import database as db
 from engines.trade_limiter import trade_limiter
 from logger_config import logger
+from utils.trading_gates import enforce_trading_gates, TradingGateError
 import random
 
 
@@ -18,6 +19,13 @@ class TradingEngineProduction:
     async def execute_trade_for_bot(self, bot: dict) -> bool:
         """Execute a single trade for a bot if allowed"""
         try:
+            # TRADING MODE GATE: Check if any trading mode is enabled
+            try:
+                enforce_trading_gates()
+            except TradingGateError as e:
+                logger.error(f"Trading gate check failed: {e}")
+                return False
+            
             bot_id = bot['id']
             
             # Check if bot can trade
