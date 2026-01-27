@@ -2497,299 +2497,66 @@ export default function Dashboard() {
           {botManagementTab === 'creation' && (
           <div className="bot-container">
             <div className="bot-left">
-              <div className="bot-tabs">
-                <button className={`bot-tab ${activeBotTab === 'exchange' ? 'active' : ''}`} onClick={() => setActiveBotTab('exchange')}>
-                  Create Bot
-                </button>
-                <button className={`bot-tab ${activeBotTab === 'uagent' ? 'active' : ''}`} onClick={() => setActiveBotTab('uagent')}>
-                  🤖 Add uAgent
-                </button>
-              </div>
-              
-              {/* SETUP TAB REMOVED - Users create starting bots manually, system spawns more automatically */}
-              {false && activeBotTab === 'setup' && (
-                <div className="bot-form-card" style={{background: 'var(--bg)', border: '1px solid var(--line)'}}>
-                  <h3>⚙️ Bot Setup Wizard</h3>
-                  <p style={{color: 'var(--muted)', marginBottom: '20px', fontSize: '0.9rem'}}>
-                    Launch multiple paper trading bots with FAKE funds for 7 days
-                  </p>
-                  
-                  <div style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
-                    <div style={{background: 'var(--panel)', padding: '16px', borderRadius: '8px', border: '1px solid var(--line)'}}>
-                      <label style={{color: 'var(--text)', fontSize: '0.9rem', fontWeight: 600, marginBottom: '8px', display: 'block'}}>
-                        Exchange Platform
-                      </label>
-                      <select
-                        value={botSetup.exchange}
-                        onChange={(e) => setBotSetup({...botSetup, exchange: e.target.value})}
-                        style={{
-                          width: '100%',
-                          padding: '12px',
-                          background: 'var(--bg)',
-                          border: '1px solid var(--line)',
-                          borderRadius: '6px',
-                          color: 'var(--text)',
-                          fontSize: '1rem'
-                        }}
-                      >
-                        <option value="luno">🇿🇦 Luno (Best for South Africa - ZAR)</option>
-                        <option value="binance">🌍 Binance (Global - USDT pairs)</option>
-                        <option value="kucoin">🌐 KuCoin (Global - USDT pairs)</option>
-                        <option value="ovex">🟠 OVEX (South Africa - ZAR)</option>
-                        <option value="valr">🇿🇦 VALR (South Africa - ZAR)</option>
-                      </select>
-                      <small style={{color: 'var(--muted)', display: 'block', marginTop: '6px'}}>
-                        💡 Luno, OVEX & VALR recommended for South African users (ZAR support)
-                      </small>
+              <div className="bot-form-card">
+                <h3>Create Single Bot</h3>
+                <form onSubmit={handleCreateBot}>
+                  <div className="bot-form-grid">
+                    <div className="form-group">
+                      <label htmlFor="bot-name">Bot Name</label>
+                      <input id="bot-name" name="bot-name" placeholder="My Trading Bot" type="text" required />
                     </div>
-
-                    <div style={{background: 'var(--panel)', padding: '16px', borderRadius: '8px', border: '1px solid var(--line)'}}>
-                      <label style={{color: 'var(--text)', fontSize: '0.9rem', fontWeight: 600, marginBottom: '8px', display: 'block'}}>
-                        Total Bots (3-30)
-                      </label>
-                      <input
-                        type="number"
-                        min="3"
-                        max="30"
-                        value={botSetup.count}
-                        onChange={(e) => setBotSetup({...botSetup, count: parseInt(e.target.value) || 3})}
-                        style={{
-                          width: '100%',
-                          padding: '12px',
-                          background: 'var(--bg)',
-                          border: '1px solid var(--line)',
-                          borderRadius: '6px',
-                          color: 'var(--text)',
-                          fontSize: '1rem'
-                        }}
-                      />
-                    </div>
-
-                    <div style={{background: 'var(--panel)', padding: '16px', borderRadius: '8px', border: '1px solid var(--line)'}}>
-                      <label style={{color: 'var(--text)', fontSize: '0.9rem', fontWeight: 600, marginBottom: '8px', display: 'block'}}>
-                        Capital Per Bot (Min R1000)
-                      </label>
-                      <input
-                        type="number"
-                        min="1000"
+                    <div className="form-group">
+                      <label htmlFor="bot-budget">Budget (Min R1000)</label>
+                      <input 
+                        id="bot-budget" 
+                        name="bot-budget" 
+                        type="number" 
+                        min="1000" 
                         step="100"
-                        value={botSetup.capital_per_bot}
-                        onChange={(e) => setBotSetup({...botSetup, capital_per_bot: parseInt(e.target.value) || 1000})}
-                        style={{
-                          width: '100%',
-                          padding: '12px',
-                          background: 'var(--bg)',
-                          border: '1px solid var(--line)',
-                          borderRadius: '6px',
-                          color: 'var(--text)',
-                          fontSize: '1rem'
-                        }}
+                        defaultValue="1000"
+                        placeholder="1000" 
+                        required 
                       />
-                      <small style={{color: 'var(--accent)', display: 'block', marginTop: '6px', fontWeight: 600}}>
-                        💰 Total Capital: R{(botSetup.count * botSetup.capital_per_bot).toLocaleString()}
+                      <small style={{color: 'var(--muted)', fontSize: '0.75rem'}}>
+                        Minimum R1000 per bot
                       </small>
                     </div>
-
-                    <div style={{background: 'var(--panel)', padding: '16px', borderRadius: '8px', border: '1px solid var(--line)'}}>
-                      <h4 style={{marginBottom: '12px', color: 'var(--text)', fontSize: '0.95rem'}}>Risk Distribution</h4>
-                      
-                      <div style={{display: 'grid', gap: '12px'}}>
-                        <div>
-                          <label style={{color: 'var(--muted)', fontSize: '0.85rem', display: 'block', marginBottom: '6px'}}>
-                            🛡️ Safe Bots
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            value={botSetup.safe_count}
-                            onChange={(e) => setBotSetup({...botSetup, safe_count: parseInt(e.target.value) || 0})}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              background: 'var(--bg)',
-                              border: '1px solid var(--line)',
-                              borderRadius: '4px',
-                              color: 'var(--text)'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{color: 'var(--muted)', fontSize: '0.85rem', display: 'block', marginBottom: '6px'}}>
-                            ⚡ Risky Bots
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            value={botSetup.risky_count}
-                            onChange={(e) => setBotSetup({...botSetup, risky_count: parseInt(e.target.value) || 0})}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              background: 'var(--bg)',
-                              border: '1px solid var(--line)',
-                              borderRadius: '4px',
-                              color: 'var(--text)'
-                            }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{color: 'var(--muted)', fontSize: '0.85rem', display: 'block', marginBottom: '6px'}}>
-                            🚀 Aggressive Bots
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            value={botSetup.aggressive_count}
-                            onChange={(e) => setBotSetup({...botSetup, aggressive_count: parseInt(e.target.value) || 0})}
-                            style={{
-                              width: '100%',
-                              padding: '10px',
-                              background: 'var(--bg)',
-                              border: '1px solid var(--line)',
-                              borderRadius: '4px',
-                              color: 'var(--text)'
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      <div style={{
-                        padding: '10px',
-                        background: botSetup.safe_count + botSetup.risky_count + botSetup.aggressive_count === botSetup.count ? 'var(--success)' : 'var(--error)',
-                        color: 'white',
-                        borderRadius: '4px',
-                        marginTop: '12px',
-                        fontSize: '0.85rem',
-                        textAlign: 'center',
-                        fontWeight: 600
-                      }}>
-                        {botSetup.safe_count + botSetup.risky_count + botSetup.aggressive_count === botSetup.count ? (
-                          `✅ Total: ${botSetup.count} bots`
-                        ) : (
-                          `❌ Must equal ${botSetup.count} (currently ${botSetup.safe_count + botSetup.risky_count + botSetup.aggressive_count})`
-                        )}
-                      </div>
+                    <div className="form-group">
+                      <label htmlFor="bot-exchange">Exchange Platform</label>
+                      <select id="bot-exchange" name="bot-exchange" defaultValue="luno">
+                        {getAllExchanges().map(exchange => (
+                          <option 
+                            key={exchange.id} 
+                            value={exchange.id}
+                            disabled={exchange.comingSoon}
+                          >
+                            {exchange.icon} {exchange.displayName}{exchange.comingSoon ? ' (Coming Soon)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <small style={{color: 'var(--muted)', fontSize: '0.75rem', display: 'block', marginTop: '4px'}}>
+                        {FEATURE_FLAGS.ENABLE_OVEX 
+                          ? '✅ All exchanges available' 
+                          : '⚠️ Luno, Binance, KuCoin, OVEX, VALR supported'}
+                      </small>
                     </div>
-
-                    <button
-                      onClick={handleBotSetup}
-                      style={{
-                        width: '100%',
-                        padding: '14px',
-                        background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '1rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        marginTop: '8px'
-                      }}
-                    >
-                      🚀 Create Bots & Start Paper Trading
-                    </button>
-
-                    <div style={{padding: '12px', background: 'var(--glass)', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--muted)', lineHeight: '1.6'}}>
-                      📝 <strong>Note:</strong> All bots run with FAKE funds for 7 days.<br/>
-                      💰 After 7 days, switch to LIVE with real money.<br/>
-                      🤖 Autopilot manages bots automatically.
+                    <div className="form-group">
+                      <label htmlFor="bot-risk">Risk Mode</label>
+                      <select id="bot-risk" name="bot-risk">
+                        <option value="safe">🛡️ Safe</option>
+                        <option value="balanced">⚖️ Balanced</option>
+                        <option value="aggressive">⚡ Aggressive</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <button type="submit">Create Bot (7 Day Learning)</button>
                     </div>
                   </div>
-                </div>
-              )}
-              
-              {activeBotTab === 'exchange' && (
-                <div className="bot-form-card">
-                  <h3>Create Single Bot</h3>
-                  <form onSubmit={handleCreateBot}>
-                    <div className="bot-form-grid">
-                      <div className="form-group">
-                        <label htmlFor="bot-name">Bot Name</label>
-                        <input id="bot-name" name="bot-name" placeholder="My Trading Bot" type="text" required />
-                      </div>
-                      <div className="form-group">
-                        <label htmlFor="bot-budget">Budget (Min R1000)</label>
-                        <input 
-                          id="bot-budget" 
-                          name="bot-budget" 
-                          type="number" 
-                          min="1000" 
-                          step="100"
-                          defaultValue="1000"
-                          placeholder="1000" 
-                          required 
-                        />
-                        <small style={{color: 'var(--muted)', fontSize: '0.75rem'}}>
-                          Minimum R1000 per bot
-                        </small>
-                      </div>
-                      <div className="form-group">
-                        <label htmlFor="bot-exchange">Exchange Platform</label>
-                        <select id="bot-exchange" name="bot-exchange" defaultValue="luno">
-                          {getAllExchanges().map(exchange => (
-                            <option 
-                              key={exchange.id} 
-                              value={exchange.id}
-                              disabled={exchange.comingSoon}
-                            >
-                              {exchange.icon} {exchange.displayName}{exchange.comingSoon ? ' (Coming Soon)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                        <small style={{color: 'var(--muted)', fontSize: '0.75rem', display: 'block', marginTop: '4px'}}>
-                          {FEATURE_FLAGS.ENABLE_OVEX 
-                            ? '✅ All exchanges available' 
-                            : '⚠️ Luno, Binance, KuCoin, OVEX, VALR supported'}
-                        </small>
-                      </div>
-                      <div className="form-group">
-                        <label htmlFor="bot-risk">Risk Mode</label>
-                        <select id="bot-risk" name="bot-risk">
-                          <option value="safe">🛡️ Safe</option>
-                          <option value="balanced">⚖️ Balanced</option>
-                          <option value="aggressive">⚡ Aggressive</option>
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <button type="submit">Create Bot (7 Day Learning)</button>
-                      </div>
-                    </div>
-                    <div style={{marginTop: '12px', padding: '12px', background: 'var(--glass)', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--muted)'}}>
-                      📝 User-created bots undergo 7-day paper trading learning period
-                    </div>
-                  </form>
-                </div>
-              )}
-              
-              {activeBotTab === 'uagent' && (
-                <div className="bot-form-card">
-                  <h3>🤖 Upload Custom Fetch.ai uAgent</h3>
-                  <p style={{color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '16px'}}>
-                    Upload your own Fetch.ai uAgent code (.py file) for custom trading strategies
-                  </p>
-                  <form onSubmit={handleCreateUAgent}>
-                    <div className="bot-form-grid">
-                      <div className="form-group">
-                        <label htmlFor="uagent-name">uAgent Name</label>
-                        <input id="uagent-name" name="uagent-name" placeholder="My Custom Agent" type="text" required />
-                      </div>
-                      <div className="form-group">
-                        <label htmlFor="uagent-file">Upload uAgent File (.py)</label>
-                        <input id="uagent-file" name="uagent-file" type="file" accept=".py" required />
-                      </div>
-                      <div className="form-group">
-                        <label htmlFor="uagent-strategy">Strategy Description</label>
-                        <textarea id="uagent-strategy" name="uagent-strategy" placeholder="Describe what this uAgent does..." rows="4"></textarea>
-                      </div>
-                      <div className="form-group">
-                        <button type="submit">Deploy uAgent</button>
-                      </div>
-                    </div>
-                  </form>
-                </div>
-              )}
+                  <div style={{marginTop: '12px', padding: '12px', background: 'var(--glass)', borderRadius: '6px', fontSize: '0.85rem', color: 'var(--muted)'}}>
+                    📝 User-created bots undergo 7-day paper trading learning period
+                  </div>
+                </form>
+              </div>
             </div>
           <div className="bot-right">
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '12px'}}>
@@ -3979,18 +3746,6 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
-    </section>
-  );
-
-  const renderQuarantine = () => (
-    <section className="section active">
-      <BotQuarantineSection />
-    </section>
-  );
-
-  const renderTraining = () => (
-    <section className="section active">
-      <BotTrainingSection />
     </section>
   );
 
