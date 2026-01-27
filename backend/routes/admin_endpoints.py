@@ -1194,146 +1194,34 @@ async def get_user_api_keys_status(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/bots/eligible-for-live")
-async def get_eligible_bots_for_live(admin_user_id: str = Depends(verify_admin)):
-    """
-    Get list of bots eligible for live promotion
-    Shows only eligible bots for admin override dropdown:
-    - paused_ready state (training complete, paused)
-    - active paper bots
-    
-    Excludes:
-    - Already live bots
-    - Training bots
-    - Training failed bots
-    - Stopped bots
-    
-    Returns:
-        List of eligible bots with user info
-    """
-    try:
-        # Find all bots that are:
-        # 1. In paper mode (trading_mode == 'paper')
-        # 2. Either active or paused with training_complete
-        # 3. Not already in live mode
-        eligible_bots = await db.bots_collection.find(
-            {
-                "$and": [
-                    {"trading_mode": {"$ne": "live"}},  # Not already live
-                    {"status": {"$in": ["active", "paused"]}},  # Active or paused
-                    {"status": {"$ne": "stopped"}},  # Not stopped
-                    {"status": {"$ne": "training_failed"}},  # Not training failed
-                    {
-                        "$or": [
-                            {"status": "active"},  # Active paper bots
-                            {"training_complete": True}  # Or training complete (paused_ready)
-                        ]
-                    }
-                ]
-            },
-            {"_id": 0}
-        ).to_list(1000)
-        
-        # Enrich with user info
-        enriched_bots = []
-        for bot in eligible_bots:
-            user_id = bot.get('user_id')
-            user = await db.users_collection.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
-            
-            enriched_bot = {
-                "id": bot.get('id'),
-                "name": bot.get('name'),
-                "exchange": bot.get('exchange'),
-                "status": bot.get('status'),
-                "trading_mode": bot.get('trading_mode', 'paper'),
-                "current_capital": bot.get('current_capital', 0),
-                "total_profit": bot.get('total_profit', 0),
-                "trades_count": bot.get('trades_count', 0),
-                "win_rate": bot.get('win_rate', 0),
-                "training_complete": bot.get('training_complete', False),
-                "user_email": user.get('email') if user else 'unknown',
-                "user_name": user.get('name') if user else 'unknown',
-                "eligibility_reason": "Training complete" if bot.get('training_complete') else "Active paper bot"
-            }
-            enriched_bots.append(enriched_bot)
-        
-        return {
-            "success": True,
-            "eligible_bots": enriched_bots,
-            "total": len(enriched_bots)
-        }
-        
-    except Exception as e:
-        logger.error(f"Get eligible bots error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# REMOVED: Admin override endpoints per production-ready requirements
+# Bots may only go live if they pass all existing rules/gates
+# No "override" that can force bots live
+
+# @router.get("/bots/eligible-for-live") - REMOVED
+# @router.post("/bots/{bot_id}/override-live") - REMOVED  
+# @router.post("/bots/{bot_id}/override") - REMOVED
+
+# Admin can view bot status but cannot bypass trading rules
+
+# The following functions have been disabled:
+# - get_eligible_bots_for_live
+# - override_bot_to_live  
+# - set_bot_override_rules
+
+# Bots must meet all live trading requirements without admin bypass
 
 
-@router.post("/bots/{bot_id}/override-live")
-async def override_bot_to_live(
-    bot_id: str,
-    admin_user_id: str = Depends(verify_admin)
-):
-    """
-    Admin override to promote a bot to live trading before normal rules are met
-    For testing purposes only - bypasses 7-day paper trading requirement
-    All actions are audited with admin user ID and timestamp
-    """
-    try:
-        # Find bot
-        bot = await db.bots_collection.find_one({"id": bot_id})
-        
-        if not bot:
-            raise HTTPException(status_code=404, detail="Bot not found")
-        
-        # Update bot to live mode with admin override flag
-        result = await db.bots_collection.update_one(
-            {"id": bot_id},
-            {
-                "$set": {
-                    "trading_mode": "live",
-                    "mode": "live",
-                    "is_paper": False,
-                    "admin_override": True,
-                    "admin_override_by": admin_user_id,
-                    "admin_override_at": datetime.now(timezone.utc).isoformat(),
-                    "learning_complete": True  # Mark as ready
-                }
-            }
-        )
-        
-        if result.modified_count == 0:
-            raise HTTPException(status_code=400, detail="Failed to update bot")
-        
-        # Log audit event
-        await audit_logger.log_event(
-            event_type="bot_override_to_live",
-            user_id=admin_user_id,
-            details={
-                "bot_id": bot_id,
-                "bot_name": bot.get('name'),
-                "bot_user_id": bot.get('user_id'),
-                "overridden_by": admin_user_id,
-                "reason": "Admin override for testing",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            },
-            severity="warning"
-        )
-        
-        logger.warning(f"Bot {bot_id} overridden to live by admin {admin_user_id}")
-        
-        return {
-            "success": True,
-            "message": f"Bot '{bot.get('name')}' promoted to live trading (admin override)",
-            "bot_id": bot_id,
-            "overridden_by": admin_user_id,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Bot override error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# REMOVED: Admin override endpoints per production-ready requirements
+# Bots may only go live if they pass all existing rules/gates
+# No "override" that can force bots live
+
+# The following admin override endpoints have been permanently disabled:
+# - GET /bots/eligible-for-live - listed bots eligible for admin override
+# - POST /bots/{bot_id}/override-live - forced bot to live mode bypassing rules
+# - POST /bots/{bot_id}/override - set override trading parameters
+
+# Bots must meet all live trading requirements without admin bypass
 
 
 @router.get("/bots")
@@ -1690,107 +1578,9 @@ async def change_bot_exchange(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/bots/{bot_id}/override")
-async def set_bot_override_rules(
-    bot_id: str,
-    data: Dict,
-    admin_user_id: str = Depends(verify_admin)
-):
-    """Set override rules for a bot
-    
-    Allows admin to override trading parameters:
-    - max_daily_trades
-    - position_size_pct
-    - stop_loss_pct
-    - take_profit_pct
-    - force_pause (immediately pause bot)
-    - force_resume (immediately resume bot)
-    
-    Args:
-        bot_id: Bot ID to override
-        data: Override rules dict
-        admin_user_id: Admin user ID from auth
-        
-    Returns:
-        Updated bot with override rules
-    """
-    try:
-        # Find bot
-        bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
-        
-        if not bot:
-            raise HTTPException(status_code=404, detail="Bot not found")
-        
-        # Extract override rules
-        override_rules = data.get("override_rules", {})
-        force_pause = data.get("force_pause", False)
-        force_resume = data.get("force_resume", False)
-        
-        # Build update
-        update_doc = {
-            "override_rules": override_rules,
-            "override_rules_set_by": admin_user_id,
-            "override_rules_set_at": datetime.now(timezone.utc).isoformat()
-        }
-        
-        # Handle force pause/resume
-        if force_pause:
-            update_doc["status"] = "paused"
-            update_doc["paused_by_admin"] = True
-            update_doc["paused_at"] = datetime.now(timezone.utc).isoformat()
-            update_doc["pause_reason"] = "Admin override"
-        elif force_resume:
-            update_doc["status"] = "active"
-            update_doc["paused_by_admin"] = False
-            update_doc["resumed_at"] = datetime.now(timezone.utc).isoformat()
-        
-        # Update bot
-        result = await db.bots_collection.update_one(
-            {"id": bot_id},
-            {"$set": update_doc}
-        )
-        
-        if result.modified_count == 0:
-            logger.warning(f"Bot {bot_id} override: no changes made")
-        
-        # Log audit event
-        await audit_logger.log_event(
-            event_type="bot_override_rules_set",
-            user_id=admin_user_id,
-            details={
-                "bot_id": bot_id,
-                "bot_name": bot.get('name'),
-                "override_rules": override_rules,
-                "force_pause": force_pause,
-                "force_resume": force_resume,
-                "set_by": admin_user_id,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            },
-            severity="info"
-        )
-        
-        # Get updated bot
-        updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
-        
-        # Emit realtime event
-        from realtime_events import rt_events
-        await rt_events.bot_updated(bot.get('user_id'), bot_id, update_doc)
-        
-        logger.info(f"Bot {bot_id} override rules set by admin {admin_user_id}")
-        
-        return {
-            "success": True,
-            "message": f"Override rules set for bot '{bot.get('name')}'",
-            "bot": updated_bot,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Set bot override error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+# REMOVED: set_bot_override_rules endpoint
+# Admin cannot override trading parameters or force bot state changes
+# Bots must operate within their configured rules
 
 @router.get("/resources/users")
 async def get_user_resource_usage(

@@ -4,7 +4,7 @@ Real-time AI chat with action confirmation and tool routing
 """
 
 from fastapi import APIRouter, HTTPException, Depends, Body
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict
 import logging
 import json
@@ -178,6 +178,13 @@ async def ai_chat(
         # Get system state for AI context
         system_state = await action_router.get_system_state(user_id)
         
+        # Load full chat history for context (last 30 messages)
+        chat_history = await db.chat_messages_collection.find(
+            {"user_id": user_id},
+            {"_id": 0}
+        ).sort("timestamp", -1).limit(30).to_list(30)
+        chat_history.reverse()
+        
         # Check if this is a confirmation for a dangerous action
         if confirmation_token and confirmation_token in confirmation_tokens:
             action_data = confirmation_tokens[confirmation_token]
@@ -281,7 +288,21 @@ Instructions:
 - If user asks for an action, explain what it will do
 - For dangerous actions (emergency_stop, stop_bot), require explicit confirmation
 - Provide recommendations based on performance data
+- Use conversation history for context to maintain continuity
 """
+                
+                # Build messages with history for context
+                ai_messages = [{"role": "system", "content": context}]
+                
+                # Add recent chat history for context
+                for hist_msg in chat_history[-10:]:  # Last 10 messages
+                    ai_messages.append({
+                        "role": hist_msg.get("role"),
+                        "content": hist_msg.get("content")
+                    })
+                
+                # Add current user message
+                ai_messages.append({"role": "user", "content": content})
                 
                 # Try each model in fallback order
                 model_used = None
@@ -291,10 +312,7 @@ Instructions:
                     try:
                         response = await client.chat.completions.create(
                             model=test_model,
-                            messages=[
-                                {"role": "system", "content": context},
-                                {"role": "user", "content": content}
-                            ],
+                            messages=ai_messages,
                             max_tokens=500,
                             temperature=0.7
                         )
@@ -433,6 +451,205 @@ async def clear_chat_history(user_id: str = Depends(get_current_user)):
     
     except Exception as e:
         logger.error(f"Clear chat history error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/chat/greeting")
+async def get_daily_greeting(user_id: str = Depends(get_current_user)):
+    """Generate daily greeting with performance report on fresh session
+    
+    This endpoint:
+    - Checks if user already received greeting today
+    - Uses full chat history for context
+    - Generates personalized greeting with daily report
+    - Includes portfolio status and bot performance
+    """
+    try:
+        # Get user info
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_name = user.get("name", "User")
+        
+        # Check last greeting timestamp
+        last_greeting = await db.chat_sessions_collection.find_one(
+            {"user_id": user_id},
+            {"_id": 0}
+        )
+        
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # If already greeted today, return recent messages instead
+        if last_greeting:
+            last_greeting_time = datetime.fromisoformat(last_greeting.get("last_greeting_at", ""))
+            if last_greeting_time >= today_start:
+                # Already greeted today - return recent messages
+                messages = await db.chat_messages_collection.find(
+                    {"user_id": user_id},
+                    {"_id": 0}
+                ).sort("timestamp", -1).limit(10).to_list(10)
+                messages.reverse()
+                
+                return {
+                    "already_greeted": True,
+                    "messages": messages,
+                    "timestamp": now.isoformat()
+                }
+        
+        # Get system state for context
+        system_state = await action_router.get_system_state(user_id)
+        
+        # Get yesterday's performance from daily_report service
+        try:
+            from routes.daily_report import daily_report_service
+            
+            # Get yesterday's date range
+            yesterday_start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            yesterday_end = yesterday_start + timedelta(days=1)
+            
+            # Get yesterday's trades
+            trades = await db.trades_collection.find({
+                "user_id": user_id,
+                "created_at": {
+                    "$gte": yesterday_start.isoformat(),
+                    "$lt": yesterday_end.isoformat()
+                }
+            }).to_list(1000)
+            
+            total_trades = len(trades)
+            winning_trades = len([t for t in trades if t.get("realized_profit", 0) > 0])
+            net_profit = sum(t.get("realized_profit", 0) for t in trades) - sum(t.get("fees", 0) for t in trades)
+            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+            
+            daily_summary = f"""Yesterday's Performance:
+- Trades: {total_trades}
+- Win Rate: {win_rate:.1f}%
+- Net Profit: R{net_profit:.2f}
+"""
+        except Exception as e:
+            logger.warning(f"Could not fetch yesterday's performance: {e}")
+            daily_summary = "Performance data unavailable for yesterday."
+        
+        # Load full chat history for context (last 50 messages)
+        history = await db.chat_messages_collection.find(
+            {"user_id": user_id},
+            {"_id": 0}
+        ).sort("timestamp", -1).limit(50).to_list(50)
+        history.reverse()
+        
+        # Get API key for OpenAI
+        try:
+            from routes.api_key_management import get_decrypted_key
+            import os
+            
+            key_data = await get_decrypted_key(user_id, "openai")
+            user_api_key = None
+            
+            if key_data and key_data.get("api_key"):
+                user_api_key = key_data.get("api_key")
+            else:
+                user_api_key = os.getenv("OPENAI_API_KEY")
+            
+            if not user_api_key:
+                return {
+                    "role": "assistant",
+                    "content": f"Good morning, {user_name}! 👋\n\nI'm your AI trading assistant, but I need an OpenAI API key to provide intelligent insights. Please save your API key in Settings → API Keys.\n\n{daily_summary}\n\nCurrent System:\n- Total Bots: {system_state['bots']['total']} (Active: {system_state['bots']['active']})\n- Total Capital: R{system_state['capital']['total']:.2f}\n- Total Profit: R{system_state['capital']['total_profit']:.2f}",
+                    "timestamp": now.isoformat(),
+                    "is_greeting": True
+                }
+            
+            # Generate greeting with OpenAI
+            from openai import AsyncOpenAI
+            
+            client = AsyncOpenAI(api_key=user_api_key)
+            
+            # Prepare context
+            context = f"""You are the AI assistant for Amarktai Network trading system. 
+
+Generate a warm, personalized daily greeting for {user_name}. This is their first session today.
+
+Include:
+1. Friendly greeting with user's name
+2. Yesterday's performance summary
+3. Current portfolio status
+4. Any notable alerts or recommendations
+5. Encouragement and positive tone
+
+System State:
+- Total Bots: {system_state['bots']['total']} (Active: {system_state['bots']['active']}, Paused: {system_state['bots']['paused']})
+- Total Capital: R{system_state['capital']['total']:.2f}
+- Total Profit: R{system_state['capital']['total_profit']:.2f}
+
+{daily_summary}
+
+Keep it conversational, under 150 words. Use emojis sparingly."""
+            
+            # Try models with fallback
+            fallback_models = ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o", "gpt-3.5-turbo"]
+            greeting_content = None
+            
+            for model in fallback_models:
+                try:
+                    response = await client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": context},
+                            {"role": "user", "content": f"Generate a daily greeting for {user_name}"}
+                        ],
+                        max_tokens=300,
+                        temperature=0.8
+                    )
+                    greeting_content = response.choices[0].message.content
+                    break
+                except Exception as model_error:
+                    if "404" in str(model_error) or "403" in str(model_error):
+                        continue
+                    else:
+                        raise model_error
+            
+            if not greeting_content:
+                # Fallback to simple greeting
+                greeting_content = f"Good morning, {user_name}! 👋\n\n{daily_summary}\n\nYour system is running with {system_state['bots']['active']} active bots. How can I help you today?"
+        
+        except Exception as e:
+            logger.error(f"OpenAI greeting generation error: {e}")
+            # Fallback greeting
+            greeting_content = f"Good morning, {user_name}! 👋\n\n{daily_summary}\n\nCurrent System:\n- Total Bots: {system_state['bots']['total']} (Active: {system_state['bots']['active']})\n- Total Capital: R{system_state['capital']['total']:.2f}\n- Total Profit: R{system_state['capital']['total_profit']:.2f}\n\nHow can I assist you today?"
+        
+        # Save greeting message
+        greeting_msg = {
+            "user_id": user_id,
+            "role": "assistant",
+            "content": greeting_content,
+            "timestamp": now.isoformat(),
+            "is_greeting": True
+        }
+        await db.chat_messages_collection.insert_one(greeting_msg)
+        
+        # Update session record
+        await db.chat_sessions_collection.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "last_greeting_at": now.isoformat(),
+                    "last_session_start": now.isoformat()
+                }
+            },
+            upsert=True
+        )
+        
+        return {
+            "role": "assistant",
+            "content": greeting_content,
+            "timestamp": now.isoformat(),
+            "is_greeting": True,
+            "system_state": system_state
+        }
+    
+    except Exception as e:
+        logger.error(f"Daily greeting error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
