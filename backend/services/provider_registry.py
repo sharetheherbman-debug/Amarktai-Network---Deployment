@@ -307,24 +307,7 @@ PROVIDERS: Dict[str, ProviderDefinition] = {
         icon="kucoin.svg",
         description="KuCoin cryptocurrency exchange"
     ),
-    "ovex": ProviderDefinition(
-        provider_id="ovex",
-        provider_type=ProviderType.EXCHANGE,
-        display_name="OVEX",
-        required_fields=["api_key", "api_secret"],
-        test_method=test_ovex,
-        icon="ovex.svg",
-        description="OVEX South African cryptocurrency exchange"
-    ),
-    "valr": ProviderDefinition(
-        provider_id="valr",
-        provider_type=ProviderType.EXCHANGE,
-        display_name="VALR",
-        required_fields=["api_key", "api_secret"],
-        test_method=test_valr,
-        icon="valr.svg",
-        description="VALR South African cryptocurrency exchange"
-    ),
+    # OVEX and VALR removed - only Luno, Binance, KuCoin supported
 }
 
 

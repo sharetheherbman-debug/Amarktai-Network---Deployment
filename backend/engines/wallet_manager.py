@@ -1,9 +1,15 @@
 """
 Cross-Exchange Wallet Manager
 - Luno as master wallet
-- Auto-transfer funds to other exchanges
 - Track balances across all platforms
-- AI-controlled allocation
+- Paper mode: allocation ledger
+- Live mode: balance checks only, NO automatic transfers
+- Manual approval workflow required for fund transfers
+
+SAFETY CONSTRAINTS:
+- NO automatic withdrawals/transfers between exchanges
+- Live mode wallet transfers HARD-FAIL with clear error
+- Future: manual approval workflow implementation required
 """
 
 import asyncio
@@ -14,6 +20,9 @@ import logging
 
 import database as db
 from ccxt_service import CCXTService
+from utils.env_utils import env_bool
+from services.ledger_service import get_ledger_service
+from routes.api_key_management import get_decrypted_key
 
 logger = logging.getLogger(__name__)
 
@@ -21,15 +30,14 @@ class WalletManager:
     def __init__(self):
         self.ccxt_service = CCXTService()
         self.master_exchange = 'luno'  # Luno is the master wallet
-        self.supported_exchanges = ['luno', 'binance', 'kucoin', 'ovex', 'valr']
+        # SUPPORTED EXCHANGES: Luno, Binance, KuCoin ONLY
+        self.supported_exchanges = ['luno', 'binance', 'kucoin']
         
         # Track allocated funds per exchange
         self.exchange_allocations = {
             'luno': {'allocated': 0, 'available': 0},
             'binance': {'allocated': 0, 'available': 0},
             'kucoin': {'allocated': 0, 'available': 0},
-            'ovex': {'allocated': 0, 'available': 0},
-            'valr': {'allocated': 0, 'available': 0}
         }
     
     async def get_master_balance(self, user_id: str) -> Dict:
@@ -172,29 +180,138 @@ class WalletManager:
     
     async def allocate_funds_for_bot(self, user_id: str, bot_id: str, 
                                     exchange: str, amount: float) -> Dict:
-        """Allocate funds from master wallet to specific exchange for a bot"""
+        """
+        Allocate funds for a bot (paper mode) or check balance (live mode)
+        
+        PAPER MODE:
+        - Write allocation event to allocation ledger
+        - Track bot capital allocation
+        - No actual funds moved
+        
+        LIVE MODE:
+        - Read-only balance sufficiency check
+        - NO fund transfers
+        - Returns INSUFFICIENT_BALANCE if insufficient
+        
+        Args:
+            user_id: User ID
+            bot_id: Bot ID
+            exchange: Target exchange
+            amount: Amount to allocate
+            
+        Returns:
+            dict with success/error status
+        """
         try:
-            # Record allocation
-            self.exchange_allocations[exchange]['allocated'] += amount
+            is_paper_mode = env_bool('PAPER_TRADING', False)
+            is_live_mode = env_bool('LIVE_TRADING', False)
             
-            # In production, this would:
-            # 1. Check if target exchange has sufficient balance
-            # 2. If not, transfer from Luno to target exchange
-            # 3. Update allocation tracking
+            # Determine trading mode
+            if is_paper_mode:
+                # PAPER MODE: Write allocation to ledger
+                ledger = get_ledger_service(await db.get_db())
+                
+                allocation_event = {
+                    "user_id": user_id,
+                    "bot_id": bot_id,
+                    "event_type": "allocation",
+                    "exchange": exchange,
+                    "amount": amount,
+                    "mode": "paper",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "reason": "bot_capital_allocation"
+                }
+                
+                await ledger.record_event(allocation_event)
+                
+                # Track in-memory allocation
+                self.exchange_allocations[exchange]['allocated'] += amount
+                
+                logger.info(f"💰 [PAPER] Allocated R{amount:.2f} to {exchange} for bot {bot_id[:8]}")
+                
+                return {
+                    "success": True,
+                    "mode": "paper",
+                    "bot_id": bot_id,
+                    "exchange": exchange,
+                    "amount": amount,
+                    "message": "Paper mode allocation recorded in ledger",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+                
+            elif is_live_mode:
+                # LIVE MODE: Balance check only, NO transfers
+                logger.warning(f"⚠️  [LIVE] Balance check for R{amount:.2f} on {exchange} for bot {bot_id[:8]}")
+                
+                # Get exchange balance
+                exchange_creds = await get_decrypted_key(user_id, exchange)
+                
+                if not exchange_creds:
+                    return {
+                        "success": False,
+                        "error": "EXCHANGE_NOT_CONFIGURED",
+                        "message": f"{exchange} API keys not configured"
+                    }
+                
+                # Initialize exchange and check balance
+                ccxt_exchange = self.ccxt_service.init_exchange(
+                    exchange,
+                    exchange_creds['api_key'],
+                    exchange_creds['api_secret']
+                )
+                
+                balance = await asyncio.to_thread(ccxt_exchange.fetch_balance)
+                available_zar = balance.get('ZAR', {}).get('free', 0)
+                
+                if available_zar < amount:
+                    return {
+                        "success": False,
+                        "error": "INSUFFICIENT_BALANCE",
+                        "message": f"Insufficient balance on {exchange}. Available: R{available_zar:.2f}, Required: R{amount:.2f}",
+                        "available": available_zar,
+                        "required": amount,
+                        "exchange": exchange
+                    }
+                
+                # Balance sufficient - record allocation event
+                ledger = get_ledger_service(await db.get_db())
+                
+                allocation_event = {
+                    "user_id": user_id,
+                    "bot_id": bot_id,
+                    "event_type": "allocation_check",
+                    "exchange": exchange,
+                    "amount": amount,
+                    "mode": "live",
+                    "available_balance": available_zar,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "reason": "bot_capital_allocation_verified"
+                }
+                
+                await ledger.record_event(allocation_event)
+                
+                return {
+                    "success": True,
+                    "mode": "live",
+                    "bot_id": bot_id,
+                    "exchange": exchange,
+                    "amount": amount,
+                    "available": available_zar,
+                    "message": f"Balance verified on {exchange} (NO funds transferred)",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
             
-            logger.info(f"💰 Allocated R{amount:.2f} to {exchange} for bot {bot_id[:8]}")
-            
-            return {
-                "success": True,
-                "bot_id": bot_id,
-                "exchange": exchange,
-                "amount": amount,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
+            else:
+                # Neither paper nor live mode enabled
+                return {
+                    "success": False,
+                    "error": "NO_TRADING_MODE",
+                    "message": "Neither PAPER_TRADING nor LIVE_TRADING is enabled"
+                }
             
         except Exception as e:
-            logger.error(f"Fund allocation error: {e}")
-            return {"success": False, "error": str(e)}
+            logger.error(f"Fund allocation error: {e}", exc_info=True)
+            return {"success": False, "error": "INTERNAL_ERROR", "message": str(e)}
     
     async def get_allocation_status(self, user_id: str) -> Dict:
         """Get current allocation status across all exchanges"""
@@ -265,6 +382,45 @@ class WalletManager:
         except Exception as e:
             logger.error(f"Rebalancing error: {e}")
             return {"success": False, "error": str(e)}
+    
+    async def transfer_funds_between_exchanges(self, user_id: str, from_exchange: str, 
+                                              to_exchange: str, amount: float) -> Dict:
+        """
+        BLOCKED: Fund transfers between exchanges
+        
+        SAFETY CONSTRAINT:
+        This function is BLOCKED for safety. Automatic transfers between exchanges
+        could result in loss of funds.
+        
+        FUTURE: Implement manual approval workflow before enabling this function.
+        
+        Args:
+            user_id: User ID
+            from_exchange: Source exchange
+            to_exchange: Destination exchange
+            amount: Amount to transfer
+            
+        Returns:
+            dict with hard-fail error
+        """
+        logger.critical(
+            f"🚨 BLOCKED TRANSFER ATTEMPT: User {user_id} tried to transfer "
+            f"R{amount:.2f} from {from_exchange} to {to_exchange}"
+        )
+        
+        return {
+            "success": False,
+            "error": "TRANSFER_BLOCKED",
+            "message": (
+                "Automatic fund transfers between exchanges are BLOCKED for safety. "
+                "Manual approval workflow not yet implemented. "
+                "Please transfer funds manually through exchange interfaces."
+            ),
+            "from_exchange": from_exchange,
+            "to_exchange": to_exchange,
+            "amount": amount,
+            "blocked_at": datetime.now(timezone.utc).isoformat()
+        }
 
 # Global instance
 wallet_manager = WalletManager()

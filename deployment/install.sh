@@ -9,6 +9,13 @@
 # 4. Installs and configures systemd service
 # 5. Starts the service and validates health
 # 6. Downloads OpenAPI spec and verifies routes
+#
+# CANONICAL VPS LAYOUT:
+# - Repo clone: /var/amarktai/app
+# - Backend: /var/amarktai/app/backend
+# - Env file: /var/amarktai/app/backend/.env
+# - Service user: www-data
+# - Systemd service: amarktai-api.service
 
 set -euo pipefail
 
@@ -19,11 +26,15 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Get script directory and project root
+# CANONICAL VPS PATHS
+VPS_ROOT="/var/amarktai/app"
+BACKEND_DIR="$VPS_ROOT/backend"
+DEPLOYMENT_DIR="$VPS_ROOT/deployment"
+SERVICE_USER="www-data"
+
+# Get script directory and source project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BACKEND_DIR="$PROJECT_ROOT/backend"
-DEPLOYMENT_DIR="$PROJECT_ROOT/deployment"
+SOURCE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 log_info() {
     echo -e "${BLUE}ℹ️  $1${NC}"
@@ -55,8 +66,30 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 log_section "Amarktai Network - Installation"
-log_info "Project root: $PROJECT_ROOT"
+log_info "Source directory: $SOURCE_ROOT"
+log_info "VPS deployment root: $VPS_ROOT"
 log_info "Backend directory: $BACKEND_DIR"
+
+# ============================================================================
+# 0. Setup VPS Directory Structure
+# ============================================================================
+log_section "0. Setting Up VPS Directory Structure"
+
+# If we're not already in the VPS location, copy files there
+if [ "$SOURCE_ROOT" != "$VPS_ROOT" ]; then
+    log_info "Creating VPS directory structure..."
+    mkdir -p /var/amarktai
+    
+    if [ -d "$VPS_ROOT" ]; then
+        log_warning "VPS directory $VPS_ROOT already exists"
+    else
+        log_info "Copying repository to $VPS_ROOT..."
+        cp -r "$SOURCE_ROOT" "$VPS_ROOT"
+        log_success "Repository copied to $VPS_ROOT"
+    fi
+else
+    log_info "Already running from VPS location: $VPS_ROOT"
+fi
 
 # ============================================================================
 # 1. Install OS Dependencies
@@ -91,23 +124,36 @@ systemctl start redis-server || true
 # ============================================================================
 # 1.5. Setup MongoDB via Docker
 # ============================================================================
-log_info "Setting up MongoDB..."
+log_section "1.5. Setting Up MongoDB via Docker"
 
-# Generate random password if not set
-if [ -z "${MONGO_PASSWORD:-}" ]; then
-    MONGO_PASSWORD=$(openssl rand -hex 16)
-    log_info "Generated random MongoDB password"
+# Secure password storage directory
+SECRETS_DIR="/etc/amarktai"
+MONGO_PASSWORD_FILE="$SECRETS_DIR/mongo_password"
+
+# Generate random password if not already stored
+if [ ! -f "$MONGO_PASSWORD_FILE" ]; then
+    log_info "Generating MongoDB password..."
+    mkdir -p "$SECRETS_DIR"
+    chmod 700 "$SECRETS_DIR"  # Restrict directory access
+    chown root:root "$SECRETS_DIR"
+    
+    openssl rand -hex 16 > "$MONGO_PASSWORD_FILE"
+    chmod 600 "$MONGO_PASSWORD_FILE"
+    chown root:root "$MONGO_PASSWORD_FILE"
+    log_success "MongoDB password stored securely in $MONGO_PASSWORD_FILE"
 fi
+
+MONGO_PASSWORD=$(cat "$MONGO_PASSWORD_FILE")
 
 # Check if MongoDB is already running
 if docker ps | grep -q amarktai-mongo; then
     log_info "MongoDB container already running"
 else
-    log_info "Starting MongoDB container..."
+    log_info "Starting MongoDB container (bound to 127.0.0.1 only)..."
     docker run -d \
         --name amarktai-mongo \
         --restart unless-stopped \
-        -p 27017:27017 \
+        -p 127.0.0.1:27017:27017 \
         -v amarktai-mongo-data:/data/db \
         -e MONGO_INITDB_ROOT_USERNAME=amarktai \
         -e MONGO_INITDB_ROOT_PASSWORD="$MONGO_PASSWORD" \
@@ -127,8 +173,8 @@ else
         fi
     fi
     
-    log_warning "MongoDB Password: $MONGO_PASSWORD"
-    log_warning "IMPORTANT: Save this password securely!"
+    log_success "MongoDB started on 127.0.0.1:27017 (localhost only)"
+    log_info "MongoDB password stored in: $MONGO_PASSWORD_FILE (chmod 600)"
 fi
 
 log_success "Database services ready"
@@ -194,16 +240,16 @@ fi
 # ============================================================================
 log_section "5. Installing Systemd Service"
 
-# Create amarktai user if it doesn't exist
-if ! id -u amarktai > /dev/null 2>&1; then
-    log_info "Creating amarktai system user..."
-    useradd --system --no-create-home --shell /bin/false amarktai
-    log_success "Created amarktai user"
+# Ensure www-data user exists (should exist by default on Ubuntu)
+if ! id -u www-data > /dev/null 2>&1; then
+    log_error "www-data user not found - this is unusual on Ubuntu"
 fi
 
-# Set ownership of project directory
-log_info "Setting ownership of $PROJECT_ROOT to amarktai user..."
-chown -R amarktai:amarktai "$PROJECT_ROOT"
+# Set ownership of VPS directory
+log_info "Setting ownership of $VPS_ROOT to $SERVICE_USER..."
+chown -R "$SERVICE_USER:$SERVICE_USER" "$VPS_ROOT"
+chmod 755 "$VPS_ROOT"
+chmod 755 "$BACKEND_DIR"
 
 # Create service file
 SERVICE_FILE="/etc/systemd/system/amarktai-api.service"
@@ -212,20 +258,26 @@ log_info "Creating systemd service file at $SERVICE_FILE..."
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=Amarktai Network API
-After=network.target mongodb.service
-Wants=mongodb.service
+After=network.target docker.service
+Wants=docker.service
 
 [Service]
 Type=simple
-User=amarktai
-Group=amarktai
+User=$SERVICE_USER
+Group=$SERVICE_USER
 WorkingDirectory=$BACKEND_DIR
 Environment="PATH=$BACKEND_DIR/.venv/bin"
+EnvironmentFile=$BACKEND_DIR/.env
 ExecStart=$BACKEND_DIR/.venv/bin/uvicorn server:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=amarktai-api
+
+# Resource Limits
+MemoryMax=2G
+CPUQuota=150%
 
 [Install]
 WantedBy=multi-user.target

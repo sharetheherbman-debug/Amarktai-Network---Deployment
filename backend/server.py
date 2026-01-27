@@ -1030,28 +1030,10 @@ async def test_api_key(provider: str, user_id: str = Depends(get_current_user)):
             logger.error(f"Fetch.ai test failed: {e}")
             raise HTTPException(status_code=400, detail=f"Fetch.ai test failed: {str(e)}")
     
-    elif provider == 'valr':
-        # Test VALR key
-        try:
-            import ccxt
-            exchange = ccxt.valr({
-                'apiKey': key.get('api_key'),
-                'secret': key.get('api_secret')
-            })
-            await asyncio.to_thread(exchange.fetch_balance)
-            
-            await db.api_keys_collection.update_one(
-                {"id": key['id']},
-                {"$set": {"connected": True}}
-            )
-            return {"message": "VALR connection successful", "connected": True}
-        except Exception as e:
-            logger.error(f"VALR test failed: {e}")
-            await db.api_keys_collection.update_one(
-                {"id": key['id']},
-                {"$set": {"connected": False}}
-            )
-            raise HTTPException(status_code=400, detail=f"VALR test failed: {str(e)}")
+    # OVEX and VALR removed - only Luno, Binance, KuCoin supported
+    else:
+        # Unsupported provider
+        raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}. Supported exchanges: luno, binance, kucoin")
     
     return {"message": f"{provider} configured", "connected": True}
 
@@ -2204,9 +2186,7 @@ async def get_wallet_mode_stats(user_id: str = Depends(get_current_user)):
             "exchanges": {
                 "luno": {"balance": 0, "available": 0},
                 "binance": {"balance": 0, "available": 0},
-                "kucoin": {"balance": 0, "available": 0},
-                "ovex": {"balance": 0, "available": 0},
-                "valr": {"balance": 0, "available": 0}
+                "kucoin": {"balance": 0, "available": 0}
             }
         }
     except Exception as e:
@@ -2953,9 +2933,11 @@ async def admin_emergency_stop(user_id: str = Depends(get_current_user)):
             logger.warning(f"Could not stop trading engine: {e}")
         
         try:
-            from engines.autopilot_production import autopilot_production
-            autopilot_production.stop()
-            logger.info("✅ Production autopilot stopped")
+            from autopilot_engine import autopilot
+            if autopilot.scheduler and autopilot.scheduler.running:
+                autopilot.scheduler.shutdown(wait=False)
+            autopilot.running = False
+            logger.info("✅ Autopilot engine stopped")
         except Exception as e:
             logger.warning(f"Could not stop autopilot: {e}")
         

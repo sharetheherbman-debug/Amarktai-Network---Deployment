@@ -137,12 +137,16 @@ class AutopilotEngine:
                 # Get bot count
                 bots = await self.db.bots.find({'user_id': user_id}).to_list(1000)
                 bot_count = len(bots)
-                max_bots = int(os.getenv('MAX_BOTS', 30))
+                max_bots = int(os.getenv('MAX_BOTS', 45))
                 
                 # Strategy: Create new bot if profit >= R1000 (after fees) and under max bots
+                # Use the gated spawn function
                 if total_profit_after_fees >= 1000 and bot_count < max_bots:
-                    await self.create_autonomous_bot(user_id, 1000)
-                    logger.info(f"User {user_id}: Created new bot with R1000 (net profit: R{total_profit_after_fees:.2f})")
+                    result = await self.spawn_bot_if_profit_allows(user_id, 1000)
+                    if result['success']:
+                        logger.info(f"User {user_id}: {result['message']} (net profit: R{total_profit_after_fees:.2f})")
+                    else:
+                        logger.warning(f"User {user_id}: Bot spawn failed - {result.get('message', result.get('error'))}")
                     
                 # Strategy: Reinvest in top performing bots (only profit after fees)
                 elif total_profit_after_fees > 100:
@@ -160,27 +164,156 @@ class AutopilotEngine:
                 
         except Exception as e:
             logger.error(f"Daily reinvestment error: {e}")
+    
+    async def spawn_bot_if_profit_allows(self, user_id: str, seed_amount: float = 1000.0) -> dict:
+        """
+        Bot spawning gate with profit verification
+        
+        REQUIREMENTS:
+        - Computes available_profit_pool = realized_profit_net_fees - reserved_profit
+        - Atomically reserves seed_amount via ledger reservation event
+        - Returns PROFIT_INSUFFICIENT error if insufficient profit
+        - Enforces bot caps (max bots, exchange distribution)
+        
+        Args:
+            user_id: User ID
+            seed_amount: Amount of capital to allocate (default 1000 ZAR)
             
-    async def create_autonomous_bot(self, user_id: str, capital: float):
-        """Create a new bot autonomously"""
+        Returns:
+            dict with success/error status and details
+        """
         try:
-            # Determine best exchange based on user's API keys
-            api_keys = await self.db.api_keys.find({'user_id': user_id, 'connected': True}).to_list(10)
-            exchanges = [key['provider'] for key in api_keys if key['provider'] in ['luno', 'binance', 'kucoin']]
+            from services.ledger_service import get_ledger_service
             
-            if not exchanges:
-                logger.warning(f"User {user_id}: No exchange APIs connected")
-                return
+            # Step 1: Compute available profit pool
+            ledger = get_ledger_service(self.db)
+            realized_pnl = await ledger.compute_realized_pnl(user_id)
+            fees_paid = await ledger.compute_fees_paid(user_id)
+            net_profit = realized_pnl - fees_paid
+            
+            # Get reserved profit (already allocated to other bots)
+            reserved = await ledger.compute_reserved_profit(user_id) if hasattr(ledger, 'compute_reserved_profit') else 0
+            available_profit = net_profit - reserved
+            
+            logger.info(f"User {user_id}: PnL={realized_pnl:.2f}, Fees={fees_paid:.2f}, Net={net_profit:.2f}, Reserved={reserved:.2f}, Available={available_profit:.2f}")
+            
+            # Step 2: Check if sufficient profit
+            if available_profit < seed_amount:
+                return {
+                    "success": False,
+                    "error": "PROFIT_INSUFFICIENT",
+                    "message": f"Insufficient profit pool. Available: R{available_profit:.2f}, Required: R{seed_amount:.2f}",
+                    "available_profit": available_profit,
+                    "required": seed_amount
+                }
+            
+            # Step 3: Check bot caps
+            bots = await self.db.bots.find({'user_id': user_id}).to_list(1000)
+            bot_count = len(bots)
+            max_bots = int(os.getenv('MAX_BOTS', 45))
+            
+            if bot_count >= max_bots:
+                return {
+                    "success": False,
+                    "error": "BOT_LIMIT_REACHED",
+                    "message": f"Maximum bot limit reached: {bot_count}/{max_bots}",
+                    "current_bots": bot_count,
+                    "max_bots": max_bots
+                }
+            
+            # Step 4: Check exchange distribution
+            # Supported exchanges: Luno, Binance, KuCoin only
+            EXCHANGE_LIMITS = {
+                'luno': 15,
+                'binance': 15,
+                'kucoin': 15
+            }
+            
+            # Count bots per exchange
+            exchange_counts = {}
+            for bot in bots:
+                exchange = bot.get('exchange', '').lower()
+                exchange_counts[exchange] = exchange_counts.get(exchange, 0) + 1
+            
+            # Find exchange with available slots
+            target_exchange = None
+            for exchange, limit in EXCHANGE_LIMITS.items():
+                current = exchange_counts.get(exchange, 0)
+                if current < limit:
+                    target_exchange = exchange
+                    break
+            
+            if not target_exchange:
+                return {
+                    "success": False,
+                    "error": "EXCHANGE_LIMIT_REACHED",
+                    "message": "All exchanges at capacity",
+                    "exchange_counts": exchange_counts,
+                    "limits": EXCHANGE_LIMITS
+                }
+            
+            # Step 5: Atomically reserve profit via ledger
+            import uuid
+            reservation_id = f"bot_spawn_{user_id}_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{uuid.uuid4().hex[:8]}"
+            await ledger.record_event({
+                "user_id": user_id,
+                "event_type": "profit_reservation",
+                "amount": seed_amount,
+                "reservation_id": reservation_id,
+                "reason": "bot_spawning",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            
+            # Step 6: Create bot
+            bot_result = await self.create_autonomous_bot(user_id, seed_amount, target_exchange)
+            
+            return {
+                "success": True,
+                "message": f"Bot spawned successfully on {target_exchange}",
+                "bot_id": bot_result.get('bot_id') if bot_result else None,
+                "exchange": target_exchange,
+                "seed_amount": seed_amount,
+                "available_profit_remaining": available_profit - seed_amount
+            }
+            
+        except Exception as e:
+            logger.error(f"Bot spawning gate error: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": "INTERNAL_ERROR",
+                "message": str(e)
+            }
+            
+    async def create_autonomous_bot(self, user_id: str, capital: float, exchange: str = None):
+        """Create a new bot autonomously
+        
+        Args:
+            user_id: User ID
+            capital: Initial capital for the bot
+            exchange: Target exchange (if None, auto-select best performing)
+        """
+        try:
+            # Determine best exchange if not specified
+            if not exchange:
+                api_keys = await self.db.api_keys.find({'user_id': user_id, 'connected': True}).to_list(10)
+                exchanges = [key['provider'] for key in api_keys if key['provider'] in ['luno', 'binance', 'kucoin']]
                 
-            # Choose exchange with best performance
-            best_exchange = await self.get_best_performing_exchange(user_id, exchanges)
+                if not exchanges:
+                    logger.warning(f"User {user_id}: No exchange APIs connected")
+                    return {"success": False, "error": "NO_EXCHANGES"}
+                    
+                # Choose exchange with best performance
+                exchange = await self.get_best_performing_exchange(user_id, exchanges)
+            
+            # Create bot ID
+            bot_id = f"auto_{datetime.now(timezone.utc).timestamp()}"
             
             # Create bot
             bot = {
-                'id': f"auto_{datetime.now(timezone.utc).timestamp()}",
+                'id': bot_id,
                 'user_id': user_id,
                 'name': f"Autopilot Bot {datetime.now().strftime('%Y%m%d_%H%M')}",
-                'exchange': best_exchange,
+                'exchange': exchange,
                 'risk_mode': 'balanced',
                 'trading_mode': 'paper',  # Always start with paper
                 'status': 'active',
@@ -199,10 +332,13 @@ class AutopilotEngine:
             }
             
             await self.db.bots.insert_one(bot)
-            logger.info(f"Created autonomous bot: {bot['name']}")
+            logger.info(f"Created autonomous bot: {bot['name']} on {exchange}")
+            
+            return {"success": True, "bot_id": bot_id, "exchange": exchange}
             
         except Exception as e:
             logger.error(f"Autonomous bot creation error: {e}")
+            return {"success": False, "error": str(e)}
             
     async def reinvest_in_top_bots(self, user_id: str, profit: float, bots: list):
         """Reinvest profit in top 5 performing bots"""

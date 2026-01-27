@@ -6,7 +6,7 @@ This file is kept for backwards compatibility only.
 NEW PRODUCTION SYSTEM:
 - Use /app/backend/engines/capital_allocator.py (Phase 5 implementation)
 - Use /app/backend/engines/capital_injection_tracker.py (profit tracking)
-- Use /app/backend/engines/autopilot_production.py (reinvestment)
+- Use /app/backend/autopilot_engine.py (UNIFIED autopilot with ledger-based reinvestment)
 
 The new system properly tracks capital injections separately from trading profits,
 preventing the profit corruption issue that existed in this old implementation.
@@ -32,7 +32,7 @@ class CapitalAllocator:
         DEPRECATED - Capital reallocation now handled by:
         1. engines/capital_allocator.py (performance-based allocation)
         2. engines/capital_injection_tracker.py (tracks injections separately)
-        3. engines/autopilot_production.py (handles reinvestment)
+        3. autopilot_engine.py (UNIFIED autopilot handles reinvestment with ledger)
         """
         logger.warning("⚠️  Deprecated capital_allocator called - redirecting to new system")
         
