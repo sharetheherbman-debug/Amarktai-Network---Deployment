@@ -253,7 +253,8 @@ class AutopilotEngine:
                 }
             
             # Step 5: Atomically reserve profit via ledger
-            reservation_id = f"bot_spawn_{user_id}_{datetime.now(timezone.utc).timestamp()}"
+            import uuid
+            reservation_id = f"bot_spawn_{user_id}_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{uuid.uuid4().hex[:8]}"
             await ledger.record_event({
                 "user_id": user_id,
                 "event_type": "profit_reservation",

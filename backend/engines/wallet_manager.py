@@ -20,6 +20,9 @@ import logging
 
 import database as db
 from ccxt_service import CCXTService
+from utils.env_utils import env_bool
+from services.ledger_service import get_ledger_service
+from routes.api_key_management import get_decrypted_key
 
 logger = logging.getLogger(__name__)
 
@@ -200,9 +203,6 @@ class WalletManager:
             dict with success/error status
         """
         try:
-            from utils.env_utils import env_bool
-            from services.ledger_service import get_ledger_service
-            
             is_paper_mode = env_bool('PAPER_TRADING', False)
             is_live_mode = env_bool('LIVE_TRADING', False)
             
@@ -244,7 +244,6 @@ class WalletManager:
                 logger.warning(f"⚠️  [LIVE] Balance check for R{amount:.2f} on {exchange} for bot {bot_id[:8]}")
                 
                 # Get exchange balance
-                from routes.api_key_management import get_decrypted_key
                 exchange_creds = await get_decrypted_key(user_id, exchange)
                 
                 if not exchange_creds:

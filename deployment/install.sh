@@ -134,6 +134,9 @@ MONGO_PASSWORD_FILE="$SECRETS_DIR/mongo_password"
 if [ ! -f "$MONGO_PASSWORD_FILE" ]; then
     log_info "Generating MongoDB password..."
     mkdir -p "$SECRETS_DIR"
+    chmod 700 "$SECRETS_DIR"  # Restrict directory access
+    chown root:root "$SECRETS_DIR"
+    
     openssl rand -hex 16 > "$MONGO_PASSWORD_FILE"
     chmod 600 "$MONGO_PASSWORD_FILE"
     chown root:root "$MONGO_PASSWORD_FILE"
