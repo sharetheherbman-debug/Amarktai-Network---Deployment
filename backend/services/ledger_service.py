@@ -556,6 +556,13 @@ class LedgerService:
         
         for fill in reversed(fills):  # Chronological order
             timestamp = fill["timestamp"]
+            # Handle both datetime objects and string timestamps (defensive validation)
+            if isinstance(timestamp, str):
+                try:
+                    timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    logger.warning(f"Invalid timestamp format in fill: {timestamp}")
+                    continue
             date_key = timestamp.strftime(date_format)
             
             if date_key not in periods_data:
@@ -577,7 +584,15 @@ class LedgerService:
         # Pre-group fills by date_key for efficient processing (avoids O(n²))
         fills_by_date = {}
         for fill in fills:
-            date_key = fill["timestamp"].strftime(date_format)
+            timestamp = fill["timestamp"]
+            # Handle both datetime objects and string timestamps (defensive validation)
+            if isinstance(timestamp, str):
+                try:
+                    timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    logger.warning(f"Invalid timestamp format in fill: {timestamp}")
+                    continue
+            date_key = timestamp.strftime(date_format)
             if date_key not in fills_by_date:
                 fills_by_date[date_key] = []
             fills_by_date[date_key].append(fill)
