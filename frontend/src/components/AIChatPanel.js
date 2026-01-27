@@ -10,6 +10,7 @@ const AIChatPanel = () => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [systemState, setSystemState] = useState(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -20,10 +21,89 @@ const AIChatPanel = () => {
     scrollToBottom();
   }, [messages]);
 
-  // Load chat history on mount
+  // Check for fresh session and load greeting or history
   useEffect(() => {
-    loadChatHistory();
-  }, []);
+    if (!sessionChecked) {
+      checkSessionAndLoad();
+      setSessionChecked(true);
+    }
+  }, [sessionChecked]);
+
+  const checkSessionAndLoad = async () => {
+    try {
+      // Check if this is a fresh session (> 1 hour since last activity)
+      const lastSessionTime = localStorage.getItem('lastChatSession');
+      const now = Date.now();
+      const ONE_HOUR = 3600000; // 1 hour in milliseconds
+      
+      if (!lastSessionTime || (now - parseInt(lastSessionTime)) > ONE_HOUR) {
+        // Fresh session - fetch daily greeting
+        await fetchDailyGreeting();
+        localStorage.setItem('lastChatSession', now.toString());
+      } else {
+        // Recent session - load recent chat history
+        await loadRecentMessages();
+      }
+    } catch (err) {
+      console.error('Session check error:', err);
+      // Fallback to loading history
+      await loadRecentMessages();
+    }
+  };
+
+  const fetchDailyGreeting = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/ai/chat/greeting', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      const data = await response.json();
+      
+      if (data.already_greeted && data.messages) {
+        // Already greeted today - show recent messages
+        setMessages(data.messages);
+      } else {
+        // Show greeting
+        setMessages([{
+          role: 'assistant',
+          content: data.content,
+          timestamp: data.timestamp,
+          is_greeting: true
+        }]);
+        
+        if (data.system_state) {
+          setSystemState(data.system_state);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch daily greeting:', err);
+      // Fallback to loading history
+      await loadRecentMessages();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadRecentMessages = async () => {
+    try {
+      const response = await fetch('/api/ai/chat/history?limit=10', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      const data = await response.json();
+      if (data.messages) {
+        setMessages(data.messages);
+      }
+    } catch (err) {
+      console.error('Failed to load recent messages:', err);
+    }
+  };
 
   const loadChatHistory = async () => {
     try {
@@ -54,6 +134,9 @@ const AIChatPanel = () => {
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setLoading(true);
+    
+    // Update session timestamp on each message
+    localStorage.setItem('lastChatSession', Date.now().toString());
 
     try {
       const response = await fetch('/api/ai/chat', {
@@ -107,16 +190,33 @@ const AIChatPanel = () => {
       .replace(/✅/g, '<span class="text-green-600">✅</span>');
   };
 
+  const clearUIMessages = () => {
+    // Clear UI only (backend history is preserved)
+    setMessages([]);
+    setSessionChecked(false);
+    // Will trigger fresh session check on next mount
+    localStorage.removeItem('lastChatSession');
+  };
+
   return (
     <div className="flex flex-col h-full bg-white rounded-lg shadow-lg">
       {/* Header */}
       <div className="px-4 py-3 border-b bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-lg">
-        <div className="flex items-center gap-2">
-          <Bot size={24} />
-          <div>
-            <h3 className="font-semibold">AI Trading Assistant</h3>
-            <p className="text-xs opacity-90">Ask me anything about your trading system</p>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Bot size={24} />
+            <div>
+              <h3 className="font-semibold">AI Trading Assistant</h3>
+              <p className="text-xs opacity-90">Ask me anything about your trading system</p>
+            </div>
           </div>
+          <button
+            onClick={clearUIMessages}
+            className="text-xs px-2 py-1 bg-white/20 hover:bg-white/30 rounded transition"
+            title="Clear UI (history preserved)"
+          >
+            Clear
+          </button>
         </div>
       </div>
 
@@ -176,9 +276,17 @@ const AIChatPanel = () => {
                   ? 'bg-blue-600 text-white'
                   : msg.error
                   ? 'bg-red-50 text-red-900 border border-red-200'
+                  : msg.is_greeting
+                  ? 'bg-gradient-to-r from-green-50 to-blue-50 text-gray-900 border border-green-200'
                   : 'bg-gray-100 text-gray-900'
               }`}
             >
+              {msg.is_greeting && (
+                <div className="text-xs font-semibold text-green-600 mb-1 flex items-center gap-1">
+                  <CheckCircle size={12} />
+                  Daily Report
+                </div>
+              )}
               <div
                 className="text-sm whitespace-pre-wrap"
                 dangerouslySetInnerHTML={{ __html: formatMessage(msg.content) }}
