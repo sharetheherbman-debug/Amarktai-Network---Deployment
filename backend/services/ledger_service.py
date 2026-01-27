@@ -523,6 +523,34 @@ class LedgerService:
         
         return current_dd, max_dd
     
+    def _normalize_timestamp(self, timestamp) -> datetime:
+        """
+        Normalize timestamp to datetime object
+        
+        Handles both datetime objects and ISO string timestamps
+        from legacy data or JSON imports.
+        
+        Args:
+            timestamp: datetime object or ISO string
+            
+        Returns:
+            datetime object
+            
+        Raises:
+            ValueError: If timestamp cannot be parsed
+        """
+        if isinstance(timestamp, datetime):
+            return timestamp
+        elif isinstance(timestamp, str):
+            try:
+                # Handle ISO format with 'Z' or timezone
+                return datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Invalid timestamp format: {timestamp}")
+                raise ValueError(f"Cannot parse timestamp: {timestamp}") from e
+        else:
+            raise ValueError(f"Unsupported timestamp type: {type(timestamp)}")
+    
     async def profit_series(
         self,
         user_id: str,
@@ -555,14 +583,10 @@ class LedgerService:
         periods_data = {}
         
         for fill in reversed(fills):  # Chronological order
-            timestamp = fill["timestamp"]
-            # Handle both datetime objects and string timestamps (defensive validation)
-            if isinstance(timestamp, str):
-                try:
-                    timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                except (ValueError, AttributeError):
-                    logger.warning(f"Invalid timestamp format in fill: {timestamp}")
-                    continue
+            try:
+                timestamp = self._normalize_timestamp(fill["timestamp"])
+            except ValueError:
+                continue  # Skip fills with invalid timestamps
             date_key = timestamp.strftime(date_format)
             
             if date_key not in periods_data:
@@ -584,14 +608,10 @@ class LedgerService:
         # Pre-group fills by date_key for efficient processing (avoids O(n²))
         fills_by_date = {}
         for fill in fills:
-            timestamp = fill["timestamp"]
-            # Handle both datetime objects and string timestamps (defensive validation)
-            if isinstance(timestamp, str):
-                try:
-                    timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                except (ValueError, AttributeError):
-                    logger.warning(f"Invalid timestamp format in fill: {timestamp}")
-                    continue
+            try:
+                timestamp = self._normalize_timestamp(fill["timestamp"])
+            except ValueError:
+                continue  # Skip fills with invalid timestamps
             date_key = timestamp.strftime(date_format)
             if date_key not in fills_by_date:
                 fills_by_date[date_key] = []

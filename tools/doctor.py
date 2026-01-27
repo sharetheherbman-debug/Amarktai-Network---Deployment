@@ -10,6 +10,7 @@ import asyncio
 import aiohttp
 from datetime import datetime
 from typing import Dict, List, Tuple
+from http import HTTPStatus
 import json
 
 # Add backend to path
@@ -66,7 +67,7 @@ class AmarktaiDoctor:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"{self.base_url}/", timeout=5) as resp:
-                    if resp.status == 200:
+                    if resp.status == HTTPStatus.OK:
                         data = await resp.json()
                         self.add_result(
                             "Server Accessibility",
@@ -108,7 +109,7 @@ class AmarktaiDoctor:
             for endpoint, name in critical_endpoints:
                 try:
                     async with session.get(f"{self.base_url}{endpoint}", timeout=5) as resp:
-                        if resp.status in [200, 401]:  # 401 is ok (needs auth)
+                        if resp.status in [HTTPStatus.OK, HTTPStatus.UNAUTHORIZED]:  # 401 is ok (needs auth)
                             self.add_result(
                                 f"{name}",
                                 True,
@@ -146,14 +147,14 @@ class AmarktaiDoctor:
                     async with session.get(f"{self.base_url}{endpoint}", timeout=10) as resp:
                         # These endpoints require auth, so 401 is OK
                         # But 500 is NOT OK
-                        if resp.status in [200, 401]:
+                        if resp.status in [HTTPStatus.OK, HTTPStatus.UNAUTHORIZED]:
                             self.add_result(
                                 f"{name}",
                                 True,
                                 f"No longer returning 500 (status: {resp.status})",
                                 f"Endpoint: {endpoint}"
                             )
-                        elif resp.status == 500:
+                        elif resp.status == HTTPStatus.INTERNAL_SERVER_ERROR:
                             error_text = await resp.text()
                             self.add_result(
                                 f"{name}",
