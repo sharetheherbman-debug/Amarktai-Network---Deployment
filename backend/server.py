@@ -2933,9 +2933,11 @@ async def admin_emergency_stop(user_id: str = Depends(get_current_user)):
             logger.warning(f"Could not stop trading engine: {e}")
         
         try:
-            from engines.autopilot_production import autopilot_production
-            autopilot_production.stop()
-            logger.info("✅ Production autopilot stopped")
+            from autopilot_engine import autopilot
+            if autopilot.scheduler and autopilot.scheduler.running:
+                autopilot.scheduler.shutdown(wait=False)
+            autopilot.running = False
+            logger.info("✅ Autopilot engine stopped")
         except Exception as e:
             logger.warning(f"Could not stop autopilot: {e}")
         

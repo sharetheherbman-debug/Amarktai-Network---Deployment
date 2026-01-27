@@ -127,13 +127,7 @@ class LifecycleManager:
                 instance_name="trading_engine",
                 enabled_flag="enable_trading"
             ),
-            # Production Autopilot
-            SubsystemDefinition(
-                name="Production Autopilot",
-                module_path="engines.autopilot_production",
-                instance_name="autopilot_production",
-                enabled_flag="enable_trading"
-            ),
+            # NOTE: Production Autopilot removed - using unified autopilot_engine.py instead
             # Risk Management
             SubsystemDefinition(
                 name="Risk Management",
