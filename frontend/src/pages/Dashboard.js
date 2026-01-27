@@ -54,6 +54,8 @@ export default function Dashboard() {
   const [activeSection, setActiveSection] = useState('welcome');
   const [intelligenceTab, setIntelligenceTab] = useState('whale-flow'); // Tab state for Intelligence section
   const [metricsTab, setMetricsTab] = useState('flokx'); // Tab state for Metrics section - default to Flokx Alerts
+  const [botManagementTab, setBotManagementTab] = useState('creation'); // Tab state for Bot Management parent section
+  const [profitsTab, setProfitsTab] = useState('metrics'); // Tab state for Profits & Performance parent section
   // Admin panel state - Hidden by default, shown only after password
   const [showAdmin, setShowAdmin] = useState(() => {
     // Check sessionStorage only (more temporary)
@@ -2409,7 +2411,90 @@ export default function Dashboard() {
   const renderBots = () => (
       <section className="section active">
         <div className="card">
-          <h2 style={{marginBottom: '16px'}}>Bot Management</h2>
+          <h2 style={{marginBottom: '16px'}}>🤖 Bot Management</h2>
+          
+          {/* Horizontal Sub-tabs */}
+          <div style={{
+            display: 'flex', 
+            gap: '10px', 
+            marginBottom: '24px', 
+            marginTop: '16px',
+            borderBottom: '2px solid var(--line)', 
+            paddingBottom: '10px',
+            flexWrap: 'wrap'
+          }}>
+            <button 
+              onClick={() => setBotManagementTab('creation')}
+              style={{
+                padding: '10px 20px',
+                background: botManagementTab === 'creation' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (botManagementTab === 'creation' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: botManagementTab === 'creation' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: botManagementTab === 'creation' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: botManagementTab === 'creation' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              🤖 Bot Creation
+            </button>
+            <button 
+              onClick={() => setBotManagementTab('uagents')}
+              style={{
+                padding: '10px 20px',
+                background: botManagementTab === 'uagents' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (botManagementTab === 'uagents' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: botManagementTab === 'uagents' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: botManagementTab === 'uagents' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: botManagementTab === 'uagents' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              🤖 uAgents (Fetch.ai)
+            </button>
+            <button 
+              onClick={() => setBotManagementTab('training')}
+              style={{
+                padding: '10px 20px',
+                background: botManagementTab === 'training' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (botManagementTab === 'training' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: botManagementTab === 'training' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: botManagementTab === 'training' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: botManagementTab === 'training' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              🎓 Bot Training
+            </button>
+            <button 
+              onClick={() => setBotManagementTab('quarantine')}
+              style={{
+                padding: '10px 20px',
+                background: botManagementTab === 'quarantine' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (botManagementTab === 'quarantine' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: botManagementTab === 'quarantine' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: botManagementTab === 'quarantine' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: botManagementTab === 'quarantine' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              🔒 Quarantine
+            </button>
+          </div>
+          
+          {/* Tab Content */}
+          {botManagementTab === 'creation' && (
           <div className="bot-container">
             <div className="bot-left">
               <div className="bot-tabs">
@@ -2885,10 +2970,55 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+          )}
+          
+          {/* uAgents Tab */}
+          {botManagementTab === 'uagents' && (
+            <div style={{padding: '20px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--line)'}}>
+              <h3>🤖 Fetch.ai uAgents</h3>
+              <p style={{color: 'var(--muted)', marginBottom: '20px'}}>
+                Manage your Fetch.ai uAgents for custom trading strategies
+              </p>
+              <div className="bot-form-card">
+                <h3>🤖 Upload Custom Fetch.ai uAgent</h3>
+                <p style={{color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '16px'}}>
+                  Upload your own Fetch.ai uAgent code (.py file) for custom trading strategies
+                </p>
+                <form onSubmit={handleCreateUAgent}>
+                  <div className="bot-form-grid">
+                    <div className="form-group">
+                      <label htmlFor="uagent-name">uAgent Name</label>
+                      <input id="uagent-name" name="uagent-name" placeholder="My Custom Agent" type="text" required />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="uagent-file">Upload uAgent File (.py)</label>
+                      <input id="uagent-file" name="uagent-file" type="file" accept=".py" required />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="uagent-strategy">Strategy Description</label>
+                      <textarea id="uagent-strategy" name="uagent-strategy" placeholder="Describe what this uAgent does..." rows="4"></textarea>
+                    </div>
+                    <div className="form-group">
+                      <button type="submit">Deploy uAgent</button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+          
+          {/* Training Tab */}
+          {botManagementTab === 'training' && (
+            <BotTrainingSection />
+          )}
+          
+          {/* Quarantine Tab */}
+          {botManagementTab === 'quarantine' && (
+            <BotQuarantineSection />
+          )}
         </div>
-      </div>
-    </section>
-  );
+      </section>
+    );
 
   const renderProfile = () => {
     
@@ -4119,109 +4249,456 @@ export default function Dashboard() {
     return (
       <section className="section active">
         <div className="card">
-          {/* Header with period selector */}
-          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px'}}>
-            <h2 style={{margin: 0, fontSize: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px'}}>
-              📊 Performance Analytics
-            </h2>
-            <div style={{display: 'flex', gap: '6px'}}>
-              {['daily', 'weekly', 'monthly'].map(period => (
-                <button 
-                  key={period}
-                  onClick={() => setGraphPeriod(period)}
-                  style={{
-                    padding: '6px 14px',
-                    background: graphPeriod === period ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'var(--glass)',
-                    color: graphPeriod === period ? '#ffffff' : 'var(--muted)',
-                    border: graphPeriod === period ? 'none' : '1px solid var(--line)',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    fontSize: '0.85rem',
-                    textTransform: 'capitalize',
-                    transition: 'all 0.3s'
-                  }}
-                >
-                  {period}
-                </button>
-              ))}
-            </div>
-          </div>
+          <h2 style={{marginBottom: '16px'}}>💹 Profits & Performance</h2>
           
-          {/* Stats Cards Row */}
-          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '16px'}}>
-            <div style={{
-              padding: '16px',
-              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%)',
-              borderRadius: '10px',
-              border: '1px solid rgba(16, 185, 129, 0.3)',
-              textAlign: 'center'
-            }}>
-              <div style={{fontSize: '0.75rem', color: '#10b981', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px'}}>Total Profit</div>
-              <div style={{fontSize: '1.75rem', fontWeight: 700, color: '#10b981', marginTop: '6px', display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '4px'}}>
-                R{profitData?.total?.toFixed(2) || '0.00'}
-                <span style={{fontSize: '0.75rem', color: 'var(--muted)'}}>ZAR</span>
-              </div>
-            </div>
-            
-            <div style={{
-              padding: '16px',
-              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.05) 100%)',
-              borderRadius: '10px',
-              border: '1px solid rgba(59, 130, 246, 0.3)',
-              textAlign: 'center'
-            }}>
-              <div style={{fontSize: '0.75rem', color: '#3b82f6', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px'}}>Avg Daily</div>
-              <div style={{fontSize: '1.75rem', fontWeight: 700, color: '#3b82f6', marginTop: '6px', display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '4px'}}>
-                R{profitData?.avg_daily?.toFixed(2) || '0.00'}
-                <span style={{fontSize: '0.75rem', color: 'var(--muted)'}}>{profitData?.avg_daily ? '+12%' : ''}</span>
-              </div>
-            </div>
-            
-            <div style={{
-              padding: '16px',
-              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.05) 100%)',
-              borderRadius: '10px',
-              border: '1px solid rgba(245, 158, 11, 0.3)',
-              textAlign: 'center'
-            }}>
-              <div style={{fontSize: '0.75rem', color: '#f59e0b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px'}}>Best Day</div>
-              <div style={{fontSize: '1.75rem', fontWeight: 700, color: '#f59e0b', marginTop: '6px', display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '4px'}}>
-                R{profitData?.best_day ? profitData.best_day.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '0.00'}
-              </div>
-            </div>
-            
-            <div style={{
-              padding: '16px',
-              background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(147, 51, 234, 0.05) 100%)',
-              borderRadius: '10px',
-              border: '1px solid rgba(168, 85, 247, 0.3)',
-              textAlign: 'center'
-            }}>
-              <div style={{fontSize: '0.75rem', color: '#a855f7', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px'}}>Growth Rate</div>
-              <div style={{fontSize: '1.75rem', fontWeight: 700, color: '#a855f7', marginTop: '6px', display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '4px'}}>
-                {profitData?.growth_rate?.toFixed(2) || '0.00'}%
-                <span style={{fontSize: '0.75rem', color: 'var(--muted)'}}>{profitData?.growth_rate > 0 ? '↑' : ''}</span>
-              </div>
-            </div>
-          </div>
-          
-          {/* Chart */}
+          {/* Horizontal Sub-tabs */}
           <div style={{
-            minHeight: '350px', 
-            height: '350px',
-            padding: '20px',
-            background: 'linear-gradient(135deg, rgba(0, 0, 42, 0.4) 0%, rgba(0, 0, 20, 0.6) 100%)',
-            borderRadius: '10px',
-            border: '1px solid rgba(16, 185, 129, 0.2)',
-            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-            display: 'flex',
-            flexDirection: 'column'
+            display: 'flex', 
+            gap: '10px', 
+            marginBottom: '24px', 
+            marginTop: '16px',
+            borderBottom: '2px solid var(--line)', 
+            paddingBottom: '10px',
+            flexWrap: 'wrap'
           }}>
-            {typeof window !== 'undefined' && (
-              <Line data={chartData} options={chartOptions} />
-            )}
+            <button 
+              onClick={() => setProfitsTab('metrics')}
+              style={{
+                padding: '10px 20px',
+                background: profitsTab === 'metrics' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (profitsTab === 'metrics' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: profitsTab === 'metrics' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: profitsTab === 'metrics' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: profitsTab === 'metrics' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              📊 Metrics
+            </button>
+            <button 
+              onClick={() => setProfitsTab('profit-history')}
+              style={{
+                padding: '10px 20px',
+                background: profitsTab === 'profit-history' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (profitsTab === 'profit-history' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: profitsTab === 'profit-history' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: profitsTab === 'profit-history' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: profitsTab === 'profit-history' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              💰 Profit History
+            </button>
+            <button 
+              onClick={() => setProfitsTab('equity')}
+              style={{
+                padding: '10px 20px',
+                background: profitsTab === 'equity' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (profitsTab === 'equity' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: profitsTab === 'equity' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: profitsTab === 'equity' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: profitsTab === 'equity' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              📈 Equity/PnL
+            </button>
+            <button 
+              onClick={() => setProfitsTab('drawdown')}
+              style={{
+                padding: '10px 20px',
+                background: profitsTab === 'drawdown' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (profitsTab === 'drawdown' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: profitsTab === 'drawdown' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: profitsTab === 'drawdown' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: profitsTab === 'drawdown' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              📉 Drawdown
+            </button>
+            <button 
+              onClick={() => setProfitsTab('win-rate')}
+              style={{
+                padding: '10px 20px',
+                background: profitsTab === 'win-rate' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                border: '2px solid ' + (profitsTab === 'win-rate' ? '#4a90e2' : 'var(--line)'),
+                borderRadius: '8px',
+                color: profitsTab === 'win-rate' ? '#fff' : 'var(--text)',
+                cursor: 'pointer',
+                fontSize: '0.95rem',
+                fontWeight: profitsTab === 'win-rate' ? '700' : '600',
+                transition: 'all 0.3s',
+                boxShadow: profitsTab === 'win-rate' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+              }}
+            >
+              🎯 Win Rate
+            </button>
           </div>
+          
+          {/* Tab Content */}
+          {profitsTab === 'metrics' && (
+            <div style={{marginTop: '20px'}}>
+              <ErrorBoundary title="Metrics Error" message="Unable to load metrics data.">
+                <div>
+                  <h3 style={{marginBottom: '16px'}}>📊 System Metrics</h3>
+                  
+                  {/* Horizontal Tabs */}
+                  <div style={{
+                    display: 'flex', 
+                    gap: '10px', 
+                    marginBottom: '24px', 
+                    borderBottom: '2px solid var(--line)', 
+                    paddingBottom: '10px',
+                    flexWrap: 'wrap'
+                  }}>
+                    <button 
+                      onClick={() => setMetricsTab('flokx')}
+                      style={{
+                        padding: '10px 20px',
+                        background: metricsTab === 'flokx' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                        border: '2px solid ' + (metricsTab === 'flokx' ? '#4a90e2' : 'var(--line)'),
+                        borderRadius: '8px',
+                        color: metricsTab === 'flokx' ? '#fff' : 'var(--text)',
+                        cursor: 'pointer',
+                        fontSize: '0.95rem',
+                        fontWeight: metricsTab === 'flokx' ? '700' : '600',
+                        transition: 'all 0.3s',
+                        boxShadow: metricsTab === 'flokx' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+                      }}
+                    >
+                      🔔 Flokx Alerts
+                    </button>
+                    <button 
+                      onClick={() => setMetricsTab('decision-trace')}
+                      style={{
+                        padding: '10px 20px',
+                        background: metricsTab === 'decision-trace' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                        border: '2px solid ' + (metricsTab === 'decision-trace' ? '#4a90e2' : 'var(--line)'),
+                        borderRadius: '8px',
+                        color: metricsTab === 'decision-trace' ? '#fff' : 'var(--text)',
+                        cursor: 'pointer',
+                        fontSize: '0.95rem',
+                        fontWeight: metricsTab === 'decision-trace' ? '700' : '600',
+                        transition: 'all 0.3s',
+                        boxShadow: metricsTab === 'decision-trace' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+                      }}
+                    >
+                      🎬 Decision Trace
+                    </button>
+                    <button 
+                      onClick={() => setMetricsTab('whale-flow')}
+                      style={{
+                        padding: '10px 20px',
+                        background: metricsTab === 'whale-flow' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                        border: '2px solid ' + (metricsTab === 'whale-flow' ? '#4a90e2' : 'var(--line)'),
+                        borderRadius: '8px',
+                        color: metricsTab === 'whale-flow' ? '#fff' : 'var(--text)',
+                        cursor: 'pointer',
+                        fontSize: '0.95rem',
+                        fontWeight: metricsTab === 'whale-flow' ? '700' : '600',
+                        transition: 'all 0.3s',
+                        boxShadow: metricsTab === 'whale-flow' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+                      }}
+                    >
+                      🐋 Whale Flow
+                    </button>
+                    <button 
+                      onClick={() => setMetricsTab('system-metrics')}
+                      style={{
+                        padding: '10px 20px',
+                        background: metricsTab === 'system-metrics' ? 'linear-gradient(135deg, #4a90e2 0%, #357abd 100%)' : 'var(--glass)',
+                        border: '2px solid ' + (metricsTab === 'system-metrics' ? '#4a90e2' : 'var(--line)'),
+                        borderRadius: '8px',
+                        color: metricsTab === 'system-metrics' ? '#fff' : 'var(--text)',
+                        cursor: 'pointer',
+                        fontSize: '0.95rem',
+                        fontWeight: metricsTab === 'system-metrics' ? '700' : '600',
+                        transition: 'all 0.3s',
+                        boxShadow: metricsTab === 'system-metrics' ? '0 4px 12px rgba(74, 144, 226, 0.4)' : 'none'
+                      }}
+                    >
+                      📊 System Metrics
+                    </button>
+                  </div>
+
+                  {/* Metrics Tab Content */}
+                  <div style={{marginTop: '20px'}}>
+                    {metricsTab === 'flokx' && (
+                      <ErrorBoundary title="Flokx Alerts Error" message="Unable to load Flokx alerts. Please check your API configuration.">
+                        <div>
+                          {!isFlokxActive && (
+                            <div style={{padding: '40px', textAlign: 'center', background: 'var(--panel)', borderRadius: '6px', border: '1px solid var(--line)'}}>
+                              <p style={{color: 'var(--muted)', marginBottom: '12px'}}>
+                                ⚠️ Flokx alerts are not active. Configure your Flokx API key in the API Setup section to enable real-time alerts.
+                              </p>
+                              <button 
+                                onClick={() => showSection('api')}
+                                style={{
+                                  padding: '8px 16px',
+                                  background: 'var(--accent2)',
+                                  color: 'var(--text)',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  fontWeight: 600,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Configure Flokx API
+                              </button>
+                            </div>
+                          )}
+                          
+                          {isFlokxActive && (
+                            <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
+                              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                                <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                                  <div style={{width: '8px', height: '8px', borderRadius: '50%', background: 'var(--success)'}}></div>
+                                  <span style={{fontSize: '0.85rem', color: 'var(--muted)'}}>Flokx Connected</span>
+                                </div>
+                                <button 
+                                  onClick={loadFlokxAlerts} 
+                                  style={{
+                                    padding: '6px 12px',
+                                    borderRadius: '6px',
+                                    background: 'var(--accent2)',
+                                    color: 'var(--text)',
+                                    border: 'none',
+                                    fontWeight: 600,
+                                    fontSize: '0.85rem',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  Refresh Alerts
+                                </button>
+                              </div>
+                              
+                              <div style={{background: 'var(--glass)', padding: '12px', borderRadius: '6px', border: '1px solid var(--line)'}}>
+                                {!Array.isArray(flokxAlerts) || flokxAlerts.length === 0 ? (
+                                  <p style={{color: 'var(--muted)', padding: '20px', textAlign: 'center'}}>
+                                    ✓ No alerts at this time - System running smoothly
+                                  </p>
+                                ) : (
+                                  <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
+                                    {Array.isArray(flokxAlerts) && flokxAlerts.map((alert, idx) => (
+                                      <div 
+                                        key={idx}
+                                        style={{
+                                          padding: '12px',
+                                          background: 'var(--panel)',
+                                          borderRadius: '6px',
+                                          borderLeft: '4px solid ' + getAlertColor(alert.priority || alert.type || 'info'),
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center'
+                                        }}
+                                      >
+                                        <div>
+                                          <div style={{fontWeight: 600, marginBottom: '4px'}}>
+                                            {alert.title || alert.pair || 'Alert'}
+                                          </div>
+                                          <div style={{fontSize: '0.85rem', color: 'var(--muted)'}}>
+                                            {alert.message || 'No details available'}
+                                          </div>
+                                          <div style={{fontSize: '0.75rem', color: 'var(--muted)', marginTop: '4px'}}>
+                                            {alert.timestamp ? new Date(alert.timestamp).toLocaleString() : 'No timestamp'}
+                                          </div>
+                                        </div>
+                                        {(alert.priority || alert.type) && (
+                                          <div style={{
+                                            padding: '4px 8px',
+                                            borderRadius: '4px',
+                                            fontSize: '0.75rem',
+                                            fontWeight: 600,
+                                            background: getAlertColor(alert.priority || alert.type || 'info'),
+                                            color: 'white'
+                                          }}>
+                                            {(alert.priority || alert.type || 'INFO').toUpperCase()}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </ErrorBoundary>
+                    )}
+                    {metricsTab === 'decision-trace' && (
+                      <ErrorBoundary title="Decision Trace Error" message="Unable to load decision trace. The service may be unavailable.">
+                        <DecisionTrace />
+                      </ErrorBoundary>
+                    )}
+                    {metricsTab === 'whale-flow' && (
+                      <ErrorBoundary title="Whale Flow Error" message="Unable to load whale flow heatmap. Data may be unavailable.">
+                        <WhaleFlowHeatmap />
+                      </ErrorBoundary>
+                    )}
+                    {metricsTab === 'system-metrics' && (
+                      <ErrorBoundary title="System Metrics Error" message="Unable to load system metrics. Prometheus may not be configured.">
+                        <PrometheusMetrics />
+                      </ErrorBoundary>
+                    )}
+                  </div>
+                </div>
+              </ErrorBoundary>
+            </div>
+          )}
+          
+          {profitsTab === 'profit-history' && (
+            <div style={{marginTop: '20px'}}>
+              {/* Header with period selector */}
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px'}}>
+                <h3 style={{margin: 0, fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '8px'}}>
+                  📊 Performance Analytics
+                </h3>
+                <div style={{display: 'flex', gap: '6px'}}>
+                  {['daily', 'weekly', 'monthly'].map(period => (
+                    <button 
+                      key={period}
+                      onClick={() => setGraphPeriod(period)}
+                      style={{
+                        padding: '6px 14px',
+                        background: graphPeriod === period ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'var(--glass)',
+                        color: graphPeriod === period ? '#ffffff' : 'var(--muted)',
+                        border: graphPeriod === period ? 'none' : '1px solid var(--line)',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        fontSize: '0.85rem',
+                        textTransform: 'capitalize',
+                        transition: 'all 0.3s'
+                      }}
+                    >
+                      {period}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Stats Cards Row */}
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '16px'}}>
+                <div style={{
+                  padding: '16px',
+                  background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%)',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  textAlign: 'center'
+                }}>
+                  <div style={{fontSize: '0.75rem', color: '#10b981', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px'}}>Total Profit</div>
+                  <div style={{fontSize: '1.75rem', fontWeight: 700, color: '#10b981', marginTop: '6px', display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '4px'}}>
+                    R{profitData?.total?.toFixed(2) || '0.00'}
+                    <span style={{fontSize: '0.75rem', color: 'var(--muted)'}}>ZAR</span>
+                  </div>
+                </div>
+                
+                <div style={{
+                  padding: '16px',
+                  background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.05) 100%)',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  textAlign: 'center'
+                }}>
+                  <div style={{fontSize: '0.75rem', color: '#3b82f6', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px'}}>Avg Daily</div>
+                  <div style={{fontSize: '1.75rem', fontWeight: 700, color: '#3b82f6', marginTop: '6px', display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '4px'}}>
+                    R{profitData?.avg_daily?.toFixed(2) || '0.00'}
+                    <span style={{fontSize: '0.75rem', color: 'var(--muted)'}}>{profitData?.avg_daily ? '+12%' : ''}</span>
+                  </div>
+                </div>
+                
+                <div style={{
+                  padding: '16px',
+                  background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.05) 100%)',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  textAlign: 'center'
+                }}>
+                  <div style={{fontSize: '0.75rem', color: '#f59e0b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px'}}>Best Day</div>
+                  <div style={{fontSize: '1.75rem', fontWeight: 700, color: '#f59e0b', marginTop: '6px', display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '4px'}}>
+                    R{profitData?.best_day ? profitData.best_day.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '0.00'}
+                  </div>
+                </div>
+                
+                <div style={{
+                  padding: '16px',
+                  background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(147, 51, 234, 0.05) 100%)',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(168, 85, 247, 0.3)',
+                  textAlign: 'center'
+                }}>
+                  <div style={{fontSize: '0.75rem', color: '#a855f7', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px'}}>Growth Rate</div>
+                  <div style={{fontSize: '1.75rem', fontWeight: 700, color: '#a855f7', marginTop: '6px', display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '4px'}}>
+                    {profitData?.growth_rate?.toFixed(2) || '0.00'}%
+                    <span style={{fontSize: '0.75rem', color: 'var(--muted)'}}>{profitData?.growth_rate > 0 ? '↑' : ''}</span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Chart */}
+              <div style={{
+                minHeight: '350px', 
+                height: '350px',
+                padding: '20px',
+                background: 'linear-gradient(135deg, rgba(0, 0, 42, 0.4) 0%, rgba(0, 0, 20, 0.6) 100%)',
+                borderRadius: '10px',
+                border: '1px solid rgba(16, 185, 129, 0.2)',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                display: 'flex',
+                flexDirection: 'column'
+              }}>
+                {typeof window !== 'undefined' && (
+                  <Line data={chartData} options={chartOptions} />
+                )}
+              </div>
+            </div>
+          )}
+          
+          {profitsTab === 'equity' && (
+            <div style={{padding: '40px', textAlign: 'center', background: 'var(--panel)', borderRadius: '6px', border: '1px solid var(--line)'}}>
+              <p style={{color: 'var(--muted)', fontSize: '1.1rem'}}>
+                📈 Equity/PnL tracking coming soon
+              </p>
+              <p style={{color: 'var(--muted)', fontSize: '0.9rem', marginTop: '10px'}}>
+                Real-time tracking of realized/unrealized profits and fee analysis
+              </p>
+            </div>
+          )}
+          
+          {profitsTab === 'drawdown' && (
+            <div style={{padding: '40px', textAlign: 'center', background: 'var(--panel)', borderRadius: '6px', border: '1px solid var(--line)'}}>
+              <p style={{color: 'var(--muted)', fontSize: '1.1rem'}}>
+                📉 Drawdown analysis coming soon
+              </p>
+              <p style={{color: 'var(--muted)', fontSize: '0.9rem', marginTop: '10px'}}>
+                Maximum drawdown tracking and recovery metrics
+              </p>
+            </div>
+          )}
+          
+          {profitsTab === 'win-rate' && (
+            <div style={{padding: '40px', textAlign: 'center', background: 'var(--panel)', borderRadius: '6px', border: '1px solid var(--line)'}}>
+              <p style={{color: 'var(--muted)', fontSize: '1.1rem'}}>
+                🎯 Win Rate & Trade Stats coming soon
+              </p>
+              <p style={{color: 'var(--muted)', fontSize: '0.9rem', marginTop: '10px'}}>
+                Detailed win/loss ratios and trade performance statistics
+              </p>
+            </div>
+          )}
         </div>
       </section>
     );
@@ -4850,24 +5327,9 @@ export default function Dashboard() {
             <a href="#" className={activeSection === 'welcome' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('welcome'); }}>🚀 Welcome</a>
             <a href="#" className={activeSection === 'api' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('api'); }}>🔑 API Setup</a>
             <a href="#" className={activeSection === 'bots' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('bots'); }}>🤖 Bot Management</a>
-            <a href="#" className={activeSection === 'quarantine' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('quarantine'); }}>🔒 Bot Quarantine</a>
-            <a href="#" className={activeSection === 'training' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('training'); }}>🎓 Bot Training</a>
             <a href="#" className={activeSection === 'system' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('system'); }}>🎮 System Mode</a>
-            <a href="#" className={activeSection === 'graphs' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('graphs'); }}>📈 Profit & Performance</a>
+            <a href="#" className={activeSection === 'graphs' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('graphs'); }}>💹 Profits & Performance</a>
             <a href="#" className={activeSection === 'trades' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('trades'); }}>📊 Live Trades</a>
-            
-            {/* Metrics - Single nav item that opens section with tabs inside */}
-            <a 
-              href="#" 
-              className={activeSection === 'metrics' ? 'active' : ''}
-              onClick={(e) => { 
-                e.preventDefault(); 
-                showSection('metrics'); // Show metrics section which will have tabs inside
-              }}
-            >
-              📊 Metrics
-            </a>
-            
             <a href="#" className={activeSection === 'countdown' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('countdown'); }}>⏱️ Countdown</a>
             <a href="#" className={activeSection === 'wallet' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('wallet'); }}>💰 Wallet Hub</a>
             <a href="#" className={activeSection === 'profile' ? 'active' : ''} onClick={(e) => { e.preventDefault(); showSection('profile'); }}>👤 Profile</a>
@@ -4929,14 +5391,11 @@ export default function Dashboard() {
         {activeSection === 'overview' && renderOverview()}
         {activeSection === 'api' && renderApiSetup()}
         {activeSection === 'bots' && renderBots()}
-        {activeSection === 'quarantine' && renderQuarantine()}
-        {activeSection === 'training' && renderTraining()}
         {activeSection === 'system' && renderSystemMode()}
         {activeSection === 'graphs' && renderProfitGraphs()}
         {activeSection === 'trades' && renderLiveTradeFeed()}
         {activeSection === 'countdown' && renderCountdown()}
         {activeSection === 'wallet' && renderWalletHub()}
-        {activeSection === 'metrics' && renderMetricsWithTabs()}
         {activeSection === 'profile' && renderProfile()}
         {activeSection === 'admin' && showAdmin && renderAdmin()}
       </main>
