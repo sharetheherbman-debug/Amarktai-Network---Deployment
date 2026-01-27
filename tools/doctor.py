@@ -128,6 +128,53 @@ class AmarktaiDoctor:
                         f"Router not accessible: {str(e)}",
                         f"Endpoint: {endpoint}"
                     )
+    
+    async def check_critical_ledger_endpoints(self):
+        """Check critical ledger endpoints that were returning 500"""
+        self.print_header("CRITICAL LEDGER ENDPOINTS (500 FIX VERIFICATION)")
+        
+        # These were the endpoints returning 500 errors
+        ledger_endpoints = [
+            ("/api/profits?period=daily&limit=5", "Profits Endpoint"),
+            ("/api/portfolio/summary", "Portfolio Summary"),
+            ("/api/countdown/status", "Countdown Status"),
+        ]
+        
+        async with aiohttp.ClientSession() as session:
+            for endpoint, name in ledger_endpoints:
+                try:
+                    async with session.get(f"{self.base_url}{endpoint}", timeout=10) as resp:
+                        # These endpoints require auth, so 401 is OK
+                        # But 500 is NOT OK
+                        if resp.status in [200, 401]:
+                            self.add_result(
+                                f"{name}",
+                                True,
+                                f"No longer returning 500 (status: {resp.status})",
+                                f"Endpoint: {endpoint}"
+                            )
+                        elif resp.status == 500:
+                            error_text = await resp.text()
+                            self.add_result(
+                                f"{name}",
+                                False,
+                                "STILL RETURNING 500 - FIX FAILED!",
+                                f"Error: {error_text[:200]}"
+                            )
+                        else:
+                            self.add_result(
+                                f"{name}",
+                                True,
+                                f"Accessible but returned {resp.status}",
+                                f"Not a 500 error (timestamp fix successful)"
+                            )
+                except Exception as e:
+                    self.add_result(
+                        f"{name}",
+                        False,
+                        f"Endpoint check failed: {str(e)}",
+                        f"Endpoint: {endpoint}"
+                    )
                     
     async def check_route_collisions(self):
         """Check for route collisions"""
@@ -318,6 +365,7 @@ async def main():
     
     if server_running:
         await doctor.check_critical_routers()
+        await doctor.check_critical_ledger_endpoints()
         await doctor.check_route_collisions()
         await doctor.check_realtime_websocket()
     else:
