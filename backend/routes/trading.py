@@ -81,47 +81,10 @@ async def get_overview(user_id: str = Depends(get_current_user)):
         }
 
 
-@router.get("/metrics")
-async def get_metrics(user_id: str = Depends(get_current_user)):
-    """Alias for /overview - for backwards compatibility"""
-    return await get_overview(user_id)
-
-
-@router.get("/trades/recent")
-async def get_recent_trades(limit: int = 50, user_id: str = Depends(get_current_user)):
-    """Get recent trades for live feed - NO LIMIT"""
-    try:
-        trades = await db.trades_collection.find(
-            {"user_id": user_id},
-            {"_id": 0}
-        ).sort("timestamp", -1).limit(limit).to_list(limit)
-        
-        return {
-            "trades": trades,
-            "count": len(trades)
-        }
-    except Exception as e:
-        logger.error(f"Recent trades error: {e}")
-        return {"trades": [], "count": 0}
-
-
-@router.get("/system/mode")
-async def get_system_modes(user_id: str = Depends(get_current_user)):
-    """Get current system mode states"""
-    modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
-    
-    if not modes:
-        # Create default modes
-        modes = {
-            "user_id": user_id,
-            "paperTrading": False,
-            "liveTrading": False,
-            "autopilot": False,
-            "updated_at": datetime.now(timezone.utc).isoformat()
-        }
-        await db.system_modes_collection.insert_one(modes)
-    
-    return modes
+# NOTE: Removed duplicate endpoints to fix route collisions
+# - GET /metrics (canonical: server.py @api_router.get("/metrics"))
+# - GET /trades/recent (canonical: routes/trades.py)
+# - GET /system/mode (canonical: server.py @api_router.get("/system/mode"))
 
 
 @router.post("/system/mode/toggle")
