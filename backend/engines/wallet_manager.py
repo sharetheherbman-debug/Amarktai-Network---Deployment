@@ -21,15 +21,14 @@ class WalletManager:
     def __init__(self):
         self.ccxt_service = CCXTService()
         self.master_exchange = 'luno'  # Luno is the master wallet
-        self.supported_exchanges = ['luno', 'binance', 'kucoin', 'ovex', 'valr']
+        # SUPPORTED EXCHANGES: Luno, Binance, KuCoin ONLY
+        self.supported_exchanges = ['luno', 'binance', 'kucoin']
         
         # Track allocated funds per exchange
         self.exchange_allocations = {
             'luno': {'allocated': 0, 'available': 0},
             'binance': {'allocated': 0, 'available': 0},
             'kucoin': {'allocated': 0, 'available': 0},
-            'ovex': {'allocated': 0, 'available': 0},
-            'valr': {'allocated': 0, 'available': 0}
         }
     
     async def get_master_balance(self, user_id: str) -> Dict:

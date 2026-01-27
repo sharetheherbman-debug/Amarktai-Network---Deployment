@@ -22,12 +22,11 @@ logger = logging.getLogger(__name__)
 class BotSpawner:
     def __init__(self):
         self.max_bots = 45
+        # SUPPORTED EXCHANGES: Luno, Binance, KuCoin ONLY
         self.exchange_distribution = {
-            'luno': 5,      # 5 bots on Luno
-            'binance': 10,  # 10 bots on Binance
-            'kucoin': 10,   # 10 bots on KuCoin
-            'ovex': 10,     # 10 bots on OVEX
-            'valr': 10      # 10 bots on VALR
+            'luno': 15,     # 15 bots on Luno
+            'binance': 15,  # 15 bots on Binance
+            'kucoin': 15,   # 15 bots on KuCoin
         }
         
         self.risk_distribution = {
