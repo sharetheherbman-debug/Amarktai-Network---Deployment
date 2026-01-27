@@ -472,12 +472,7 @@ async def update_bot(bot_id: str, update: dict, user_id: str = Depends(get_curre
     updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
     return updated_bot
 
-@api_router.delete("/bots/{bot_id}")
-async def delete_bot(bot_id: str, user_id: str = Depends(get_current_user)):
-    result = await db.bots_collection.delete_one({"id": bot_id, "user_id": user_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Bot not found")
-    return {"message": "Bot deleted"}
+# NOTE: Removed duplicate DELETE /bots/{bot_id} - canonical in routes/bot_lifecycle.py
 
 @api_router.post("/bots/{bot_id}/promote")
 async def promote_bot_to_live(bot_id: str, user_id: str = Depends(get_current_user)):
@@ -615,49 +610,7 @@ async def health_check():
 # SYSTEM MODE CONTROLS - NOW FUNCTIONAL
 # ============================================================================
 
-@api_router.get("/system/mode")
-async def get_system_modes(user_id: str = Depends(get_current_user)):
-    """Get current system mode states - ROBUST: Never crashes, returns safe defaults"""
-    try:
-        modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
-        
-        if not modes:
-            # Create default modes
-            modes = {
-                "user_id": user_id,
-                "paperTrading": False,
-                "liveTrading": False,
-                "autopilot": False,
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            }
-            try:
-                await db.system_modes_collection.insert_one(modes.copy())
-            except Exception as e:
-                logger.warning(f"Could not insert default modes: {e}")
-        
-        # Check emergency stop status safely
-        try:
-            if db.emergency_stop_collection:
-                emergency_status = await db.emergency_stop_collection.find_one({})
-                modes['emergency_stop_active'] = emergency_status.get('enabled', False) if emergency_status else False
-            else:
-                modes['emergency_stop_active'] = False
-        except Exception as e:
-            logger.warning(f"Could not read emergency stop status: {e}")
-            modes['emergency_stop_active'] = False
-        
-        return modes
-    except Exception as e:
-        logger.error(f"Error in get_system_modes: {e}")
-        # Return safe default, never crash
-        return {
-            "user_id": user_id,
-            "paperTrading": False,
-            "liveTrading": False,
-            "autopilot": False,
-            "emergency_stop_active": False,
-            "updated_at": datetime.now(timezone.utc).isoformat()
-        }
+# NOTE: Removed duplicate GET /system/mode - canonical in routes/system_mode.py
 
 @api_router.put("/system/mode")
 async def update_system_mode(data: dict, user_id: str = Depends(get_current_user)):
@@ -722,66 +675,9 @@ async def update_system_mode(data: dict, user_id: str = Depends(get_current_user
         logger.error(f"System mode update error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@api_router.get("/system/status")
-async def get_system_status(user_id: str = Depends(get_current_user)):
-    """
-    Get comprehensive system status including trading gates
-    Returns detailed information about system operational state
-    """
-    try:
-        from services.system_gate import system_gate
-        from services.capital_validator import capital_validator
-        
-        # Get system gate status
-        system_status = await system_gate.get_system_status()
-        
-        # Get user capital status
-        capital_status = await capital_validator.get_user_capital_status(user_id)
-        
-        # Get user info
-        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
-        
-        return {
-            "system": system_status,
-            "capital": capital_status,
-            "user": {
-                "emergency_stop": user.get("emergency_stop", False) if user else False,
-                "autopilot_enabled": user.get("autopilot_enabled", False) if user else False,
-                "bodyguard_enabled": user.get("bodyguard_enabled", True) if user else True
-            },
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error getting system status: {e}")
-        return {
-            "system": {
-                "trading_allowed": False,
-                "mode": "error",
-                "reason": f"System error: {str(e)}"
-            },
-            "capital": {
-                "available_balance": 0,
-                "error": str(e)
-            },
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+# NOTE: Removed duplicate GET /system/status - canonical in routes/system_status.py
 
-@api_router.post("/system/emergency-stop")
-async def toggle_emergency_stop(data: dict, user_id: str = Depends(get_current_user)):
-    """Enable or disable emergency stop for a user"""
-    try:
-        from services.system_gate import system_gate
-        
-        enabled = data.get("enabled", True)
-        success, message = await system_gate.set_emergency_stop(user_id, enabled)
-        
-        if success:
-            return {"success": True, "message": message}
-        else:
-            raise HTTPException(status_code=400, detail=message)
-    except Exception as e:
-        logger.error(f"Emergency stop error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# NOTE: Removed duplicate POST /system/emergency-stop - canonical in routes/emergency_stop_endpoints.py
 
 # ============================================================================
 # OVERVIEW & DASHBOARD
@@ -831,44 +727,10 @@ async def get_overview(user_id: str = Depends(get_current_user), include_wallet:
             "tradingStatus": "Unknown"
         }
 
-@api_router.get("/metrics")
-async def get_metrics(user_id: str = Depends(get_current_user)):
-    """Alias for /overview - for backwards compatibility"""
-    return await get_overview(user_id)
+# NOTE: Removed duplicate GET /metrics (alias for /overview)
+# Canonical Prometheus metrics endpoint at bottom of file
 
-# ============================================================================
-# LIVE TRADE FEED - NEW FEATURE
-# ============================================================================
-
-@api_router.get("/trades/recent")
-async def get_recent_trades(limit: int = 50, user_id: str = Depends(get_current_user)):
-    """Get recent trades for live feed with ISO timestamps"""
-    try:
-        trades = await db.trades_collection.find(
-            {"user_id": user_id},
-            {"_id": 0}
-        ).sort("timestamp", -1).limit(limit).to_list(limit)
-        
-        # Ensure all trades have ISO timestamp format
-        for trade in trades:
-            if "timestamp" in trade and isinstance(trade["timestamp"], datetime):
-                trade["timestamp"] = trade["timestamp"].isoformat()
-            elif "timestamp" not in trade:
-                trade["timestamp"] = datetime.now(timezone.utc).isoformat()
-        
-        return {
-            "trades": trades,
-            "count": len(trades),
-            "last_updated": datetime.now(timezone.utc).isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Recent trades error: {e}")
-        return {
-            "trades": [],
-            "count": 0,
-            "error": str(e),
-            "last_updated": datetime.now(timezone.utc).isoformat()
-        }
+# NOTE: Removed duplicate GET /trades/recent - canonical in routes/trades.py
 
 # ============================================================================
 # API KEYS
@@ -1918,10 +1780,8 @@ async def get_deposit_address(user_id: str = Depends(get_current_user)):
 # ADMIN
 # ============================================================================
 
-@api_router.get("/admin/users")
-async def get_all_users(user_id: str = Depends(get_current_user)):
-    users = await db.users_collection.find({}, {"_id": 0, "password": 0}).to_list(1000)
-    return {"users": users}
+# NOTE: Removed duplicate GET /admin/users and GET /admin/system-stats
+# Canonical versions in routes/admin_endpoints.py
 
 @api_router.get("/admin/backend-health")
 async def get_backend_health(user_id: str = Depends(get_current_user)):
@@ -1929,39 +1789,7 @@ async def get_backend_health(user_id: str = Depends(get_current_user)):
     from system_health import system_health
     return await system_health.get_full_status()
 
-@api_router.get("/admin/system-stats")
-async def get_system_stats(user_id: str = Depends(get_current_user)):
-    """Get system statistics (admin only)"""
-    try:
-        import psutil
-        
-        total_users = await db.users_collection.count_documents({})
-        active_bots = await db.bots_collection.count_documents({"status": "active"})
-        total_trades = await db.trades_collection.count_documents({})
-        
-        cpu = psutil.cpu_percent(interval=1)
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        
-        return {
-            "total_users": total_users,
-            "active_bots": active_bots,
-            "total_bots": await db.bots_collection.count_documents({}),
-            "total_trades": total_trades,
-            "cpu_usage": round(cpu, 1),
-            "memory_usage": round(memory.used / (1024**2), 1),  # MB
-            "disk_usage": round(disk.percent, 1),
-            "system": {
-                "cpu_percent": round(cpu, 1),
-                "memory_percent": round(memory.percent, 1),
-                "disk_percent": round(disk.percent, 1),
-                "status": "Healthy" if cpu < 80 and memory.percent < 80 else "Warning"
-            }
-        }
-    except Exception as e:
-        logger.error(f"System stats error: {e}")
-        return {"error": str(e)}
-
+# NOTE: Removed duplicate GET /admin/system-stats - canonical in routes/admin_endpoints.py
 
 @api_router.get("/admin/health-check")
 async def system_health_check(user_id: str = Depends(get_current_user)):
@@ -3128,13 +2956,15 @@ if critical_failures:
     logger.error("="*80)
     raise RuntimeError(f"Critical router mount failure: {', '.join([f[0] for f in critical_failures])}")
 
-# Start daily report scheduler if it was loaded
-try:
-    from routes.daily_report import daily_report_service
-    daily_report_service.start()
-    logger.info("✅ Daily report scheduler started")
-except Exception as e:
-    logger.warning(f"Could not start daily report scheduler: {e}")
+# NOTE: Daily report scheduler should be started via FastAPI lifespan/startup event, not at import time
+# Commented out to fix "coroutine was never awaited" warning
+# To re-enable: Move to lifespan context manager or startup event handler
+# try:
+#     from routes.daily_report import daily_report_service
+#     daily_report_service.start()  # This is async and can't be called in sync context
+#     logger.info("✅ Daily report scheduler started")
+# except Exception as e:
+#     logger.warning(f"Could not start daily report scheduler: {e}")
 
 # ============================================================================
 # ROUTE COLLISION DETECTION - Fail boot if duplicate routes exist
