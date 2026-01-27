@@ -231,3 +231,42 @@ async def update_profile(update: dict, user_id: str = Depends(get_current_user))
         raise HTTPException(status_code=500, detail=f"Profile update failed: {str(e)}")
 
 
+@router.get("/auth/profile")
+async def get_profile(user_id: str = Depends(get_current_user)):
+    """Get user profile - backward-compatible alias to /auth/me
+    
+    This endpoint provides the same functionality as GET /auth/me
+    to maintain compatibility with frontend expectations.
+    
+    Returns:
+        Sanitized user profile (no password fields)
+    """
+    from bson import ObjectId
+    from bson.errors import InvalidId
+    
+    # First try with string id field (preferred)
+    user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
+    
+    # If not found, try with ObjectId (fallback for older users)
+    if not user:
+        # Validate ObjectId format before querying (24 hex characters)
+        if len(user_id) == 24 and all(c in '0123456789abcdefABCDEF' for c in user_id):
+            try:
+                user = await db.users_collection.find_one({"_id": ObjectId(user_id)})
+                if user:
+                    # Remove _id and use id field going forward
+                    user.pop("_id", None)
+                    # Ensure id field exists for future queries
+                    if "id" not in user:
+                        user["id"] = user_id
+            except InvalidId:
+                pass  # Invalid ObjectId despite format check
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Sanitize - never return sensitive fields
+    sensitive_fields = {'password_hash', 'hashed_password', 'hashedPassword', 'new_password', 'password', '_id'}
+    return {k: v for k, v in user.items() if k not in sensitive_fields}
+
+
