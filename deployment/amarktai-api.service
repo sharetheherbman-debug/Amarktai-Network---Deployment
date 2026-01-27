@@ -1,7 +1,7 @@
 [Unit]
 Description=Amarktai Network API Server
-After=network.target mongodb.service
-Wants=mongodb.service
+After=network.target docker.service
+Wants=docker.service
 
 [Service]
 Type=simple
