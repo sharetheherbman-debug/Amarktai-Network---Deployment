@@ -2494,6 +2494,7 @@ export default function Dashboard() {
           </div>
           
           {/* Tab Content */}
+          <>
           {botManagementTab === 'creation' && (
           <div className="bot-container">
             <div className="bot-left">
@@ -2737,6 +2738,7 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+          </div>
           )}
           
           {/* uAgents Tab */}
@@ -2783,9 +2785,10 @@ export default function Dashboard() {
           {botManagementTab === 'quarantine' && (
             <BotQuarantineSection />
           )}
+          </>
         </div>
       </section>
-    );
+  );
 
   const renderProfile = () => {
     
