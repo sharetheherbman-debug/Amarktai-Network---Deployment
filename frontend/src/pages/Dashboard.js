@@ -144,6 +144,9 @@ export default function Dashboard() {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [loadingBots, setLoadingBots] = useState(false);
   const [actionLoading, setActionLoading] = useState({});
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [selectedBotId, setSelectedBotId] = useState('');
+  const [filteredAdminBots, setFilteredAdminBots] = useState([]);
   
   const chatEndRef = useRef(null);
   const wsRef = useRef(null);
@@ -334,6 +337,16 @@ export default function Dashboard() {
       loadAdminBots();
     }
   }, [showAdmin]);
+
+  // Update filtered bots when adminBots or selectedUserId changes
+  useEffect(() => {
+    if (selectedUserId && adminBots.length > 0) {
+      const userBots = adminBots.filter(bot => bot.user_id === selectedUserId);
+      setFilteredAdminBots(userBots);
+    } else {
+      setFilteredAdminBots([]);
+    }
+  }, [adminBots, selectedUserId]);
 
   // Check Flokx status
   useEffect(() => {
@@ -1936,36 +1949,7 @@ export default function Dashboard() {
     }
   };
 
-  const handleBotOverrideLive = async (botId, botName) => {
-    const confirm = window.confirm(
-      `⚠️ ADMIN OVERRIDE: Promote Bot to Live Trading?\n\n` +
-      `Bot: ${botName}\n` +
-      `ID: ${botId}\n\n` +
-      `This will:\n` +
-      `- Skip the 7-day paper trading requirement\n` +
-      `- Enable REAL trading with REAL money\n` +
-      `- Be logged in the audit trail\n\n` +
-      `Only use this for testing purposes.\n\n` +
-      `Are you sure you want to proceed?`
-    );
-    
-    if (!confirm) return;
-    
-    try {
-      const res = await axios.post(
-        `${API}/admin/bots/${botId}/override-live`,
-        {},
-        axiosConfig
-      );
-      showNotification(`✅ ${res.data.message}`, 'success');
-      loadBots(); // Refresh bot list
-      toast.success('Bot promoted to live trading (admin override)');
-    } catch (err) {
-      const errorMsg = err.response?.data?.detail || err.message || 'Failed to override bot';
-      showNotification(`❌ ${errorMsg}`, 'error');
-      console.error('Bot override error:', err);
-    }
-  };
+
 
   // Load admin users with full details
   const loadAdminUsers = async () => {
@@ -1992,6 +1976,20 @@ export default function Dashboard() {
       console.error('Load admin bots error:', err);
     } finally {
       setLoadingBots(false);
+    }
+  };
+
+  // Handle user selection - filter bots for selected user
+  const handleUserSelection = (userId) => {
+    setSelectedUserId(userId);
+    setSelectedBotId(''); // Reset bot selection when user changes
+    
+    if (userId) {
+      // Filter bots for the selected user
+      const userBots = adminBots.filter(bot => bot.user_id === userId);
+      setFilteredAdminBots(userBots);
+    } else {
+      setFilteredAdminBots([]);
     }
   };
 
@@ -3446,7 +3444,7 @@ export default function Dashboard() {
           {/* Bot Override Panel - Interactive */}
           <div style={{marginTop: '24px', padding: '20px', background: 'var(--panel)', borderRadius: '8px', border: '1px solid var(--line)'}}>
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px'}}>
-              <h3 style={{margin: 0, color: 'var(--accent)'}}>🤖 Bot Override Controls</h3>
+              <h3 style={{margin: 0, color: 'var(--accent)'}}>🤖 Bot Control Panel</h3>
               <button
                 onClick={loadAdminBots}
                 disabled={loadingBots}
@@ -3466,199 +3464,272 @@ export default function Dashboard() {
               </button>
             </div>
             
-            {loadingBots ? (
-              <div style={{textAlign: 'center', padding: '40px', color: 'var(--muted)'}}>
-                Loading bots...
-              </div>
-            ) : adminBots.length === 0 ? (
-              <div style={{textAlign: 'center', padding: '40px', color: 'var(--muted)'}}>
-                No bots found
-              </div>
-            ) : (
-              <div style={{overflowX: 'auto'}}>
-                <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem'}}>
-                  <thead>
-                    <tr style={{borderBottom: '2px solid var(--line)'}}>
-                      <th style={{padding: '12px', textAlign: 'left', color: 'var(--muted)', fontWeight: 600}}>Bot Name</th>
-                      <th style={{padding: '12px', textAlign: 'left', color: 'var(--muted)', fontWeight: 600}}>User</th>
-                      <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Exchange</th>
-                      <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Mode</th>
-                      <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Status</th>
-                      <th style={{padding: '12px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Controls</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {adminBots.map(bot => (
-                      <tr key={bot.id} style={{borderBottom: '1px solid var(--line)'}}>
-                        <td style={{padding: '12px', fontWeight: 600}}>{bot.name}</td>
-                        <td style={{padding: '12px'}}>
-                          <div>{bot.user_name || 'Unknown'}</div>
-                          <div style={{fontSize: '0.75rem', color: 'var(--muted)'}}>{bot.user_email}</div>
-                        </td>
-                        <td style={{padding: '12px', textAlign: 'center'}}>
-                          <select
-                            value={bot.exchange}
-                            onChange={(e) => handleChangeBotExchange(bot.id, e.target.value)}
-                            disabled={actionLoading[`exchange-${bot.id}`]}
-                            style={{
-                              padding: '4px 8px',
-                              fontSize: '0.75rem',
-                              background: 'var(--glass)',
-                              color: 'var(--text)',
-                              border: '1px solid var(--line)',
-                              borderRadius: '4px',
-                              cursor: actionLoading[`exchange-${bot.id}`] ? 'not-allowed' : 'pointer',
-                              opacity: actionLoading[`exchange-${bot.id}`] ? 0.6 : 1,
-                              fontWeight: 600
-                            }}
-                          >
-                            <option value="binance">Binance</option>
-                            <option value="luno">Luno</option>
-                            <option value="kucoin">KuCoin</option>
-                            <option value="valr">VALR</option>
-                            <option value="ovex">OVEX</option>
-                          </select>
-                        </td>
-                        <td style={{padding: '12px', textAlign: 'center'}}>
-                          <div style={{display: 'flex', gap: '4px', justifyContent: 'center'}}>
-                            <button
-                              onClick={() => handleChangeBotMode(bot.id, 'paper')}
-                              disabled={actionLoading[`mode-${bot.id}`] || bot.trading_mode === 'paper'}
-                              style={{
-                                padding: '4px 8px',
-                                fontSize: '0.75rem',
-                                background: bot.trading_mode === 'paper' ? 'var(--success)' : 'var(--glass)',
-                                color: bot.trading_mode === 'paper' ? 'white' : 'var(--text)',
-                                border: '1px solid var(--line)',
-                                borderRadius: '4px',
-                                cursor: (actionLoading[`mode-${bot.id}`] || bot.trading_mode === 'paper') ? 'not-allowed' : 'pointer',
-                                opacity: (actionLoading[`mode-${bot.id}`] || bot.trading_mode === 'paper') ? 0.6 : 1,
-                                fontWeight: 600
-                              }}
-                            >
-                              📝 Paper
-                            </button>
-                            <button
-                              onClick={() => handleChangeBotMode(bot.id, 'live')}
-                              disabled={actionLoading[`mode-${bot.id}`] || bot.trading_mode === 'live'}
-                              style={{
-                                padding: '4px 8px',
-                                fontSize: '0.75rem',
-                                background: bot.trading_mode === 'live' ? '#f59e0b' : 'var(--glass)',
-                                color: bot.trading_mode === 'live' ? 'white' : 'var(--text)',
-                                border: '1px solid var(--line)',
-                                borderRadius: '4px',
-                                cursor: (actionLoading[`mode-${bot.id}`] || bot.trading_mode === 'live') ? 'not-allowed' : 'pointer',
-                                opacity: (actionLoading[`mode-${bot.id}`] || bot.trading_mode === 'live') ? 0.6 : 1,
-                                fontWeight: 600
-                              }}
-                            >
-                              💰 Live
-                            </button>
-                          </div>
-                        </td>
-                        <td style={{padding: '12px', textAlign: 'center'}}>
-                          <span style={{
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            background: bot.status === 'active' ? 'var(--success)' : (bot.status === 'paused' ? '#f59e0b' : 'var(--error)'),
-                            color: 'white'
-                          }}>
-                            {bot.status === 'active' ? '▶ Active' : (bot.status === 'paused' ? '⏸ Paused' : '⏹ Stopped')}
-                          </span>
-                        </td>
-                        <td style={{padding: '12px', textAlign: 'center'}}>
-                          <button
-                            onClick={() => handleToggleBotPause(bot.id, bot.status)}
-                            disabled={actionLoading[`pause-${bot.id}`]}
-                            style={{
-                              padding: '4px 8px',
-                              fontSize: '0.75rem',
-                              background: actionLoading[`pause-${bot.id}`] ? '#666' : (bot.status === 'active' ? '#f59e0b' : 'var(--success)'),
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '4px',
-                              cursor: actionLoading[`pause-${bot.id}`] ? 'not-allowed' : 'pointer',
-                              opacity: actionLoading[`pause-${bot.id}`] ? 0.6 : 1,
-                              fontWeight: 600
-                            }}
-                          >
-                            {actionLoading[`pause-${bot.id}`] ? '...' : (bot.status === 'active' ? '⏸ Pause' : '▶ Resume')}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-          
-          {/* Bot Override for Testing */}
-          <div style={{marginTop: '24px', padding: '20px', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.05) 100%)', borderRadius: '8px', border: '2px solid #f59e0b'}}>
-            <h3 style={{marginBottom: '16px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '8px'}}>
-              ⚡ Bot Override (Testing Only)
-            </h3>
-            <p style={{fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '16px'}}>
-              Promote bots to live trading before they complete the 7-day paper trading period. For testing purposes only.
-            </p>
-            
-            {/* Show paper bots that can be overridden */}
-            <div style={{maxHeight: '300px', overflowY: 'auto'}}>
-              {bots.filter(bot => bot.trading_mode === 'paper' || bot.mode === 'paper').length === 0 ? (
-                <div style={{textAlign: 'center', padding: '20px', color: 'var(--muted)'}}>
-                  No paper trading bots available to override
-                </div>
-              ) : (
-                bots
-                  .filter(bot => bot.trading_mode === 'paper' || bot.mode === 'paper')
-                  .map(bot => (
-                    <div key={bot.id} style={{
-                      padding: '12px',
-                      marginBottom: '8px',
+            {/* User and Bot Selection */}
+            <div style={{marginBottom: '20px', padding: '16px', background: 'var(--glass)', borderRadius: '6px', border: '1px solid var(--accent)'}}>
+              <h4 style={{margin: '0 0 12px 0', color: 'var(--accent)', fontSize: '0.9rem'}}>🎯 Select Target</h4>
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '12px'}}>
+                {/* User Selection */}
+                <div>
+                  <label style={{display: 'block', fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '6px', fontWeight: 600}}>
+                    Select User
+                  </label>
+                  <select
+                    value={selectedUserId}
+                    onChange={(e) => handleUserSelection(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      fontSize: '0.85rem',
                       background: 'var(--panel)',
-                      borderRadius: '6px',
+                      color: 'var(--text)',
                       border: '1px solid var(--line)',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center'
-                    }}>
-                      <div style={{flex: 1}}>
-                        <div style={{fontWeight: 600, fontSize: '0.9rem'}}>{bot.name}</div>
-                        <div style={{fontSize: '0.75rem', color: 'var(--muted)'}}>
-                          {bot.exchange?.toUpperCase()} • Capital: R{bot.current_capital?.toFixed(2) || '0.00'} • Profit: R{bot.total_profit?.toFixed(2) || '0.00'}
-                        </div>
-                        {bot.paper_start_date && (
-                          <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginTop: '4px'}}>
-                            Paper trading since: {new Date(bot.paper_start_date).toLocaleDateString()}
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => handleBotOverrideLive(bot.id, bot.name)}
-                        style={{
-                          padding: '8px 16px',
-                          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          fontWeight: 600,
-                          fontSize: '0.85rem',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        ⚡ Override to Live
-                      </button>
-                    </div>
-                  ))
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: 600
+                    }}
+                  >
+                    <option value="">-- Select a User --</option>
+                    {adminUsers.map(usr => (
+                      <option key={usr.id} value={usr.id}>
+                        {usr.name || usr.first_name || usr.email} ({usr.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                
+                {/* Bot Selection */}
+                <div>
+                  <label style={{display: 'block', fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '6px', fontWeight: 600}}>
+                    Select Bot
+                  </label>
+                  <select
+                    value={selectedBotId}
+                    onChange={(e) => setSelectedBotId(e.target.value)}
+                    disabled={!selectedUserId}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      fontSize: '0.85rem',
+                      background: selectedUserId ? 'var(--panel)' : '#e0e0e0',
+                      color: selectedUserId ? 'var(--text)' : '#999',
+                      border: '1px solid var(--line)',
+                      borderRadius: '4px',
+                      cursor: selectedUserId ? 'pointer' : 'not-allowed',
+                      fontWeight: 600
+                    }}
+                  >
+                    <option value="">-- Select a Bot --</option>
+                    {filteredAdminBots.map(bot => (
+                      <option key={bot.bot_id} value={bot.bot_id}>
+                        {bot.name} ({bot.exchange?.toUpperCase()}) - {bot.mode === 'live' ? '💰 Live' : '📝 Paper'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              
+              {selectedUserId && filteredAdminBots.length === 0 && (
+                <div style={{marginTop: '12px', padding: '8px 12px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '4px', fontSize: '0.8rem', color: '#f59e0b'}}>
+                  ⚠️ Selected user has no bots
+                </div>
               )}
             </div>
             
-            <div style={{marginTop: '12px', padding: '12px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '6px', fontSize: '0.75rem', color: 'var(--muted)'}}>
-              ⚠️ <strong>Warning:</strong> Overridden bots will trade with REAL money immediately. All actions are logged in the audit trail with your admin ID.
+            {/* Bot Actions - Only visible when bot is selected */}
+            {selectedBotId && (() => {
+              const selectedBot = filteredAdminBots.find(b => b.bot_id === selectedBotId);
+              if (!selectedBot) return null;
+              
+              return (
+                <div style={{padding: '16px', background: 'var(--glass)', borderRadius: '6px', border: '1px solid var(--success)'}}>
+                  <h4 style={{margin: '0 0 12px 0', color: 'var(--success)', fontSize: '0.9rem'}}>⚙️ Bot Actions</h4>
+                  
+                  {/* Bot Info */}
+                  <div style={{marginBottom: '16px', padding: '12px', background: 'var(--panel)', borderRadius: '4px'}}>
+                    <div style={{fontWeight: 700, fontSize: '1rem', marginBottom: '4px'}}>{selectedBot.name}</div>
+                    <div style={{fontSize: '0.8rem', color: 'var(--muted)'}}>
+                      User: {selectedBot.username} • Exchange: {selectedBot.exchange?.toUpperCase()} • 
+                      Status: {selectedBot.status === 'active' ? '▶ Active' : selectedBot.status === 'paused' ? '⏸ Paused' : '⏹ Stopped'}
+                    </div>
+                    <div style={{fontSize: '0.8rem', color: 'var(--muted)', marginTop: '4px'}}>
+                      Mode: {selectedBot.mode === 'live' ? '💰 Live Trading' : '📝 Paper Trading'} • 
+                      Capital: R{selectedBot.current_capital?.toFixed(2) || '0.00'} • 
+                      P/L: R{selectedBot.profit_loss?.toFixed(2) || '0.00'}
+                    </div>
+                  </div>
+                  
+                  {/* Action Buttons */}
+                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px'}}>
+                    {/* Pause/Resume */}
+                    <button
+                      onClick={() => handleToggleBotPause(selectedBot.bot_id, selectedBot.status)}
+                      disabled={actionLoading[`pause-${selectedBot.bot_id}`]}
+                      style={{
+                        padding: '10px 16px',
+                        fontSize: '0.85rem',
+                        background: actionLoading[`pause-${selectedBot.bot_id}`] ? '#666' : (selectedBot.status === 'active' ? '#f59e0b' : 'var(--success)'),
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: actionLoading[`pause-${selectedBot.bot_id}`] ? 'not-allowed' : 'pointer',
+                        opacity: actionLoading[`pause-${selectedBot.bot_id}`] ? 0.6 : 1,
+                        fontWeight: 600
+                      }}
+                    >
+                      {actionLoading[`pause-${selectedBot.bot_id}`] ? '...' : (selectedBot.status === 'active' ? '⏸ Pause Bot' : '▶ Resume Bot')}
+                    </button>
+                    
+                    {/* Change Mode: Paper */}
+                    <button
+                      onClick={() => handleChangeBotMode(selectedBot.bot_id, 'paper')}
+                      disabled={actionLoading[`mode-${selectedBot.bot_id}`] || selectedBot.mode === 'paper'}
+                      style={{
+                        padding: '10px 16px',
+                        fontSize: '0.85rem',
+                        background: selectedBot.mode === 'paper' ? 'var(--success)' : (actionLoading[`mode-${selectedBot.bot_id}`] ? '#666' : 'var(--glass)'),
+                        color: selectedBot.mode === 'paper' ? 'white' : 'var(--text)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '4px',
+                        cursor: (actionLoading[`mode-${selectedBot.bot_id}`] || selectedBot.mode === 'paper') ? 'not-allowed' : 'pointer',
+                        opacity: (actionLoading[`mode-${selectedBot.bot_id}`] || selectedBot.mode === 'paper') ? 0.6 : 1,
+                        fontWeight: 600
+                      }}
+                    >
+                      {selectedBot.mode === 'paper' ? '✓ Paper Mode' : '📝 Set Paper'}
+                    </button>
+                    
+                    {/* Change Mode: Live */}
+                    <button
+                      onClick={() => handleChangeBotMode(selectedBot.bot_id, 'live')}
+                      disabled={actionLoading[`mode-${selectedBot.bot_id}`] || selectedBot.mode === 'live'}
+                      style={{
+                        padding: '10px 16px',
+                        fontSize: '0.85rem',
+                        background: selectedBot.mode === 'live' ? '#f59e0b' : (actionLoading[`mode-${selectedBot.bot_id}`] ? '#666' : 'var(--glass)'),
+                        color: selectedBot.mode === 'live' ? 'white' : 'var(--text)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '4px',
+                        cursor: (actionLoading[`mode-${selectedBot.bot_id}`] || selectedBot.mode === 'live') ? 'not-allowed' : 'pointer',
+                        opacity: (actionLoading[`mode-${selectedBot.bot_id}`] || selectedBot.mode === 'live') ? 0.6 : 1,
+                        fontWeight: 600
+                      }}
+                    >
+                      {selectedBot.mode === 'live' ? '✓ Live Mode' : '💰 Set Live'}
+                    </button>
+                    
+                    {/* Change Exchange */}
+                    <div>
+                      <select
+                        value={selectedBot.exchange}
+                        onChange={(e) => handleChangeBotExchange(selectedBot.bot_id, e.target.value)}
+                        disabled={actionLoading[`exchange-${selectedBot.bot_id}`]}
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          fontSize: '0.85rem',
+                          background: 'var(--glass)',
+                          color: 'var(--text)',
+                          border: '1px solid var(--line)',
+                          borderRadius: '4px',
+                          cursor: actionLoading[`exchange-${selectedBot.bot_id}`] ? 'not-allowed' : 'pointer',
+                          opacity: actionLoading[`exchange-${selectedBot.bot_id}`] ? 0.6 : 1,
+                          fontWeight: 600
+                        }}
+                      >
+                        <option value="binance">Binance</option>
+                        <option value="luno">Luno</option>
+                        <option value="kucoin">KuCoin</option>
+                        <option value="valr">VALR</option>
+                        <option value="ovex">OVEX</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  <div style={{marginTop: '12px', padding: '10px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '4px', fontSize: '0.75rem', color: 'var(--muted)'}}>
+                    ℹ️ All admin actions are logged in the audit trail. Actions apply ONLY to the selected bot.
+                  </div>
+                </div>
+              );
+            })()}
+            
+            {!selectedBotId && (
+              <div style={{textAlign: 'center', padding: '40px', color: 'var(--muted)', fontSize: '0.9rem'}}>
+                👆 Select a user and bot above to perform admin actions
+              </div>
+            )}
+            
+            {/* All Bots Table - Read-only overview */}
+            <div style={{marginTop: '24px'}}>
+              <h4 style={{margin: '0 0 12px 0', color: 'var(--muted)', fontSize: '0.9rem'}}>📊 All Bots Overview (Read-only)</h4>
+              {loadingBots ? (
+                <div style={{textAlign: 'center', padding: '40px', color: 'var(--muted)'}}>
+                  Loading bots...
+                </div>
+              ) : adminBots.length === 0 ? (
+                <div style={{textAlign: 'center', padding: '40px', color: 'var(--muted)'}}>
+                  No bots found
+                </div>
+              ) : (
+                <div style={{overflowX: 'auto'}}>
+                  <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem'}}>
+                    <thead>
+                      <tr style={{borderBottom: '2px solid var(--line)', background: 'var(--glass)'}}>
+                        <th style={{padding: '8px', textAlign: 'left', color: 'var(--muted)', fontWeight: 600}}>Bot Name</th>
+                        <th style={{padding: '8px', textAlign: 'left', color: 'var(--muted)', fontWeight: 600}}>User</th>
+                        <th style={{padding: '8px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Exchange</th>
+                        <th style={{padding: '8px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Mode</th>
+                        <th style={{padding: '8px', textAlign: 'center', color: 'var(--muted)', fontWeight: 600}}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adminBots.map(bot => (
+                        <tr key={bot.bot_id} style={{borderBottom: '1px solid var(--line)'}}>
+                          <td style={{padding: '8px', fontWeight: 600}}>{bot.name}</td>
+                          <td style={{padding: '8px'}}>
+                            <div style={{fontSize: '0.8rem'}}>{bot.username || 'Unknown'}</div>
+                            <div style={{fontSize: '0.7rem', color: 'var(--muted)'}}>{bot.email}</div>
+                          </td>
+                          <td style={{padding: '8px', textAlign: 'center'}}>
+                            <span style={{
+                              padding: '2px 6px',
+                              background: 'var(--glass)',
+                              borderRadius: '3px',
+                              fontSize: '0.75rem',
+                              fontWeight: 600
+                            }}>
+                              {bot.exchange?.toUpperCase()}
+                            </span>
+                          </td>
+                          <td style={{padding: '8px', textAlign: 'center'}}>
+                            <span style={{
+                              padding: '2px 6px',
+                              background: bot.mode === 'live' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+                              borderRadius: '3px',
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              color: bot.mode === 'live' ? '#f59e0b' : 'var(--success)'
+                            }}>
+                              {bot.mode === 'live' ? '💰 Live' : '📝 Paper'}
+                            </span>
+                          </td>
+                          <td style={{padding: '8px', textAlign: 'center'}}>
+                            <span style={{
+                              padding: '2px 6px',
+                              borderRadius: '3px',
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              background: bot.status === 'active' ? 'var(--success)' : (bot.status === 'paused' ? '#f59e0b' : 'var(--error)'),
+                              color: 'white'
+                            }}>
+                              {bot.status === 'active' ? '▶ Active' : (bot.status === 'paused' ? '⏸ Paused' : '⏹ Stopped')}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
           
