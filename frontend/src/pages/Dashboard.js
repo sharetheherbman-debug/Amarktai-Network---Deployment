@@ -5068,7 +5068,23 @@ export default function Dashboard() {
     return (
       <section className="section active">
         <div className="card">
-          <h2>🎯 Countdown to R1 Million</h2>
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px'}}>
+            <h2 style={{margin: 0}}>🎯 Countdown to R1 Million</h2>
+            <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+              <span style={{
+                padding: '6px 12px',
+                background: countdownData.mode === 'live' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                color: 'white',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px'
+              }}>
+                {countdownData.mode || 'Paper'} Mode
+              </span>
+            </div>
+          </div>
           
           {countdownData.status === 'achieved' ? (
             <div style={{textAlign: 'center', padding: '60px 20px'}}>
@@ -5082,59 +5098,75 @@ export default function Dashboard() {
             </div>
           ) : (
             <>
-              <h3 style={{textAlign: 'center', margin: '16px 0 24px 0', fontSize: '1.2rem', fontWeight: 600, color: 'var(--muted)'}}>
-                Real-Time Growth Projection - {countdownData.mode || 'Paper'} Mode
-              </h3>
-              
-              <div style={{display: 'flex', gap: '20px', alignItems: 'stretch', flexWrap: 'wrap', marginBottom: '24px'}}>
-                <div style={{flex: '1 1 350px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '32px', border: '2px solid var(--success)', borderRadius: '12px', textAlign: 'center', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%)'}}>
-                  <div style={{fontSize: '4.5rem', fontWeight: 700, color: countdownData.days_remaining >= 9999 ? 'var(--error)' : 'var(--success)', margin: '12px 0', textShadow: '0 0 12px rgba(16, 185, 129, 0.5)'}}>
+              {/* Main Stats Row */}
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '24px'}}>
+                {/* Days Remaining Card */}
+                <div style={{
+                  padding: '32px',
+                  border: '2px solid var(--success)',
+                  borderRadius: '12px',
+                  textAlign: 'center',
+                  background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.05) 100%)',
+                  boxShadow: '0 4px 16px rgba(16, 185, 129, 0.2)'
+                }}>
+                  <div style={{fontSize: '4rem', fontWeight: 700, color: countdownData.days_remaining >= 9999 ? 'var(--error)' : 'var(--success)', margin: '12px 0', textShadow: '0 0 12px rgba(16, 185, 129, 0.5)'}}>
                     {countdownData.days_remaining < 9999 ? countdownData.days_remaining : '∞'}
                   </div>
-                  <p style={{fontSize: '1.1rem', fontWeight: 600, color: 'var(--muted)', marginBottom: '8px'}}>
+                  <p style={{fontSize: '1rem', fontWeight: 600, color: 'var(--muted)', marginBottom: '4px'}}>
                     DAYS REMAINING
                   </p>
-                  <p style={{fontSize: '2rem', fontWeight: 700, background: 'linear-gradient(45deg, var(--success), #34d399)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', margin: '12px 0'}}>
-                    TO YOUR FIRST MILLION
+                  <p style={{fontSize: '1.5rem', fontWeight: 700, background: 'linear-gradient(45deg, var(--success), #34d399)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', margin: '8px 0'}}>
+                    TO R1 MILLION
                   </p>
-                  
-                  <div style={{marginTop: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', width: '100%'}}>
-                    <div style={{textAlign: 'center', padding: '12px', background: 'var(--panel)', borderRadius: '8px'}}>
-                      <div style={{fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '6px'}}>Current Capital</div>
-                      <div style={{fontSize: '1.3rem', fontWeight: 700, color: 'var(--text)'}}>
-                        R{countdownData.current_capital?.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') || '0.00'}
-                      </div>
-                    </div>
-                    <div style={{textAlign: 'center', padding: '12px', background: 'var(--panel)', borderRadius: '8px'}}>
-                      <div style={{fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '6px'}}>Daily ROI</div>
-                      <div style={{fontSize: '1.3rem', fontWeight: 700, color: 'var(--success)'}}>
-                        {countdownData.metrics?.daily_roi_pct?.toFixed(3) || '0.000'}%
-                      </div>
+                </div>
+                
+                {/* Progress Circle Card */}
+                <div style={{
+                  padding: '32px',
+                  border: '1px solid var(--line)',
+                  borderRadius: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  background: 'var(--panel)'
+                }}>
+                  <div style={{width: '180px', height: '180px', borderRadius: '50%', background: `conic-gradient(var(--success) 0deg ${progressDeg}deg, var(--accent) ${progressDeg}deg 360deg)`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 24px rgba(16, 185, 129, 0.4)'}}>
+                    <div style={{width: '140px', height: '140px', borderRadius: '50%', background: 'var(--panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', fontWeight: 700, color: 'var(--success)', flexDirection: 'column'}}>
+                      <div>{countdownData.progress_pct?.toFixed(1) || '0.0'}%</div>
+                      <div style={{fontSize: '0.7rem', color: 'var(--muted)', marginTop: '4px'}}>Complete</div>
                     </div>
                   </div>
                 </div>
-                
-                <div style={{flex: '1 1 300px', padding: '32px', border: '1px solid var(--line)', borderRadius: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: 'var(--panel)'}}>
-                  <div style={{width: '240px', height: '240px', borderRadius: '50%', background: 'conic-gradient(var(--success) 0deg ' + progressDeg + 'deg, var(--accent) ' + progressDeg + 'deg 360deg)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 24px rgba(16, 185, 129, 0.4)'}}>
-                    <div style={{width: '180px', height: '180px', borderRadius: '50%', background: 'var(--panel)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: 700, color: 'var(--success)', flexDirection: 'column'}}>
-                      <div>{countdownData.progress_pct?.toFixed(1) || '0.0'}%</div>
-                      <div style={{fontSize: '0.8rem', color: 'var(--muted)', marginTop: '6px'}}>Complete</div>
-                    </div>
+              </div>
+              
+              {/* Key Metrics Grid */}
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px'}}>
+                <div style={{padding: '20px', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%)', borderRadius: '10px', border: '1px solid rgba(16, 185, 129, 0.3)'}}>
+                  <div style={{fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px'}}>Current Capital</div>
+                  <div style={{fontSize: '1.8rem', fontWeight: 700, color: 'var(--success)'}}>
+                    R{countdownData.current_capital?.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') || '0.00'}
                   </div>
-                  
-                  <div style={{marginTop: '24px', width: '100%', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px'}}>
-                    <div style={{textAlign: 'center', padding: '12px', background: 'var(--glass)', borderRadius: '8px'}}>
-                      <div style={{fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '6px'}}>Remaining</div>
-                      <div style={{fontSize: '1.1rem', fontWeight: 600, color: 'var(--text)'}}>
-                        R{countdownData.remaining ? countdownData.remaining.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '0.00'}
-                      </div>
-                    </div>
-                    <div style={{textAlign: 'center', padding: '12px', background: 'var(--glass)', borderRadius: '8px'}}>
-                      <div style={{fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '6px'}}>Target</div>
-                      <div style={{fontSize: '1.1rem', fontWeight: 600, color: 'var(--success)'}}>
-                        R1,000,000
-                      </div>
-                    </div>
+                </div>
+                
+                <div style={{padding: '20px', background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.05) 100%)', borderRadius: '10px', border: '1px solid rgba(59, 130, 246, 0.3)'}}>
+                  <div style={{fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px'}}>Daily ROI</div>
+                  <div style={{fontSize: '1.8rem', fontWeight: 700, color: '#3b82f6'}}>
+                    {countdownData.metrics?.daily_roi_pct?.toFixed(3) || '0.000'}%
+                  </div>
+                </div>
+                
+                <div style={{padding: '20px', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.05) 100%)', borderRadius: '10px', border: '1px solid rgba(245, 158, 11, 0.3)'}}>
+                  <div style={{fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px'}}>Avg Daily Profit</div>
+                  <div style={{fontSize: '1.8rem', fontWeight: 700, color: '#f59e0b'}}>
+                    R{countdownData.metrics?.avg_daily_profit?.toFixed(2) || '0.00'}
+                  </div>
+                </div>
+                
+                <div style={{padding: '20px', background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(147, 51, 234, 0.05) 100%)', borderRadius: '10px', border: '1px solid rgba(168, 85, 247, 0.3)'}}>
+                  <div style={{fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px'}}>Remaining</div>
+                  <div style={{fontSize: '1.8rem', fontWeight: 700, color: '#a855f7'}}>
+                    R{countdownData.remaining ? countdownData.remaining.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '1,000,000'}
                   </div>
                 </div>
               </div>
@@ -5145,14 +5177,28 @@ export default function Dashboard() {
                   <span style={{color: 'var(--text)'}}>R{countdownData.current_capital ? countdownData.current_capital.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '0.00'}</span>
                   <span style={{color: 'var(--success)'}}>R1,000,000</span>
                 </div>
-                <div style={{height: '16px', background: 'var(--panel)', borderRadius: '8px', overflow: 'hidden', border: '2px solid var(--line)', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)'}}>
+                <div style={{height: '20px', background: 'var(--panel)', borderRadius: '10px', overflow: 'hidden', border: '2px solid var(--line)', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)'}}>
                   <div style={{
                     height: '100%',
                     width: `${Math.min(countdownData.progress_pct || 0, 100)}%`,
-                    background: 'linear-gradient(90deg, var(--success) 0%, var(--accent) 100%)',
+                    background: 'linear-gradient(90deg, var(--success) 0%, #34d399 50%, var(--accent) 100%)',
                     transition: 'width 1s ease-in-out',
-                    boxShadow: '0 0 10px rgba(16, 185, 129, 0.5)'
-                  }}></div>
+                    boxShadow: '0 0 10px rgba(16, 185, 129, 0.5)',
+                    position: 'relative'
+                  }}>
+                    <div style={{
+                      position: 'absolute',
+                      right: '10px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      color: 'white',
+                      textShadow: '0 1px 2px rgba(0,0,0,0.5)'
+                    }}>
+                      {countdownData.progress_pct?.toFixed(1) || '0.0'}%
+                    </div>
+                  </div>
                 </div>
               </div>
               
