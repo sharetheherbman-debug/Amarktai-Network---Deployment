@@ -1,0 +1,291 @@
+"""
+User Custom Countdowns API
+Manages user-defined financial goals and countdown targets
+"""
+
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from datetime import datetime, timezone
+import logging
+import database as db
+from auth import get_current_user
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/countdowns", tags=["countdowns"])
+
+
+class CountdownCreate(BaseModel):
+    """Model for creating a new countdown"""
+    label: str = Field(..., min_length=1, max_length=50, description="Countdown label (e.g., 'BMW M3')")
+    target_amount: float = Field(..., gt=0, description="Target amount in ZAR")
+
+
+class CountdownUpdate(BaseModel):
+    """Model for updating a countdown"""
+    label: Optional[str] = Field(None, min_length=1, max_length=50)
+    target_amount: Optional[float] = Field(None, gt=0)
+
+
+class CountdownResponse(BaseModel):
+    """Countdown response model"""
+    id: str
+    user_id: str
+    label: str
+    target_amount: float
+    current_progress: float
+    progress_pct: float
+    remaining: float
+    days_remaining: int
+    created_at: str
+    updated_at: str
+
+
+@router.get("/", response_model=List[CountdownResponse])
+async def get_user_countdowns(user_id: str = Depends(get_current_user)):
+    """Get all countdowns for the current user"""
+    try:
+        countdowns = await db.user_countdowns_collection.find(
+            {"user_id": user_id}
+        ).to_list(100)
+        
+        # Calculate current progress for each countdown
+        # Get user's current capital
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        current_capital = user.get("total_capital", 0.0)
+        
+        result = []
+        for countdown in countdowns:
+            target = countdown["target_amount"]
+            progress = min(current_capital, target)
+            progress_pct = (progress / target * 100) if target > 0 else 0
+            remaining = max(0, target - current_capital)
+            
+            # Calculate days remaining based on daily ROI
+            # Get average daily profit from recent trades
+            daily_roi_pct = await calculate_daily_roi(user_id)
+            
+            if daily_roi_pct > 0 and remaining > 0:
+                # Compound interest formula: target = current * (1 + daily_roi)^days
+                # Solve for days: days = log(target/current) / log(1 + daily_roi)
+                import math
+                if current_capital > 0:
+                    days_remaining = int(math.log(target / current_capital) / math.log(1 + daily_roi_pct / 100))
+                    days_remaining = max(0, min(days_remaining, 9999))
+                else:
+                    days_remaining = 9999
+            else:
+                days_remaining = 9999
+            
+            result.append({
+                "id": countdown.get("id", str(countdown.get("_id", ""))),
+                "user_id": countdown["user_id"],
+                "label": countdown["label"],
+                "target_amount": target,
+                "current_progress": progress,
+                "progress_pct": progress_pct,
+                "remaining": remaining,
+                "days_remaining": days_remaining,
+                "created_at": countdown.get("created_at", ""),
+                "updated_at": countdown.get("updated_at", "")
+            })
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching user countdowns: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def calculate_daily_roi(user_id: str) -> float:
+    """Calculate average daily ROI from recent trades"""
+    try:
+        # Get trades from last 7 days
+        from datetime import timedelta
+        seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        
+        trades = await db.trades_collection.find({
+            "user_id": user_id,
+            "created_at": {"$gte": seven_days_ago}
+        }).to_list(1000)
+        
+        if not trades:
+            return 0.0
+        
+        # Calculate total profit
+        total_profit = sum(t.get("realized_profit", 0) for t in trades) - sum(t.get("fees", 0) for t in trades)
+        
+        # Get starting capital (7 days ago)
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
+        current_capital = user.get("total_capital", 0.0)
+        starting_capital = current_capital - total_profit
+        
+        if starting_capital <= 0:
+            return 0.0
+        
+        # Calculate daily ROI
+        total_roi = (total_profit / starting_capital) * 100
+        daily_roi = total_roi / 7
+        
+        return max(0, daily_roi)
+    except Exception as e:
+        logger.warning(f"Error calculating daily ROI: {e}")
+        return 0.0
+
+
+@router.post("/", response_model=CountdownResponse)
+async def create_countdown(countdown: CountdownCreate, user_id: str = Depends(get_current_user)):
+    """Create a new custom countdown"""
+    try:
+        # Check if user already has 2 custom countdowns (limit)
+        existing = await db.user_countdowns_collection.count_documents({"user_id": user_id})
+        if existing >= 2:
+            raise HTTPException(
+                status_code=400,
+                detail="Maximum of 2 custom countdowns allowed per user"
+            )
+        
+        # Generate ID
+        import uuid
+        countdown_id = str(uuid.uuid4())
+        
+        now = datetime.now(timezone.utc).isoformat()
+        
+        countdown_doc = {
+            "id": countdown_id,
+            "user_id": user_id,
+            "label": countdown.label,
+            "target_amount": countdown.target_amount,
+            "created_at": now,
+            "updated_at": now
+        }
+        
+        await db.user_countdowns_collection.insert_one(countdown_doc)
+        
+        # Get current progress
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
+        current_capital = user.get("total_capital", 0.0) if user else 0.0
+        
+        target = countdown.target_amount
+        progress = min(current_capital, target)
+        progress_pct = (progress / target * 100) if target > 0 else 0
+        remaining = max(0, target - current_capital)
+        
+        daily_roi_pct = await calculate_daily_roi(user_id)
+        if daily_roi_pct > 0 and remaining > 0 and current_capital > 0:
+            import math
+            days_remaining = int(math.log(target / current_capital) / math.log(1 + daily_roi_pct / 100))
+            days_remaining = max(0, min(days_remaining, 9999))
+        else:
+            days_remaining = 9999
+        
+        return {
+            "id": countdown_id,
+            "user_id": user_id,
+            "label": countdown.label,
+            "target_amount": countdown.target_amount,
+            "current_progress": progress,
+            "progress_pct": progress_pct,
+            "remaining": remaining,
+            "days_remaining": days_remaining,
+            "created_at": now,
+            "updated_at": now
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating countdown: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{countdown_id}", response_model=CountdownResponse)
+async def update_countdown(
+    countdown_id: str,
+    countdown: CountdownUpdate,
+    user_id: str = Depends(get_current_user)
+):
+    """Update a countdown"""
+    try:
+        existing = await db.user_countdowns_collection.find_one({
+            "id": countdown_id,
+            "user_id": user_id
+        })
+        
+        if not existing:
+            raise HTTPException(status_code=404, detail="Countdown not found")
+        
+        update_data = {}
+        if countdown.label is not None:
+            update_data["label"] = countdown.label
+        if countdown.target_amount is not None:
+            update_data["target_amount"] = countdown.target_amount
+        
+        if update_data:
+            update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+            await db.user_countdowns_collection.update_one(
+                {"id": countdown_id, "user_id": user_id},
+                {"$set": update_data}
+            )
+        
+        # Get updated countdown
+        updated = await db.user_countdowns_collection.find_one({
+            "id": countdown_id,
+            "user_id": user_id
+        })
+        
+        # Calculate progress
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
+        current_capital = user.get("total_capital", 0.0) if user else 0.0
+        
+        target = updated["target_amount"]
+        progress = min(current_capital, target)
+        progress_pct = (progress / target * 100) if target > 0 else 0
+        remaining = max(0, target - current_capital)
+        
+        daily_roi_pct = await calculate_daily_roi(user_id)
+        if daily_roi_pct > 0 and remaining > 0 and current_capital > 0:
+            import math
+            days_remaining = int(math.log(target / current_capital) / math.log(1 + daily_roi_pct / 100))
+            days_remaining = max(0, min(days_remaining, 9999))
+        else:
+            days_remaining = 9999
+        
+        return {
+            "id": updated["id"],
+            "user_id": updated["user_id"],
+            "label": updated["label"],
+            "target_amount": target,
+            "current_progress": progress,
+            "progress_pct": progress_pct,
+            "remaining": remaining,
+            "days_remaining": days_remaining,
+            "created_at": updated.get("created_at", ""),
+            "updated_at": updated.get("updated_at", "")
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating countdown: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{countdown_id}")
+async def delete_countdown(countdown_id: str, user_id: str = Depends(get_current_user)):
+    """Delete a countdown"""
+    try:
+        result = await db.user_countdowns_collection.delete_one({
+            "id": countdown_id,
+            "user_id": user_id
+        })
+        
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Countdown not found")
+        
+        return {"message": "Countdown deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting countdown: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

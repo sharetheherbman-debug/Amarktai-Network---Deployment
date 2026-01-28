@@ -131,6 +131,10 @@ export default function Dashboard() {
   const [bodyguardStatus, setBodyguardStatus] = useState(null);
   const [storageData, setStorageData] = useState(null);
   const [countdown, setCountdown] = useState(null);
+  const [customCountdowns, setCustomCountdowns] = useState([]);
+  const [showAddCountdown, setShowAddCountdown] = useState(false);
+  const [newCountdownLabel, setNewCountdownLabel] = useState('');
+  const [newCountdownAmount, setNewCountdownAmount] = useState('');
   const [aiTaskLoading, setAiTaskLoading] = useState(null); // Track which AI task is running
   const [showAITools, setShowAITools] = useState(false); // Toggle AI tools submenu
   const [eligibleBots, setEligibleBots] = useState([]);
@@ -163,6 +167,7 @@ export default function Dashboard() {
     loadApiStatuses();
     loadRecentTrades();
     loadCountdown();
+    loadCustomCountdowns();
     
     // Setup real-time connections ONCE
     if (!wsInitializedRef.current) {
@@ -175,6 +180,14 @@ export default function Dashboard() {
     handleResize();
     window.addEventListener('resize', handleResize);
     
+    // Listen for navigation events from components
+    const handleNavigateToSection = (e) => {
+      if (e.detail && e.detail.section) {
+        showSection(e.detail.section);
+      }
+    };
+    window.addEventListener('navigateToSection', handleNavigateToSection);
+    
     // Add personalized welcome message
     setChatMessages([{
       role: 'assist',
@@ -183,6 +196,7 @@ export default function Dashboard() {
     
     return () => {
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('navigateToSection', handleNavigateToSection);
       if (wsRef.current) {
         wsRef.current.close();
         wsInitializedRef.current = false;
@@ -569,6 +583,7 @@ export default function Dashboard() {
       case 'countdown_update':
         // Countdown changed
         loadCountdown();
+        loadCustomCountdowns();
         break;
       
       // REMOVED: Duplicate trade_executed handler
@@ -578,6 +593,7 @@ export default function Dashboard() {
         // Profit changed - update all profit displays
         loadMetrics();
         loadCountdown();
+        loadCustomCountdowns();
         loadProfitData(graphPeriod);
         break;
       
@@ -752,6 +768,49 @@ export default function Dashboard() {
       setCountdown(res.data);
     } catch (err) {
       console.error('Countdown fetch error:', err);
+    }
+  };
+
+  const loadCustomCountdowns = async () => {
+    try {
+      const res = await axios.get(`${API}/countdowns`, axiosConfig);
+      setCustomCountdowns(res.data || []);
+    } catch (err) {
+      console.error('Custom countdowns fetch error:', err);
+    }
+  };
+
+  const addCustomCountdown = async () => {
+    try {
+      if (!newCountdownLabel.trim() || !newCountdownAmount || parseFloat(newCountdownAmount) <= 0) {
+        toast.error('Please enter valid countdown details');
+        return;
+      }
+
+      await axios.post(`${API}/countdowns`, {
+        label: newCountdownLabel.trim(),
+        target_amount: parseFloat(newCountdownAmount)
+      }, axiosConfig);
+
+      toast.success('Countdown added successfully!');
+      setNewCountdownLabel('');
+      setNewCountdownAmount('');
+      setShowAddCountdown(false);
+      await loadCustomCountdowns();
+    } catch (err) {
+      console.error('Add countdown error:', err);
+      toast.error(err.response?.data?.detail || 'Failed to add countdown');
+    }
+  };
+
+  const deleteCustomCountdown = async (countdownId) => {
+    try {
+      await axios.delete(`${API}/countdowns/${countdownId}`, axiosConfig);
+      toast.success('Countdown deleted');
+      await loadCustomCountdowns();
+    } catch (err) {
+      console.error('Delete countdown error:', err);
+      toast.error('Failed to delete countdown');
     }
   };
 
@@ -4643,6 +4702,208 @@ export default function Dashboard() {
               </div>
             </>
           )}
+          
+          {/* Custom User Countdowns */}
+          <div style={{marginTop: '40px', paddingTop: '30px', borderTop: '2px solid var(--line)'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px'}}>
+              <h3 style={{fontSize: '1.3rem', fontWeight: 600, color: 'var(--text)'}}>
+                🎯 Your Custom Goals
+              </h3>
+              {customCountdowns.length < 2 && (
+                <button
+                  onClick={() => setShowAddCountdown(!showAddCountdown)}
+                  style={{
+                    padding: '8px 16px',
+                    background: showAddCountdown ? 'var(--error)' : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.9rem'
+                  }}
+                >
+                  {showAddCountdown ? '✖ Cancel' : '➕ Add Goal'}
+                </button>
+              )}
+            </div>
+            
+            {/* Add Countdown Form */}
+            {showAddCountdown && (
+              <div style={{
+                marginBottom: '20px',
+                padding: '20px',
+                background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(124, 58, 237, 0.05) 100%)',
+                borderRadius: '12px',
+                border: '2px solid #8b5cf6'
+              }}>
+                <h4 style={{marginBottom: '16px', color: '#8b5cf6'}}>Add New Goal</h4>
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '12px', alignItems: 'end'}}>
+                  <div>
+                    <label style={{display: 'block', fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '6px'}}>
+                      Goal Label
+                    </label>
+                    <input
+                      type="text"
+                      value={newCountdownLabel}
+                      onChange={(e) => setNewCountdownLabel(e.target.value)}
+                      placeholder="e.g., BMW M3"
+                      maxLength={50}
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--line)',
+                        background: 'var(--panel)',
+                        color: 'var(--text)',
+                        fontSize: '0.95rem'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{display: 'block', fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '6px'}}>
+                      Target Amount (ZAR)
+                    </label>
+                    <input
+                      type="number"
+                      value={newCountdownAmount}
+                      onChange={(e) => setNewCountdownAmount(e.target.value)}
+                      placeholder="e.g., 1340000"
+                      min="1"
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--line)',
+                        background: 'var(--panel)',
+                        color: 'var(--text)',
+                        fontSize: '0.95rem'
+                      }}
+                    />
+                  </div>
+                  <button
+                    onClick={addCustomCountdown}
+                    style={{
+                      padding: '10px 20px',
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      fontSize: '0.9rem',
+                      height: '42px'
+                    }}
+                  >
+                    ✓ Add
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            {/* Display Custom Countdowns */}
+            {customCountdowns.length === 0 ? (
+              <div style={{
+                padding: '40px 20px',
+                textAlign: 'center',
+                background: 'var(--panel)',
+                borderRadius: '12px',
+                border: '1px solid var(--line)'
+              }}>
+                <div style={{fontSize: '3rem', marginBottom: '12px'}}>🎯</div>
+                <p style={{color: 'var(--muted)', fontSize: '1rem'}}>
+                  No custom goals yet. Add up to 2 personal financial targets!
+                </p>
+                <p style={{color: 'var(--muted)', fontSize: '0.85rem', marginTop: '8px'}}>
+                  Track your progress towards that dream car, house, or any goal.
+                </p>
+              </div>
+            ) : (
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px'}}>
+                {customCountdowns.map((cd) => {
+                  const progressDeg = (cd.progress_pct / 100) * 360;
+                  return (
+                    <div key={cd.id} style={{
+                      padding: '24px',
+                      background: 'var(--panel)',
+                      borderRadius: '12px',
+                      border: '2px solid var(--accent)',
+                      position: 'relative'
+                    }}>
+                      <button
+                        onClick={() => deleteCustomCountdown(cd.id)}
+                        style={{
+                          position: 'absolute',
+                          top: '12px',
+                          right: '12px',
+                          padding: '4px 8px',
+                          background: 'var(--error)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '0.75rem',
+                          fontWeight: 600
+                        }}
+                      >
+                        ✖
+                      </button>
+                      
+                      <h4 style={{fontSize: '1.2rem', fontWeight: 700, color: 'var(--text)', marginBottom: '16px'}}>
+                        {cd.label}
+                      </h4>
+                      
+                      <div style={{textAlign: 'center', marginBottom: '16px'}}>
+                        <div style={{fontSize: '3rem', fontWeight: 700, color: cd.days_remaining >= 9999 ? 'var(--error)' : 'var(--accent)'}}>
+                          {cd.days_remaining < 9999 ? cd.days_remaining : '∞'}
+                        </div>
+                        <div style={{fontSize: '0.85rem', color: 'var(--muted)', fontWeight: 600}}>
+                          DAYS REMAINING
+                        </div>
+                      </div>
+                      
+                      {/* Progress Bar */}
+                      <div style={{marginBottom: '16px'}}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem'}}>
+                          <span>R{cd.current_progress.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</span>
+                          <span style={{color: 'var(--accent)', fontWeight: 600}}>
+                            {cd.progress_pct.toFixed(1)}%
+                          </span>
+                          <span>R{cd.target_amount.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</span>
+                        </div>
+                        <div style={{
+                          height: '12px',
+                          background: 'var(--glass)',
+                          borderRadius: '6px',
+                          overflow: 'hidden',
+                          border: '1px solid var(--line)'
+                        }}>
+                          <div style={{
+                            height: '100%',
+                            width: `${Math.min(cd.progress_pct, 100)}%`,
+                            background: 'linear-gradient(90deg, var(--accent) 0%, #ec4899 100%)',
+                            transition: 'width 1s ease-in-out'
+                          }}></div>
+                        </div>
+                      </div>
+                      
+                      <div style={{
+                        padding: '12px',
+                        background: 'var(--glass)',
+                        borderRadius: '6px',
+                        border: '1px solid var(--line)',
+                        fontSize: '0.85rem',
+                        color: 'var(--muted)',
+                        textAlign: 'center'
+                      }}>
+                        R{cd.remaining.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} remaining
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </section>
     );

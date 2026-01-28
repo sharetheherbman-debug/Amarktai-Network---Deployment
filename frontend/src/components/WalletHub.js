@@ -160,20 +160,15 @@ const WalletHub = ({ platformFilter = 'all' }) => {
         </p>
         <button 
           onClick={() => {
-            // Navigate to API key setup section
-            // Check if we're in a hash-based routing system or pathname-based
-            if (window.location.hash) {
-              // Hash-based routing (e.g., #dashboard, #api)
-              window.location.hash = 'api';
-            } else {
-              // Try pathname-based routing
-              const currentPath = window.location.pathname;
-              if (currentPath.includes('/dashboard')) {
-                window.location.pathname = '/dashboard/api-setup';
-              } else {
-                // Fallback: try hash
-                window.location.hash = 'api';
-              }
+            // Trigger navigation to API setup section
+            // Use custom event that Dashboard can listen to
+            const event = new CustomEvent('navigateToSection', { detail: { section: 'api' } });
+            window.dispatchEvent(event);
+            
+            // Also try direct DOM manipulation as fallback
+            const apiLink = document.querySelector('a[href="#"][class*="api"]');
+            if (apiLink) {
+              apiLink.click();
             }
           }}
           style={{

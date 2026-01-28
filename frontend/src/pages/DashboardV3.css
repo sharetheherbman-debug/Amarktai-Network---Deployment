@@ -315,7 +315,7 @@ button, .nav a, .system-card, .api-header, .bot-tab { transition: var(--transiti
 .overview-image {
   flex: 0 0 50%;
   max-width: 50%;
-  min-height: 600px;
+  min-height: 400px;
   height: 100%;
   background: url('/assets/poster.jpg') center/cover no-repeat;
   border: 1px solid var(--line);
@@ -762,7 +762,7 @@ button, .nav a, .system-card, .api-header, .bot-tab { transition: var(--transiti
     height: auto; 
   }
   
-  .amk-chat-box { max-height: 55vh; }
+  .amk-chat-box { max-height: 40vh; }
   
   .card h2 .balances { display: none; }
 }

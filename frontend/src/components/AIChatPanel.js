@@ -11,6 +11,7 @@ const AIChatPanel = () => {
   const [loading, setLoading] = useState(false);
   const [systemState, setSystemState] = useState(null);
   const [sessionChecked, setSessionChecked] = useState(false);
+  const [showLoadHistory, setShowLoadHistory] = useState(false);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -31,23 +32,19 @@ const AIChatPanel = () => {
 
   const checkSessionAndLoad = async () => {
     try {
-      // Check if this is a fresh session (> 1 hour since last activity)
-      const lastSessionTime = localStorage.getItem('lastChatSession');
+      // Always show greeting on fresh login
+      // Old messages must NOT render by default
+      // Users can click "Load previous chat" to fetch history
+      await fetchDailyGreeting();
       const now = Date.now();
-      const ONE_HOUR = 3600000; // 1 hour in milliseconds
+      localStorage.setItem('lastChatSession', now.toString());
       
-      if (!lastSessionTime || (now - parseInt(lastSessionTime)) > ONE_HOUR) {
-        // Fresh session - fetch daily greeting
-        await fetchDailyGreeting();
-        localStorage.setItem('lastChatSession', now.toString());
-      } else {
-        // Recent session - load recent chat history
-        await loadRecentMessages();
-      }
+      // Show "Load previous chat" button if there's history
+      setShowLoadHistory(true);
     } catch (err) {
       console.error('Session check error:', err);
-      // Fallback to loading history
-      await loadRecentMessages();
+      // Show empty state - user can click load history
+      setShowLoadHistory(true);
     }
   };
 
@@ -63,11 +60,8 @@ const AIChatPanel = () => {
 
       const data = await response.json();
       
-      if (data.already_greeted && data.messages) {
-        // Already greeted today - show recent messages
-        setMessages(data.messages);
-      } else {
-        // Show greeting
+      // Always show only the greeting, never auto-load old messages
+      if (data.content) {
         setMessages([{
           role: 'assistant',
           content: data.content,
@@ -81,8 +75,13 @@ const AIChatPanel = () => {
       }
     } catch (err) {
       console.error('Failed to fetch daily greeting:', err);
-      // Fallback to loading history
-      await loadRecentMessages();
+      // Show fallback greeting
+      setMessages([{
+        role: 'assistant',
+        content: 'Welcome! I\'m your AI trading assistant. Ask me about your bots, performance, or system status.',
+        timestamp: new Date().toISOString(),
+        is_greeting: true
+      }]);
     } finally {
       setLoading(false);
     }
@@ -107,6 +106,7 @@ const AIChatPanel = () => {
 
   const loadChatHistory = async () => {
     try {
+      setLoading(true);
       const response = await fetch('/api/ai/chat/history', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -114,16 +114,49 @@ const AIChatPanel = () => {
       });
 
       const data = await response.json();
-      if (data.messages) {
+      if (data.messages && data.messages.length > 0) {
         setMessages(data.messages);
+        setShowLoadHistory(false); // Hide button after loading
       }
     } catch (err) {
       console.error('Failed to load chat history:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
   const sendMessage = async () => {
     if (!input.trim()) return;
+
+    // Content filter: Block admin-related queries
+    const lowerInput = input.toLowerCase();
+    const blockedPhrases = [
+      'admin password',
+      'show admin',
+      'admin panel',
+      'admin access',
+      'admin credentials',
+      'admin login',
+      'unlock admin',
+      'admin unlock'
+    ];
+    
+    const containsBlockedPhrase = blockedPhrases.some(phrase => lowerInput.includes(phrase));
+    
+    if (containsBlockedPhrase) {
+      setMessages(prev => [...prev, {
+        role: 'user',
+        content: input,
+        timestamp: new Date().toISOString()
+      }, {
+        role: 'assistant',
+        content: '⚠️ I cannot help with admin panel access or passwords. Admin features require secure authentication through the proper channels. Please contact support if you need assistance.',
+        timestamp: new Date().toISOString(),
+        error: true
+      }]);
+      setInput('');
+      return;
+    }
 
     const userMessage = {
       role: 'user',
@@ -244,6 +277,19 @@ const AIChatPanel = () => {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Load Previous Chat Button */}
+        {showLoadHistory && messages.length <= 1 && (
+          <div className="text-center mb-4">
+            <button
+              onClick={loadChatHistory}
+              disabled={loading}
+              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold"
+            >
+              📜 Load Previous Chat History
+            </button>
+          </div>
+        )}
+
         {messages.length === 0 && (
           <div className="text-center text-gray-400 mt-8">
             <Bot size={48} className="mx-auto mb-4 opacity-50" />
