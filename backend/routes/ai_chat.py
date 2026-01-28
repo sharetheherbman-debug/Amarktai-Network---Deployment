@@ -168,15 +168,39 @@ async def ai_chat(
         
         # Content filter: Block admin-related queries
         content_lower = content.lower()
-        blocked_phrases = [
-            'admin password',
+        
+        # Admin panel trigger - password gate (TASK E)
+        admin_trigger_phrases = [
             'show admin',
             'admin panel',
             'admin access',
-            'admin credentials',
             'admin login',
             'unlock admin',
-            'admin unlock',
+            'admin unlock'
+        ]
+        
+        if any(phrase in content_lower for phrase in admin_trigger_phrases):
+            # Return admin panel trigger with password requirement
+            admin_response = {
+                "role": "assistant",
+                "content": "🔐 Admin Panel Access\n\nTo access the admin panel, please enter the admin password.\n\nIf you've forgotten your password, contact the system administrator.",
+                "action": "show_admin_panel",
+                "requires_password": True,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+            # Save assistant message
+            await db.chat_messages_collection.insert_one({
+                "user_id": user_id,
+                **admin_response
+            })
+            
+            return admin_response
+        
+        # Block admin credential/password requests
+        blocked_phrases = [
+            'admin password',
+            'admin credentials',
             'what is admin',
             'give me admin'
         ]
@@ -185,7 +209,7 @@ async def ai_chat(
             # Return filtered response
             filtered_response = {
                 "role": "assistant",
-                "content": "⚠️ I cannot help with admin panel access or passwords. Admin features require secure authentication through proper channels. Please contact support if you need assistance.",
+                "content": "⚠️ I cannot help with admin passwords or credentials. Admin features require secure authentication. Please contact support if you need assistance.",
                 "filtered": True,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }

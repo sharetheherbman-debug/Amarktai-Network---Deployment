@@ -15,7 +15,18 @@ from trading_scheduler import trading_scheduler
 
 @router.get("/bots")
 async def get_bots(user_id: str = Depends(get_current_user)):
-    bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
+    """Get all non-deleted bots for the current user
+    
+    Filters out bots with status='deleted' to ensure deleted bots
+    don't appear in the UI after deletion.
+    """
+    bots = await db.bots_collection.find(
+        {
+            "user_id": user_id,
+            "status": {"$ne": "deleted"}  # Exclude soft-deleted bots
+        },
+        {"_id": 0}
+    ).to_list(1000)
     return bots
 
 

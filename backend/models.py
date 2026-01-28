@@ -135,6 +135,16 @@ class Trade(BaseModel):
     profit_loss: float = 0
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     trading_mode: TradingMode
+    
+    # Paper trading realism fields (TASK F)
+    price_source: Optional[str] = None  # e.g., "binance_ticker", "ccxt_fetchTicker"
+    mid_price: Optional[float] = None  # Mid-market price at execution
+    spread: Optional[float] = None  # Bid-ask spread in percentage
+    slippage_bps: Optional[float] = None  # Slippage in basis points (1 bp = 0.01%)
+    fee_rate: Optional[float] = None  # Fee rate applied (e.g., 0.001 = 0.1%)
+    fee_amount: Optional[float] = None  # Actual fee charged in quote currency
+    gross_pnl: Optional[float] = None  # PnL before fees
+    net_pnl: Optional[float] = None  # PnL after fees (same as profit_loss for compatibility)
 
 # Learning Data Models
 class LearningData(BaseModel):

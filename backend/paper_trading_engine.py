@@ -936,7 +936,17 @@ class PaperTradingEngine:
                 "side": "BUY",  # Paper trades simulate BUY->SELL
                 "status": "closed",  # Paper trades are immediately closed
                 "new_capital": round(new_capital, 2),
-                "total_profit": round(total_profit, 2)
+                "total_profit": round(total_profit, 2),
+                # Paper trading realism ledger fields (TASK F)
+                "price_source": data_source,  # e.g., "LUNO_PUBLIC", "REAL_BINANCE"
+                "mid_price": round(entry_price, 6),  # Mid-market price at execution
+                "spread": round(slippage_rate * 100, 4),  # Bid-ask spread approximation
+                "slippage_bps": round(slippage_rate * 10000, 2),  # Slippage in basis points
+                "fee_rate": round(fee_rate, 6),  # Fee rate applied
+                "fee_amount": round(fees, 2),  # Total fees charged
+                "gross_pnl": round(gross_profit, 2),  # PnL before fees
+                "net_pnl": round(net_profit, 2),  # PnL after fees
+                "trading_mode": "paper"  # Explicitly mark as paper trade
             }
             
             # Final validation: ensure document is not empty
