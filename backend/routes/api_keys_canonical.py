@@ -31,10 +31,15 @@ class APIKeyTestRequest(BaseModel):
 
 
 class APIKeySaveRequest(BaseModel):
-    provider: str = Field(..., description="Exchange or service provider")
-    api_key: str = Field(..., description="API key")
+    provider: Optional[str] = Field(None, description="Exchange or service provider")
+    api_key: Optional[str] = Field(None, description="API key")
     api_secret: Optional[str] = Field(None, description="API secret (for exchanges)")
-    exchange: Optional[str] = Field(None, description="Exchange name")
+    exchange: Optional[str] = Field(None, description="Exchange name (legacy)")
+    # Legacy camelCase support
+    apiKey: Optional[str] = Field(None, description="API key (camelCase legacy)")
+    apiSecret: Optional[str] = Field(None, description="API secret (camelCase legacy)")
+    key: Optional[str] = Field(None, description="API key (short form legacy)")
+    secret: Optional[str] = Field(None, description="API secret (short form legacy)")
 
 
 @router.get("")
@@ -96,14 +101,24 @@ async def save_api_key(
     """
     Save an API key with encryption at rest
     Keys are encrypted using Fernet symmetric encryption
-    Accepts both api_key/api_secret and apiKey/apiSecret variants
+    
+    BACKWARD COMPATIBILITY: Accepts multiple field name variants:
+    - provider OR exchange (exchange maps to provider)
+    - api_key OR apiKey OR key
+    - api_secret OR apiSecret OR secret
     """
     try:
-        # Normalize from Pydantic model and dict variants
-        provider = data.provider
-        api_key = data.api_key
-        api_secret = data.api_secret
-        exchange = data.exchange or provider
+        # Normalize from Pydantic model - support legacy field names
+        # Provider: accept 'provider' or 'exchange' (legacy)
+        provider = data.provider or data.exchange
+        
+        # API Key: accept 'api_key', 'apiKey' (camelCase), or 'key' (short form)
+        api_key = data.api_key or data.apiKey or data.key
+        
+        # API Secret: accept 'api_secret', 'apiSecret', or 'secret'
+        api_secret = data.api_secret or data.apiSecret or data.secret
+        
+        exchange = provider  # Normalize exchange to provider value
         
         if not provider or not api_key:
             raise HTTPException(status_code=400, detail="Provider and API key required")

@@ -64,6 +64,7 @@
 - Ubuntu 24.04 LTS VPS
 - Root or sudo access
 - 2GB RAM, 20GB disk minimum
+- Nginx installed (`sudo apt install nginx`)
 
 ### Installation (5 minutes)
 
@@ -81,7 +82,13 @@ sudo ./install.sh
 sudo nano /var/amarktai/app/backend/.env
 # Edit: JWT_SECRET, ENCRYPTION_KEY, trading mode flags
 
-# 4. Verify installation
+# 4. Install Nginx SPA configuration for deep linking
+sudo cp /var/amarktai/app/deployment/nginx/amarktai-spa.conf /etc/nginx/sites-available/amarktai
+sudo ln -s /etc/nginx/sites-available/amarktai /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+
+# 5. Verify installation
 sudo ./verify.sh
 ```
 
@@ -101,7 +108,32 @@ cd /var/amarktai/app/deployment && sudo ./verify.sh
 
 # Run API smoke tests
 cd /var/amarktai/app && ./scripts/smoke_api.sh
+
+# Test SPA routing (deep links work)
+cd /var/amarktai/app && ./scripts/test_spa_routing.sh
+
+# Run complete go-live audit
+cd /var/amarktai/app && ./scripts/go_live_audit.sh
 ```
+
+### Go-Live Audit Script
+
+The comprehensive go-live audit script validates everything:
+
+```bash
+cd /var/amarktai/app
+./scripts/go_live_audit.sh
+```
+
+This script checks:
+- ✅ Environment setup (Python, Node.js, dependencies)
+- ✅ Frontend build succeeds
+- ✅ Backend tests pass (API keys, bots, overview, chat, paper trading)
+- ✅ API endpoints respond correctly
+- ✅ SPA routing works (deep links)
+- ✅ Configuration is complete
+
+**Expected output**: All tests pass, exit code 0 = ready for go-live! 🚀
 
 ---
 
@@ -247,6 +279,68 @@ For detailed troubleshooting and operational procedures:
 - **[Complete Documentation](docs/AMARKTAI_SINGLE_SOURCE_OF_TRUTH.md)**
 - Check service logs: `sudo journalctl -u amarktai-api.service -f`
 - Run verification: `cd deployment && sudo ./verify.sh`
+
+---
+
+## 🔧 Troubleshooting
+
+### SPA Deep Links Return 404
+
+**Problem**: Routes like `/dashboard`, `/login`, `/register` return 404 errors.
+
+**Solution**: 
+1. Verify nginx SPA config is installed:
+   ```bash
+   ls -l /etc/nginx/sites-enabled/amarktai
+   ```
+2. Check nginx config has `try_files $uri $uri/ /index.html;` in location / block
+3. Test nginx config: `sudo nginx -t`
+4. Reload nginx: `sudo systemctl reload nginx`
+5. Run SPA routing test: `./scripts/test_spa_routing.sh`
+
+### API Keys Save/Test Fails with 422 Error
+
+**Problem**: Frontend shows "Unprocessable Entity" when saving API keys.
+
+**Solution**:
+- API now accepts multiple field formats:
+  - `provider` OR `exchange`
+  - `api_key` OR `apiKey` OR `key`
+  - `api_secret` OR `apiSecret` OR `secret`
+- Check request payload in browser DevTools
+- Verify backend logs: `sudo journalctl -u amarktai-api.service -n 50`
+
+### Deleted Bots Still Appear in List
+
+**Problem**: After deleting a bot, it still shows in the bots list.
+
+**Solution**:
+- Bots are soft-deleted (status='deleted')
+- GET /api/bots now filters out deleted bots automatically
+- Frontend should re-fetch bot list after deletion
+- Verify with: `curl http://localhost:8000/api/bots -H "Authorization: Bearer YOUR_TOKEN"`
+
+### Overview Tiles Show Placeholders or Zero
+
+**Problem**: Dashboard overview shows placeholder data instead of real values.
+
+**Solution**:
+- Verify realtime SSE connection: `curl http://localhost:8000/api/realtime/events`
+- Check trades exist in database: `mongo amarktai --eval "db.trades.count()"`
+- Verify bots have profit data: `mongo amarktai --eval "db.bots.find({}, {total_profit: 1})"`
+- Enable SSE in frontend and subscribe to overview_update events
+
+### Go-Live Audit Script Fails
+
+**Problem**: `./scripts/go_live_audit.sh` reports failures.
+
+**Solution**:
+1. Check error logs: `/tmp/go_live_audit_*.log`
+2. Fix specific failing tests:
+   - **Frontend build fails**: Check Node.js version (need 18+), run `npm install`
+   - **Backend tests fail**: Check Python version (need 3.12+), install deps: `pip install -r requirements.txt`
+   - **API tests fail**: Ensure backend is running on port 8000
+3. Re-run after fixes: `./scripts/go_live_audit.sh`
 
 ---
 
