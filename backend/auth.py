@@ -27,6 +27,14 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     else:
         expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     to_encode.update({"exp": expire})
+    
+    # Ensure standard "sub" field is set for JWT compliance
+    # Support both "user_id" and "sub" for backward compatibility
+    if "user_id" in to_encode and "sub" not in to_encode:
+        to_encode["sub"] = to_encode["user_id"]
+    elif "sub" in to_encode and "user_id" not in to_encode:
+        to_encode["user_id"] = to_encode["sub"]
+    
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -42,10 +50,17 @@ def decode_token(token: str) -> dict:
         )
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    """Get current user ID from JWT token"""
+    """Get current user ID from JWT token - returns string user_id
+    
+    Supports both "sub" (JWT standard) and "user_id" (legacy) fields for backward compatibility.
+    Always returns a string user_id, never a dict.
+    """
     token = credentials.credentials
     payload = decode_token(token)
-    user_id: str = payload.get("user_id")  # Changed from "sub" to "user_id"
+    
+    # Try standard "sub" field first, then fallback to "user_id" for backward compatibility
+    user_id: str = payload.get("sub") or payload.get("user_id")
+    
     if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

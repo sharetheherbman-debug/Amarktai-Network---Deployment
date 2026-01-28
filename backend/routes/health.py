@@ -221,3 +221,81 @@ async def health_ping() -> dict:
                 "error": str(e)
             }
         )
+
+
+@router.get("/ready")
+async def health_ready() -> dict:
+    """Application readiness check - verifies DB connectivity and critical collections exist.
+    
+    This endpoint should be used by orchestrators (Kubernetes, systemd) to determine
+    if the application is ready to serve traffic.
+    
+    Returns:
+        - HTTP 200 when ready (DB connected, critical collections exist)
+        - HTTP 503 when not ready (with reason in response)
+    """
+    issues = []
+    
+    try:
+        # 1. Check database connection
+        if db.client is None:
+            issues.append("Database client not initialized")
+        else:
+            try:
+                await db.client.admin.command('ping')
+            except Exception as e:
+                issues.append(f"Database ping failed: {str(e)}")
+        
+        # 2. Check critical collections are initialized
+        required_collections = {
+            'users_collection': 'users',
+            'bots_collection': 'bots',
+            'trades_collection': 'trades',
+            'api_keys_collection': 'api_keys',
+        }
+        
+        for attr_name, display_name in required_collections.items():
+            if not hasattr(db, attr_name) or getattr(db, attr_name) is None:
+                issues.append(f"Collection '{display_name}' not initialized")
+        
+        # 3. Check JWT secret is configured properly
+        jwt_secret = os.getenv("JWT_SECRET", "")
+        if not jwt_secret or jwt_secret == "your-secret-key" or len(jwt_secret) < 32:
+            issues.append("JWT_SECRET not properly configured (must be 32+ chars)")
+        
+        # If any issues found, return 503
+        if issues:
+            logger.warning(f"Health ready check failed: {issues}")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "status": "not_ready",
+                    "ready": False,
+                    "issues": issues,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+        
+        # All checks passed - return 200
+        return {
+            "status": "ready",
+            "ready": True,
+            "db": "connected",
+            "collections": list(required_collections.values()),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        
+    except HTTPException:
+        raise  # Re-raise HTTPException as-is
+    except Exception as e:
+        # Unexpected error during readiness check - return 503
+        logger.error(f"Health ready check error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "not_ready",
+                "ready": False,
+                "error": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )

@@ -3,7 +3,7 @@ AI Super Intelligence Chat Router
 Real-time AI chat with action confirmation and tool routing
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Body
+from fastapi import APIRouter, HTTPException, Depends, Body, Query
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict
 import logging
@@ -413,45 +413,107 @@ Instructions:
 
 @router.get("/chat/history")
 async def get_chat_history(
-    limit: int = 50,
+    days: int = Query(30, ge=1, le=365, description="Number of days of history to retrieve"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum number of messages to return"),
     user_id: str = Depends(get_current_user)
 ):
-    """Get chat history for user"""
+    """Get chat history for authenticated user only
+    
+    Returns messages ordered newest-last (chronological order).
+    Only returns messages for the authenticated user (namespaced by user_id).
+    
+    Args:
+        days: Number of days of history (default 30, max 365)
+        limit: Maximum messages to return (default 100, max 500)
+        user_id: Authenticated user ID (from JWT token)
+    
+    Returns:
+        messages: List of chat messages (chronological order)
+        count: Number of messages returned
+    """
     try:
+        # Calculate cutoff date
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        
+        # Query messages for this user only, within date range
         messages = await db.chat_messages_collection.find(
-            {"user_id": user_id},
+            {
+                "user_id": user_id,
+                "timestamp": {"$gte": cutoff_date.isoformat()}
+            },
             {"_id": 0}
         ).sort("timestamp", -1).limit(limit).to_list(limit)
         
-        # Reverse to get chronological order
+        # Reverse to get chronological order (newest-last)
         messages.reverse()
         
         return {
             "messages": messages,
             "count": len(messages),
+            "days": days,
+            "limit": limit,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     
     except Exception as e:
         logger.error(f"Get chat history error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return empty state instead of error to avoid frontend crashes
+        return {
+            "messages": [],
+            "count": 0,
+            "days": days,
+            "limit": limit,
+            "error": "Failed to load chat history",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
 
 
-@router.delete("/chat/history")
-async def clear_chat_history(user_id: str = Depends(get_current_user)):
-    """Clear chat history for user"""
+@router.post("/chat/clear")
+async def clear_chat_history_post(user_id: str = Depends(get_current_user)):
+    """Clear chat history for authenticated user (POST endpoint for UI compatibility)
+    
+    Clears all chat messages for the authenticated user only.
+    Returns success even if no messages found (idempotent operation).
+    """
     try:
         result = await db.chat_messages_collection.delete_many({"user_id": user_id})
+        
+        logger.info(f"✅ Cleared {result.deleted_count} chat messages for user {user_id[:8]}")
         
         return {
             "success": True,
             "deleted_count": result.deleted_count,
+            "message": f"Cleared {result.deleted_count} messages",
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     
     except Exception as e:
         logger.error(f"Clear chat history error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to clear chat history")
+
+
+@router.delete("/chat/history")
+async def clear_chat_history(user_id: str = Depends(get_current_user)):
+    """Clear chat history for authenticated user (DELETE endpoint for backward compatibility)
+    
+    Clears all chat messages for the authenticated user only.
+    Returns success even if no messages found (idempotent operation).
+    """
+    try:
+        result = await db.chat_messages_collection.delete_many({"user_id": user_id})
+        
+        logger.info(f"✅ Cleared {result.deleted_count} chat messages for user {user_id[:8]}")
+        
+        return {
+            "success": True,
+            "deleted_count": result.deleted_count,
+            "message": f"Cleared {result.deleted_count} messages",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Clear chat history error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to clear chat history")
 
 
 @router.post("/chat/greeting")

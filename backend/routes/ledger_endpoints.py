@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 @router.get("/portfolio/summary")
 async def get_portfolio_summary(
-    current_user: dict = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     db=Depends(get_database)
 ):
     """
@@ -40,7 +40,8 @@ async def get_portfolio_summary(
     """
     try:
         ledger = get_ledger_service(db)
-        user_id = current_user["_id"]
+        # current_user is now a string user_id, not a dict
+        user_id = current_user
         
         # Compute core metrics
         equity = await ledger.compute_equity(user_id)
@@ -80,7 +81,7 @@ async def get_portfolio_summary(
 async def get_profits(
     period: str = Query("daily", regex="^(daily|weekly|monthly)$"),
     limit: int = Query(30, ge=1, le=365),
-    current_user: dict = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     db=Depends(get_database)
 ):
     """
@@ -94,7 +95,8 @@ async def get_profits(
     """
     try:
         ledger = get_ledger_service(db)
-        user_id = current_user["_id"]
+        # current_user is now a string user_id, not a dict
+        user_id = current_user
         
         series = await ledger.profit_series(user_id, period=period, limit=limit)
         
@@ -113,7 +115,7 @@ async def get_profits(
 @router.get("/countdown/status")
 async def get_countdown_status(
     target: float = Query(1000000, description="Target amount (e.g., R1M = 1000000)"),
-    current_user: dict = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     db=Depends(get_database)
 ):
     """
@@ -129,7 +131,7 @@ async def get_countdown_status(
     """
     try:
         ledger = get_ledger_service(db)
-        user_id = current_user["_id"]
+        user_id = current_user
         
         # Get current equity
         current_equity = await ledger.compute_equity(user_id)
@@ -187,7 +189,7 @@ async def get_fills(
     since: Optional[str] = None,
     until: Optional[str] = None,
     limit: int = Query(100, ge=1, le=1000),
-    current_user: dict = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     db=Depends(get_database)
 ):
     """
@@ -201,7 +203,7 @@ async def get_fills(
     """
     try:
         ledger = get_ledger_service(db)
-        user_id = current_user["_id"]
+        user_id = current_user
         
         # Parse dates
         since_dt = datetime.fromisoformat(since.replace('Z', '+00:00')) if since else None
@@ -237,7 +239,7 @@ async def record_funding(
     amount: float,
     currency: str = "USDT",
     description: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     db=Depends(get_database)
 ):
     """
@@ -247,7 +249,7 @@ async def record_funding(
     """
     try:
         ledger = get_ledger_service(db)
-        user_id = current_user["_id"]
+        user_id = current_user
         
         event_id = await ledger.append_event(
             user_id=user_id,
@@ -272,7 +274,7 @@ async def record_funding(
 async def get_audit_trail(
     bot_id: Optional[str] = None,
     limit: int = Query(100, ge=1, le=1000),
-    current_user: dict = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     db=Depends(get_database)
 ):
     """
@@ -282,7 +284,7 @@ async def get_audit_trail(
     """
     try:
         ledger = get_ledger_service(db)
-        user_id = current_user["_id"]
+        user_id = current_user
         
         # Get fills
         fills = await ledger.get_fills(user_id=user_id, bot_id=bot_id, limit=limit)
@@ -323,7 +325,7 @@ async def get_audit_trail(
 
 @router.get("/ledger/reconcile")
 async def reconcile_ledger(
-    current_user: dict = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     db=Depends(get_database)
 ):
     """
@@ -336,7 +338,7 @@ async def reconcile_ledger(
     """
     try:
         ledger = get_ledger_service(db)
-        user_id = current_user["_id"]
+        user_id = current_user
         
         report = await ledger.reconcile_with_trades_collection(user_id)
         
@@ -348,7 +350,7 @@ async def reconcile_ledger(
 
 @router.get("/ledger/verify-integrity")
 async def verify_ledger_integrity(
-    current_user: dict = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     db=Depends(get_database)
 ):
     """
@@ -365,7 +367,7 @@ async def verify_ledger_integrity(
     """
     try:
         ledger = get_ledger_service(db)
-        user_id = current_user["_id"]
+        user_id = current_user
         
         report = await ledger.verify_integrity(user_id)
         

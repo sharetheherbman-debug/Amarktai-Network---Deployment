@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 import logging
+import logging.config
 import os
 import asyncio
 import json
@@ -13,12 +14,35 @@ import random
 import time
 from collections import defaultdict
 
+# Configure structured logging BEFORE any other imports that use logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# Add file handler for production
+log_file = os.getenv('LOG_FILE', '/var/log/amarktai/backend.log')
+log_dir = os.path.dirname(log_file)
+if log_dir and os.path.exists(log_dir):
+    try:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(logging.Formatter(
+            '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        ))
+        logging.getLogger().addHandler(file_handler)
+    except Exception as e:
+        print(f"Warning: Could not create log file {log_file}: {e}")
+
+logger = logging.getLogger(__name__)
+
+# Import models and services AFTER logging is configured
 from models import (
     User, UserLogin, Bot, BotCreate,
     APIKey, APIKeyCreate, Trade, SystemMode, Alert,
     ChatMessage, BotRiskMode, ProfileUpdate
 )
-# Use normalized database import pattern
 import database as db
 from auth import create_access_token, get_current_user, get_password_hash, verify_password
 from ai_service import ai_service
@@ -27,9 +51,6 @@ from websocket_manager import manager
 from trading_scheduler import trading_scheduler
 from utils.env_utils import env_bool
 import ccxt.async_support as ccxt
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 api_router = APIRouter()
 api_router.include_router(auth_router)
@@ -75,19 +96,24 @@ async def lifespan(app: FastAPI):
             # Continue anyway - collections may be initialized lazily
             
     except Exception as e:
-        logger.error(f"❌ FATAL: Database connection failed: {e}")
+        logger.error(f"❌ FATAL: Database connection failed: {e}", exc_info=True)
+        # Log to stderr as well for systemd
+        import sys
+        print(f"FATAL ERROR: Database connection failed: {e}", file=sys.stderr)
         raise  # Cannot proceed without database
     
     # =========================================================================
     # STEP 2: Use lifecycle manager for subsystem management
     # =========================================================================
-    from services.lifecycle import lifecycle_manager
-    
     try:
+        from services.lifecycle import lifecycle_manager
+        
         background_tasks = await lifecycle_manager.start_all()
         logger.info(f"✅ Started {len(lifecycle_manager.subsystems)} subsystems with {len(background_tasks)} background tasks")
+    except ImportError as e:
+        logger.warning(f"⚠️ Lifecycle manager not available: {e}")
     except Exception as e:
-        logger.error(f"❌ Error starting subsystems: {e}")
+        logger.error(f"❌ Error starting subsystems: {e}", exc_info=True)
         # Continue despite errors - some subsystems may have started
     
     # Initialize Fetch.ai and FLOKx integrations if keys available
