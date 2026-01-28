@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 @router.get("/portfolio/summary")
 async def get_portfolio_summary(
-    current_user: dict = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     db=Depends(get_database)
 ):
     """
@@ -40,7 +40,8 @@ async def get_portfolio_summary(
     """
     try:
         ledger = get_ledger_service(db)
-        user_id = current_user["_id"]
+        # current_user is now a string user_id, not a dict
+        user_id = current_user
         
         # Compute core metrics
         equity = await ledger.compute_equity(user_id)
@@ -80,7 +81,7 @@ async def get_portfolio_summary(
 async def get_profits(
     period: str = Query("daily", regex="^(daily|weekly|monthly)$"),
     limit: int = Query(30, ge=1, le=365),
-    current_user: dict = Depends(get_current_user),
+    current_user: str = Depends(get_current_user),
     db=Depends(get_database)
 ):
     """
@@ -94,7 +95,8 @@ async def get_profits(
     """
     try:
         ledger = get_ledger_service(db)
-        user_id = current_user["_id"]
+        # current_user is now a string user_id, not a dict
+        user_id = current_user
         
         series = await ledger.profit_series(user_id, period=period, limit=limit)
         

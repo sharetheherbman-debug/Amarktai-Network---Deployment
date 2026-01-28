@@ -153,7 +153,10 @@ async def login(credentials: UserLogin):
 
 @router.get("/auth/me")
 async def get_current_user_profile(user_id: str = Depends(get_current_user)):
-    """Get current user profile - tries both 'id' field and MongoDB '_id' ObjectId"""
+    """Get current user profile - tries both 'id' field and MongoDB '_id' ObjectId
+    
+    Returns user object with both 'id' and 'user_id' fields for frontend compatibility.
+    """
     from bson import ObjectId
     from bson.errors import InvalidId
     
@@ -180,7 +183,19 @@ async def get_current_user_profile(user_id: str = Depends(get_current_user)):
     
     # Sanitize - never return sensitive fields
     sensitive_fields = {'password_hash', 'hashed_password', 'hashedPassword', 'new_password', 'password', '_id'}
-    return {k: v for k, v in user.items() if k not in sensitive_fields}
+    sanitized_user = {k: v for k, v in user.items() if k not in sensitive_fields}
+    
+    # Ensure both 'id' and 'user_id' fields are present for frontend compatibility
+    if 'id' in sanitized_user:
+        sanitized_user['user_id'] = sanitized_user['id']
+    elif 'user_id' in sanitized_user:
+        sanitized_user['id'] = sanitized_user['user_id']
+    else:
+        # Neither field present - add both using the user_id from token
+        sanitized_user['id'] = user_id
+        sanitized_user['user_id'] = user_id
+    
+    return sanitized_user
 
 
 @router.put("/auth/profile")

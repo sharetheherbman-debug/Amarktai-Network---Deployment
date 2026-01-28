@@ -56,13 +56,9 @@ export default function Dashboard() {
   const [metricsTab, setMetricsTab] = useState('flokx'); // Tab state for Metrics section - default to Flokx Alerts
   const [botManagementTab, setBotManagementTab] = useState('creation'); // Tab state for Bot Management parent section
   const [profitsTab, setProfitsTab] = useState('metrics'); // Tab state for Profits & Performance parent section
-  // Admin panel state - Hidden by default, shown only after password
-  const [showAdmin, setShowAdmin] = useState(() => {
-    // Check sessionStorage only (more temporary)
-    const sessionSaved = sessionStorage.getItem('adminPanelVisible');
-    console.log('🔍 Initial showAdmin state from sessionStorage:', sessionSaved);
-    return sessionSaved === 'true';
-  });
+  // Admin panel state - Hidden by default each session, only shown after password unlock
+  // Do NOT persist across sessions - user must unlock each time
+  const [showAdmin, setShowAdmin] = useState(false);
   
   // Log whenever showAdmin changes
   useEffect(() => {
@@ -258,14 +254,23 @@ export default function Dashboard() {
 
   const loadChatHistory = async () => {
     try {
-      const data = await get('/chat/history?days=30&limit=100');
+      // Load chat history from backend (per-user, auto-namespaced by JWT)
+      const data = await get('/ai/chat/history?days=30&limit=100');
       if (data.messages && data.messages.length > 0) {
-        const messages = data.messages.reverse(); // Oldest first
-        setChatMessages(messages);
+        // Messages are already in chronological order (newest-last) from backend
+        setChatMessages(data.messages);
+      } else {
+        // Initialize with welcome message if no history
+        if (user) {
+          setChatMessages([{
+            role: 'assistant',
+            content: `Hello ${user.first_name || 'there'}! Welcome to Amarktai Network. I'm your AI assistant. Try commands like 'show admin', 'help', or ask me anything!`
+          }]);
+        }
       }
     } catch (error) {
       console.error('Failed to load chat history:', error);
-      // Initialize with welcome message if history fails
+      // Show empty state without flooding console with errors
       if (user) {
         setChatMessages([{
           role: 'assistant',
@@ -1099,7 +1104,16 @@ export default function Dashboard() {
   };
 
   const handleLogout = () => {
+    // Clear all storage including admin state and chat history
     localStorage.clear();
+    sessionStorage.clear();
+    
+    // Reset showAdmin state
+    setShowAdmin(false);
+    
+    // Clear chat messages
+    setChatMessages([]);
+    
     navigate('/login');
   };
 

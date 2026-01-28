@@ -211,15 +211,22 @@ async def test_api_key(
     Makes a lightweight API call to verify credentials
     Persists test results to database
     Uses model fallback chain for OpenAI testing
+    
+    Returns small, friendly error messages (never stack traces)
     """
     try:
         # Normalize payload - accept multiple field name variants
-        api_key = data.get("api_key") or data.get("apiKey")
-        api_secret = data.get("api_secret") or data.get("apiSecret")
+        api_key = data.get("api_key") or data.get("apiKey") or data.get("key")
+        api_secret = data.get("api_secret") or data.get("apiSecret") or data.get("secret")
         passphrase = data.get("passphrase")
         
         if not api_key:
-            raise HTTPException(status_code=400, detail="API key required")
+            return {
+                "success": False,
+                "ok": False,
+                "error": "API key is required",
+                "provider": provider
+            }
         
         # Ensure user_id is string
         user_id_str = str(user_id)
@@ -260,20 +267,37 @@ async def test_api_key(
             
             return {
                 "success": True,
+                "ok": True,
                 "message": message,
                 "provider": provider,
-                "metadata": metadata
+                "metadata": metadata or {}
             }
         else:
+            # Return friendly error message (truncate if too long)
+            error_msg = error or "Validation failed"
+            if len(error_msg) > 200:
+                error_msg = error_msg[:200] + "..."
+            
             return {
                 "success": False,
+                "ok": False,
                 "message": f"❌ API test failed for {provider.upper()}",
-                "error": error,
+                "error": error_msg,
                 "provider": provider
             }
             
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"API key test error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"API key test error: {e}", exc_info=True)
+        # Return friendly error, never stack trace
+        error_msg = str(e)
+        if len(error_msg) > 200:
+            error_msg = error_msg[:200] + "..."
+        
+        return {
+            "success": False,
+            "ok": False,
+            "error": error_msg or "Test failed due to internal error",
+            "provider": provider
+        }
