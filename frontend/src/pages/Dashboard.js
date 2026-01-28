@@ -920,7 +920,7 @@ export default function Dashboard() {
 
     // PHASE 12: Save user message to backend
     try {
-      await post('/chat/message', {
+      await post('/ai/chat', {
         role: 'user',
         content: originalInput,
         metadata: { timestamp: new Date().toISOString() }
@@ -961,7 +961,7 @@ export default function Dashboard() {
           
           // Save success message
           try {
-            await post('/chat/message', {
+            await post('/ai/chat', {
               role: 'assistant',
               content: successMsg.content,
               metadata: { timestamp: new Date().toISOString() }
@@ -989,7 +989,7 @@ export default function Dashboard() {
           
           // Save success message
           try {
-            await post('/chat/message', {
+            await post('/ai/chat', {
               role: 'assistant',
               content: successMsg.content,
               metadata: { timestamp: new Date().toISOString() }
@@ -1014,7 +1014,7 @@ export default function Dashboard() {
         
         // Save error message
         try {
-          await post('/chat/message', {
+          await post('/ai/chat', {
             role: 'assistant',
             content: errorMsg.content,
             metadata: { timestamp: new Date().toISOString(), error: true }
@@ -1036,7 +1036,7 @@ export default function Dashboard() {
       
       // Save assistant message
       try {
-        await post('/chat/message', {
+        await post('/ai/chat', {
           role: 'assistant',
           content: assistantMsg.content,
           metadata: { timestamp: new Date().toISOString() }
@@ -1056,7 +1056,7 @@ export default function Dashboard() {
       
       // Save assistant message
       try {
-        await post('/chat/message', {
+        await post('/ai/chat', {
           role: 'assistant',
           content: assistantMsg.content,
           metadata: { timestamp: new Date().toISOString() }
@@ -1077,7 +1077,7 @@ export default function Dashboard() {
       
       // PHASE 12: Save assistant message to backend
       try {
-        await post('/chat/message', {
+        await post('/ai/chat', {
           role: 'assistant',
           content: reply,
           metadata: { timestamp: new Date().toISOString() }
@@ -1092,7 +1092,7 @@ export default function Dashboard() {
       
       // Save error message
       try {
-        await post('/chat/message', {
+        await post('/ai/chat', {
           role: 'assistant',
           content: errorMsg.content,
           metadata: { timestamp: new Date().toISOString(), error: true }
