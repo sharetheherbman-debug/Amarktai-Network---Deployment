@@ -325,7 +325,7 @@ PAPER_SUPPORTED_EXCHANGES = {'luno', 'binance', 'kucoin'}
 ```python
 REINVEST_THRESHOLD_ZAR = 500    # Reinvest every R500 profit
 NEW_BOT_CAPITAL = 1000          # R1000 per new bot
-MAX_TOTAL_BOTS = 30             # Maximum 30 bots in autopilot
+MAX_TOTAL_BOTS = 45             # Maximum 45 bots total (matches global limit)
 TOP_PERFORMERS_COUNT = 5        # Top 5 bots tracked
 ```
 

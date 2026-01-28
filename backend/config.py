@@ -53,7 +53,7 @@ ENABLE_UAGENTS = os.getenv('ENABLE_UAGENTS', 'false').lower() == 'true'
 PAYMENT_AGENT_ENABLED = os.getenv('PAYMENT_AGENT_ENABLED', 'false').lower() == 'true'
 
 # Live Trading Gate Requirements
-PAPER_TRAINING_DAYS = int(os.getenv('PAPER_TRAINING_DAYS', '7'))  # Must complete 7 days of paper trading
+# NOTE: PAPER_TRAINING_DAYS is defined below in "Paper → Live promotion criteria" section (line ~117)
 REQUIRE_WALLET_FUNDED = os.getenv('REQUIRE_WALLET_FUNDED', 'true').lower() == 'true'  # Must have funded wallet
 REQUIRE_API_KEYS_FOR_LIVE = os.getenv('REQUIRE_API_KEYS_FOR_LIVE', 'true').lower() == 'true'  # Must have exchange API keys
 
@@ -81,29 +81,33 @@ EXCHANGE_BOT_LIMITS = {
 }
 
 # Trading limits - Per exchange (configurable)
+# NOTE: These are ASPIRATIONAL limits for future optimization.
+# ACTUAL ENFORCED LIMITS are in exchange_limits.py (50 per bot per day).
+# The rate_limiter.py uses exchange_limits.py as the authoritative source.
+# These values represent theoretical maximums based on exchange API limits.
 EXCHANGE_TRADE_LIMITS = {
     'luno': {
-        'max_trades_per_bot_per_day': 75,
+        'max_trades_per_bot_per_day': 75,  # Theoretical max (NOT enforced - see exchange_limits.py)
         'min_cooldown_minutes': 15,
         'max_api_calls_per_minute': 60
     },
     'binance': {
-        'max_trades_per_bot_per_day': 150,
+        'max_trades_per_bot_per_day': 150,  # Theoretical max (NOT enforced - see exchange_limits.py)
         'min_cooldown_minutes': 10,
         'max_api_calls_per_minute': 1200
     },
     'kucoin': {
-        'max_trades_per_bot_per_day': 150,
+        'max_trades_per_bot_per_day': 150,  # Theoretical max (NOT enforced - see exchange_limits.py)
         'min_cooldown_minutes': 10,
         'max_api_calls_per_minute': 600
     },
     'ovex': {
-        'max_trades_per_bot_per_day': 100,
+        'max_trades_per_bot_per_day': 100,  # Theoretical max (NOT enforced - see exchange_limits.py)
         'min_cooldown_minutes': 12,
         'max_api_calls_per_minute': 120
     },
     'valr': {
-        'max_trades_per_bot_per_day': 100,
+        'max_trades_per_bot_per_day': 100,  # Theoretical max (NOT enforced - see exchange_limits.py)
         'min_cooldown_minutes': 12,
         'max_api_calls_per_minute': 100
     }
@@ -125,7 +129,7 @@ LIVE_MIN_TRAINING_HOURS = int(os.getenv('LIVE_MIN_TRAINING_HOURS', '24'))  # Def
 # Autopilot settings
 REINVEST_THRESHOLD_ZAR = 500  # Reinvest every R500
 NEW_BOT_CAPITAL = 1000  # R1000 minimum per bot
-MAX_TOTAL_BOTS = 30
+MAX_TOTAL_BOTS = 45  # MUST match MAX_BOTS_GLOBAL in exchange_limits.py (5+10+10+10+10)
 TOP_PERFORMERS_COUNT = 5
 
 # AI Models
