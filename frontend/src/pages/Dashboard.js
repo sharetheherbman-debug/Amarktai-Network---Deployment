@@ -535,6 +535,17 @@ export default function Dashboard() {
         
         // Refresh metrics to show new profit
         loadMetrics();
+        
+        // Refresh analytics tabs if they are active
+        if (profitsTab === 'equity') {
+          loadEquityData();
+        } else if (profitsTab === 'drawdown') {
+          loadDrawdownData();
+        } else if (profitsTab === 'win-rate') {
+          loadWinRateData();
+        } else if (profitsTab === 'profit-history') {
+          loadProfitData();
+        }
         break;
       
       case 'profit_update':

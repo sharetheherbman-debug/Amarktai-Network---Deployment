@@ -212,7 +212,7 @@ async def get_exchange_comparison(
         supported_exchanges = ["luno", "binance", "kucoin"]
         
         for exchange in supported_exchanges:
-            exchange_trades = [t for t in exchange_trades if t.get('exchange', '').lower() == exchange]
+            exchange_trades = [t for t in trades if t.get('exchange', '').lower() == exchange]
             
             if not exchange_trades:
                 exchange_data[exchange] = {
