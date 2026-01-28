@@ -2935,6 +2935,9 @@ routers_to_mount = [
     ("routes.decision_trace", "Decision Trace"),
     ("routes.compatibility_endpoints", "Compatibility"),
     # REMOVED: routes.bots - duplicate of bot_lifecycle
+    ("routes.chat_endpoints", "Chat Message Endpoint"),  # Frontend compatibility
+    ("routes.wallet_transfers", "Wallet Transfers"),  # Fund movement between providers
+    ("routes.user_countdowns", "User Countdowns"),  # Custom user financial goals
 ]
 
 # Mount realtime router only if enabled via feature flag

@@ -63,12 +63,16 @@ wallets_collection = None
 ledger_collection = None
 profits_collection = None
 funding_plans_collection = None
+wallet_transfers_collection = None  # Fund transfers between providers
 
 # Orders and positions
 orders_collection = None
 positions_collection = None
 balance_snapshots_collection = None
 performance_metrics_collection = None
+
+# User custom goals/countdowns
+user_countdowns_collection = None
 
 # Aliases for backward compatibility
 wallet_balances = None  # Alias for wallet_balances_collection
@@ -163,7 +167,9 @@ async def setup_collections():
     global emergency_stop_collection
     global wallet_balances_collection, capital_injections_collection
     global wallets_collection, ledger_collection, profits_collection, funding_plans_collection
+    global wallet_transfers_collection
     global orders_collection, positions_collection, balance_snapshots_collection, performance_metrics_collection
+    global user_countdowns_collection
     global wallet_balances, capital_injections, audit_logs, funding_plans
     
     if db is None:
@@ -214,12 +220,16 @@ async def setup_collections():
     ledger_collection = db.ledger
     profits_collection = db.profits
     funding_plans_collection = db.funding_plans
+    wallet_transfers_collection = db.wallet_transfers  # Fund transfers between providers
     
     # Orders and positions
     orders_collection = db.orders
     positions_collection = db.positions
     balance_snapshots_collection = db.balance_snapshots
     performance_metrics_collection = db.performance_metrics
+    
+    # User custom goals/countdowns
+    user_countdowns_collection = db.user_countdowns
     
     # Aliases for backward compatibility
     wallet_balances = wallet_balances_collection

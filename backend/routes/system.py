@@ -6,8 +6,9 @@ conflicting with other route prefixes and satisfies health checks used by
 deployment scripts.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Body
 from datetime import datetime, timezone
+from typing import Dict
 import config
 import logging
 import os
@@ -90,3 +91,156 @@ async def get_platforms() -> dict:
 
 # REMOVED: Duplicate of emergency_stop_endpoints.py endpoint GET /api/system/emergency-stop/status  
 # Use emergency_stop_endpoints.py instead
+
+
+@router.get("/status")
+async def system_status(user_id: str = Depends(get_current_user)) -> dict:
+    """Get comprehensive system status for the authenticated user
+    
+    Returns:
+        - Database connection status
+        - WebSocket status
+        - SSE status
+        - API operational status
+        - Bot counts for user
+    """
+    try:
+        # Check database connection
+        db_status = "connected"
+        try:
+            await db.users_collection.find_one({"id": user_id})
+        except Exception as db_error:
+            logger.error(f"Database check failed: {db_error}")
+            db_status = "error"
+        
+        # Get bot counts for user
+        bots_active = 0
+        bots_total = 0
+        try:
+            bots_total = await db.bots_collection.count_documents({"user_id": user_id})
+            bots_active = await db.bots_collection.count_documents(
+                {"user_id": user_id, "status": "active"}
+            )
+        except Exception as bot_error:
+            logger.error(f"Bot count check failed: {bot_error}")
+        
+        return {
+            "success": True,
+            "status": {
+                "database": db_status,
+                "websocket": "active",  # Always active if server is running
+                "sse": "active",  # Always active if server is running
+                "api": "operational",
+                "bots_active": bots_active,
+                "bots_total": bots_total
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"System status error: {e}")
+        # Return partial status even on error
+        return {
+            "success": False,
+            "status": {
+                "database": "unknown",
+                "websocket": "unknown",
+                "sse": "unknown",
+                "api": "operational",
+                "bots_active": 0,
+                "bots_total": 0
+            },
+            "error": str(e),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+
+@router.get("/mode")
+async def get_system_mode(user_id: str = Depends(get_current_user)) -> dict:
+    """Get current system mode for authenticated user
+    
+    Returns user's current trading mode (testing, live_trading, autopilot)
+    """
+    try:
+        # Get user's system mode from database
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0, "system_mode": 1})
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        system_mode = user.get("system_mode", "testing")
+        
+        # Map mode to boolean flags
+        mode_flags = {
+            "testing": {"paper_trading": True, "live_trading": False, "autopilot": False},
+            "live_trading": {"paper_trading": False, "live_trading": True, "autopilot": False},
+            "autopilot": {"paper_trading": False, "live_trading": True, "autopilot": True}
+        }
+        
+        flags = mode_flags.get(system_mode, mode_flags["testing"])
+        
+        return {
+            "success": True,
+            "mode": system_mode,
+            **flags,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get system mode error: {e}")
+        # Return safe default
+        return {
+            "success": False,
+            "mode": "testing",
+            "paper_trading": True,
+            "live_trading": False,
+            "autopilot": False,
+            "error": str(e),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+
+@router.post("/mode")
+async def set_system_mode(
+    payload: Dict = Body(...),
+    user_id: str = Depends(get_current_user)
+) -> dict:
+    """Set system mode for authenticated user
+    
+    Body:
+        {"mode": "testing" | "live_trading" | "autopilot"}
+    """
+    try:
+        new_mode = payload.get("mode")
+        
+        if new_mode not in ["testing", "live_trading", "autopilot"]:
+            raise HTTPException(
+                status_code=400, 
+                detail="Invalid mode. Must be: testing, live_trading, or autopilot"
+            )
+        
+        # Update user's system mode
+        result = await db.users_collection.update_one(
+            {"id": user_id},
+            {"$set": {"system_mode": new_mode}}
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        logger.info(f"User {user_id[:8]} changed system mode to: {new_mode}")
+        
+        return {
+            "success": True,
+            "mode": new_mode,
+            "message": f"System mode changed to {new_mode}",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Set system mode error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to set system mode: {str(e)}")

@@ -267,3 +267,310 @@ async def get_exchange_comparison(
     except Exception as e:
         logger.error(f"Get exchange comparison error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/equity")
+async def get_equity_curve(
+    range: str = Query("7d", regex="^(1d|7d|30d|90d|1y|all)$"),
+    user_id: str = Depends(get_current_user)
+):
+    """Get equity curve showing total P&L over time with realized vs unrealized breakdown
+    
+    Returns:
+        Timeseries data with equity progression, realized/unrealized PnL, and fee analysis
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        range_map = {
+            "1d": timedelta(days=1),
+            "7d": timedelta(days=7),
+            "30d": timedelta(days=30),
+            "90d": timedelta(days=90),
+            "1y": timedelta(days=365),
+            "all": timedelta(days=3650)
+        }
+        start_time = now - range_map.get(range, timedelta(days=7))
+        
+        # Get all bots for initial capital
+        bots = await db.bots_collection.find(
+            {"user_id": user_id},
+            {"_id": 0, "initial_capital": 1, "current_capital": 1}
+        ).to_list(1000)
+        
+        initial_capital = sum(bot.get('initial_capital', 0) for bot in bots)
+        current_capital = sum(bot.get('current_capital', 0) for bot in bots)
+        
+        # Get trades in time range
+        trades = await db.trades_collection.find(
+            {
+                "user_id": user_id,
+                "timestamp": {"$gte": start_time.isoformat()}
+            },
+            {"_id": 0, "timestamp": 1, "profit_loss": 1, "fee": 1}
+        ).sort("timestamp", 1).to_list(10000)
+        
+        # Build equity curve
+        equity_points = []
+        cumulative_pnl = 0
+        cumulative_fees = 0
+        
+        if not trades:
+            # No trades - return initial state
+            equity_points = [{
+                "timestamp": start_time.isoformat(),
+                "equity": initial_capital,
+                "realized_pnl": 0,
+                "unrealized_pnl": 0,
+                "fees": 0
+            }]
+        else:
+            for trade in trades:
+                cumulative_pnl += trade.get('profit_loss', 0)
+                cumulative_fees += trade.get('fee', 0)
+                
+                equity_points.append({
+                    "timestamp": trade['timestamp'],
+                    "equity": initial_capital + cumulative_pnl,
+                    "realized_pnl": cumulative_pnl,
+                    "unrealized_pnl": 0,  # Paper trading has no open positions
+                    "fees": cumulative_fees
+                })
+        
+        # Add current point
+        equity_points.append({
+            "timestamp": now.isoformat(),
+            "equity": current_capital,
+            "realized_pnl": current_capital - initial_capital,
+            "unrealized_pnl": 0,
+            "fees": cumulative_fees
+        })
+        
+        return {
+            "range": range,
+            "start_time": start_time.isoformat(),
+            "end_time": now.isoformat(),
+            "initial_capital": round(initial_capital, 2),
+            "current_equity": round(current_capital, 2),
+            "total_pnl": round(current_capital - initial_capital, 2),
+            "total_fees": round(cumulative_fees, 2),
+            "equity_curve": equity_points,
+            "timestamp": now.isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Get equity curve error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/drawdown")
+async def get_drawdown_analysis(
+    range: str = Query("7d", regex="^(1d|7d|30d|90d|1y|all)$"),
+    user_id: str = Depends(get_current_user)
+):
+    """Get drawdown analysis showing maximum drawdown and recovery metrics
+    
+    Returns:
+        Drawdown metrics including max drawdown %, current drawdown, and underwater periods
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        range_map = {
+            "1d": timedelta(days=1),
+            "7d": timedelta(days=7),
+            "30d": timedelta(days=30),
+            "90d": timedelta(days=90),
+            "1y": timedelta(days=365),
+            "all": timedelta(days=3650)
+        }
+        start_time = now - range_map.get(range, timedelta(days=7))
+        
+        # Get all bots for capital tracking
+        bots = await db.bots_collection.find(
+            {"user_id": user_id},
+            {"_id": 0, "initial_capital": 1, "current_capital": 1}
+        ).to_list(1000)
+        
+        initial_capital = sum(bot.get('initial_capital', 0) for bot in bots)
+        current_capital = sum(bot.get('current_capital', 0) for bot in bots)
+        
+        # Get trades in time range
+        trades = await db.trades_collection.find(
+            {
+                "user_id": user_id,
+                "timestamp": {"$gte": start_time.isoformat()}
+            },
+            {"_id": 0, "timestamp": 1, "profit_loss": 1}
+        ).sort("timestamp", 1).to_list(10000)
+        
+        # Calculate equity progression and drawdowns
+        equity_curve = []
+        cumulative_pnl = 0
+        peak_equity = initial_capital
+        max_drawdown = 0
+        max_drawdown_pct = 0
+        current_drawdown_pct = 0
+        drawdown_points = []
+        
+        if not trades:
+            # No trades yet
+            return {
+                "range": range,
+                "start_time": start_time.isoformat(),
+                "end_time": now.isoformat(),
+                "max_drawdown_pct": 0,
+                "current_drawdown_pct": 0,
+                "peak_equity": initial_capital,
+                "current_equity": current_capital,
+                "underwater_periods": 0,
+                "drawdown_curve": [],
+                "timestamp": now.isoformat()
+            }
+        
+        for trade in trades:
+            cumulative_pnl += trade.get('profit_loss', 0)
+            equity = initial_capital + cumulative_pnl
+            equity_curve.append(equity)
+            
+            # Update peak
+            if equity > peak_equity:
+                peak_equity = equity
+            
+            # Calculate drawdown
+            if peak_equity > 0:
+                drawdown_pct = ((peak_equity - equity) / peak_equity) * 100
+                drawdown_points.append({
+                    "timestamp": trade['timestamp'],
+                    "drawdown_pct": round(drawdown_pct, 2),
+                    "equity": round(equity, 2),
+                    "peak_equity": round(peak_equity, 2)
+                })
+                
+                if drawdown_pct > max_drawdown_pct:
+                    max_drawdown_pct = drawdown_pct
+                    max_drawdown = peak_equity - equity
+        
+        # Calculate current drawdown
+        if peak_equity > 0:
+            current_drawdown_pct = ((peak_equity - current_capital) / peak_equity) * 100
+        
+        # Count underwater periods (consecutive points below peak)
+        underwater_periods = 0
+        in_underwater = False
+        for point in drawdown_points:
+            if point['drawdown_pct'] > 0:
+                if not in_underwater:
+                    underwater_periods += 1
+                    in_underwater = True
+            else:
+                in_underwater = False
+        
+        return {
+            "range": range,
+            "start_time": start_time.isoformat(),
+            "end_time": now.isoformat(),
+            "max_drawdown_pct": round(max_drawdown_pct, 2),
+            "max_drawdown_amount": round(max_drawdown, 2),
+            "current_drawdown_pct": round(max(0, current_drawdown_pct), 2),
+            "peak_equity": round(peak_equity, 2),
+            "current_equity": round(current_capital, 2),
+            "underwater_periods": underwater_periods,
+            "drawdown_curve": drawdown_points,
+            "timestamp": now.isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Get drawdown analysis error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/win_rate")
+async def get_win_rate_stats(
+    period: str = Query("all", regex="^(today|7d|30d|all)$"),
+    user_id: str = Depends(get_current_user)
+):
+    """Get comprehensive win rate and trade statistics
+    
+    Returns:
+        Win rate, average win/loss, profit factor, best/worst trades
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        
+        if period == "today":
+            start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif period == "7d":
+            start_time = now - timedelta(days=7)
+        elif period == "30d":
+            start_time = now - timedelta(days=30)
+        else:  # all
+            start_time = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        
+        # Get trades in period
+        trades = await db.trades_collection.find(
+            {
+                "user_id": user_id,
+                "timestamp": {"$gte": start_time.isoformat()}
+            },
+            {"_id": 0}
+        ).to_list(10000)
+        
+        if not trades:
+            return {
+                "period": period,
+                "total_trades": 0,
+                "winning_trades": 0,
+                "losing_trades": 0,
+                "win_rate_pct": 0,
+                "avg_win": 0,
+                "avg_loss": 0,
+                "profit_factor": 0,
+                "best_trade": 0,
+                "worst_trade": 0,
+                "total_pnl": 0,
+                "timestamp": now.isoformat()
+            }
+        
+        # Calculate statistics
+        winning_trades = [t for t in trades if t.get('profit_loss', 0) > 0]
+        losing_trades = [t for t in trades if t.get('profit_loss', 0) < 0]
+        
+        total_trades = len(trades)
+        win_count = len(winning_trades)
+        loss_count = len(losing_trades)
+        
+        gross_profit = sum(t.get('profit_loss', 0) for t in winning_trades)
+        gross_loss = abs(sum(t.get('profit_loss', 0) for t in losing_trades))
+        total_pnl = sum(t.get('profit_loss', 0) for t in trades)
+        
+        win_rate_pct = (win_count / total_trades * 100) if total_trades > 0 else 0
+        avg_win = (gross_profit / win_count) if win_count > 0 else 0
+        avg_loss = (gross_loss / loss_count) if loss_count > 0 else 0
+        profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else float('inf') if gross_profit > 0 else 0
+        
+        # Find best and worst trades
+        all_pnls = [t.get('profit_loss', 0) for t in trades]
+        best_trade = max(all_pnls) if all_pnls else 0
+        worst_trade = min(all_pnls) if all_pnls else 0
+        
+        return {
+            "period": period,
+            "start_time": start_time.isoformat(),
+            "end_time": now.isoformat(),
+            "total_trades": total_trades,
+            "winning_trades": win_count,
+            "losing_trades": loss_count,
+            "win_rate_pct": round(win_rate_pct, 2),
+            "avg_win": round(avg_win, 2),
+            "avg_loss": round(avg_loss, 2),
+            "profit_factor": round(profit_factor, 2) if profit_factor != float('inf') else 999.99,
+            "best_trade": round(best_trade, 2),
+            "worst_trade": round(worst_trade, 2),
+            "gross_profit": round(gross_profit, 2),
+            "gross_loss": round(gross_loss, 2),
+            "total_pnl": round(total_pnl, 2),
+            "timestamp": now.isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Get win rate stats error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

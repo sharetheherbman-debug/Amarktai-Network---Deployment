@@ -297,3 +297,202 @@ async def get_platform_bots(
     except Exception as e:
         logger.error(f"Get platform bots error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/health")
+async def platform_health(user_id: str = Depends(get_current_user)) -> dict:
+    """
+    Get health status for all 5 platforms
+    
+    Checks:
+    - Whether user has configured API keys
+    - Whether keys are valid (if configured)
+    - Platform operational status
+    
+    Returns status for: Luno, Binance, KuCoin, OVEX, VALR
+    """
+    try:
+        from config.platforms import SUPPORTED_PLATFORMS, get_platform_config
+        
+        platforms_status = {}
+        
+        for platform_id in SUPPORTED_PLATFORMS:
+            platform_config = get_platform_config(platform_id)
+            
+            if not platform_config:
+                platforms_status[platform_id] = {
+                    "status": "unsupported",
+                    "has_keys": False,
+                    "keys_valid": None,
+                    "last_check": None,
+                    "api_latency_ms": None,
+                    "message": "Platform not found in configuration"
+                }
+                continue
+            
+            # Check if user has configured API keys for this platform
+            api_key_doc = await db.api_keys_collection.find_one({
+                "user_id": user_id,
+                "provider": platform_id
+            }, {"_id": 0, "api_key": 1, "api_secret": 1, "passphrase": 1, "last_test": 1, "test_status": 1})
+            
+            if not api_key_doc:
+                platforms_status[platform_id] = {
+                    "status": "not_configured",
+                    "has_keys": False,
+                    "keys_valid": None,
+                    "last_check": None,
+                    "api_latency_ms": None,
+                    "supports_paper": platform_config.get("supports_paper", True),
+                    "supports_live": platform_config.get("supports_live", True),
+                    "message": f"No API keys configured for {platform_config['display_name']}"
+                }
+                continue
+            
+            # User has keys - check their validity
+            last_test_status = api_key_doc.get("test_status")
+            last_test_time = api_key_doc.get("last_test")
+            
+            if last_test_status == "test_ok":
+                status = "operational"
+                keys_valid = True
+                message = f"{platform_config['display_name']} is operational"
+            elif last_test_status == "test_failed":
+                status = "keys_invalid"
+                keys_valid = False
+                message = f"API keys invalid for {platform_config['display_name']}"
+            else:
+                status = "saved_untested"
+                keys_valid = None
+                message = f"API keys saved but not tested for {platform_config['display_name']}"
+            
+            platforms_status[platform_id] = {
+                "status": status,
+                "has_keys": True,
+                "keys_valid": keys_valid,
+                "last_check": last_test_time,
+                "api_latency_ms": None,
+                "supports_paper": platform_config.get("supports_paper", True),
+                "supports_live": platform_config.get("supports_live", True),
+                "message": message
+            }
+        
+        return {
+            "success": True,
+            "platforms": platforms_status,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Platform health check error: {e}")
+        # Return safe defaults for all 5 platforms
+        from config.platforms import SUPPORTED_PLATFORMS
+        safe_defaults = {}
+        for platform_id in SUPPORTED_PLATFORMS:
+            safe_defaults[platform_id] = {
+                "status": "unknown",
+                "has_keys": False,
+                "keys_valid": None,
+                "last_check": None,
+                "api_latency_ms": None,
+                "message": "Health check failed"
+            }
+        
+        return {
+            "success": False,
+            "platforms": safe_defaults,
+            "error": str(e),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+
+@router.get("/readiness")
+async def platform_readiness(user_id: str = Depends(get_current_user)) -> dict:
+    """
+    Get platform readiness report for user
+    
+    Returns which platforms are ready for:
+    - Paper trading
+    - Live trading
+    
+    Includes recommendations for missing configurations
+    """
+    try:
+        from config.platforms import SUPPORTED_PLATFORMS, get_platform_config
+        
+        readiness_report = {
+            "paper_ready": [],
+            "live_ready": [],
+            "needs_configuration": [],
+            "summary": {},
+            "recommendations": []
+        }
+        
+        for platform_id in SUPPORTED_PLATFORMS:
+            platform_config = get_platform_config(platform_id)
+            
+            if not platform_config:
+                continue
+            
+            # Check API keys
+            api_key_doc = await db.api_keys_collection.find_one({
+                "user_id": user_id,
+                "provider": platform_id
+            }, {"_id": 0, "test_status": 1})
+            
+            has_valid_keys = api_key_doc and api_key_doc.get("test_status") == "test_ok"
+            
+            platform_name = platform_config['display_name']
+            
+            # Check paper trading readiness
+            if platform_config.get("supports_paper", True):
+                readiness_report["paper_ready"].append({
+                    "platform": platform_id,
+                    "name": platform_name,
+                    "has_keys": bool(api_key_doc),
+                    "keys_validated": has_valid_keys
+                })
+            
+            # Check live trading readiness
+            if platform_config.get("supports_live", True):
+                if has_valid_keys:
+                    readiness_report["live_ready"].append({
+                        "platform": platform_id,
+                        "name": platform_name,
+                        "ready": True
+                    })
+                else:
+                    readiness_report["needs_configuration"].append({
+                        "platform": platform_id,
+                        "name": platform_name,
+                        "reason": "Missing or invalid API keys",
+                        "action": f"Configure API keys for {platform_name}"
+                    })
+        
+        # Generate summary
+        readiness_report["summary"] = {
+            "paper_trading_ready": len(readiness_report["paper_ready"]),
+            "live_trading_ready": len(readiness_report["live_ready"]),
+            "needs_configuration": len(readiness_report["needs_configuration"]),
+            "total_platforms": len(SUPPORTED_PLATFORMS)
+        }
+        
+        # Generate recommendations
+        if readiness_report["needs_configuration"]:
+            readiness_report["recommendations"].append(
+                "Configure API keys for remaining platforms to enable live trading"
+            )
+        if len(readiness_report["live_ready"]) == len(SUPPORTED_PLATFORMS):
+            readiness_report["recommendations"].append(
+                "All platforms configured! You're ready for live trading."
+            )
+        
+        return {
+            "success": True,
+            "readiness": readiness_report,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Platform readiness check error: {e}")
+        raise HTTPException(status_code=500, detail=f"Readiness check failed: {str(e)}")

@@ -166,6 +166,38 @@ async def ai_chat(
         request_action = message.get('request_action', False)
         confirmation_token = message.get('confirmation_token')
         
+        # Content filter: Block admin-related queries
+        content_lower = content.lower()
+        blocked_phrases = [
+            'admin password',
+            'show admin',
+            'admin panel',
+            'admin access',
+            'admin credentials',
+            'admin login',
+            'unlock admin',
+            'admin unlock',
+            'what is admin',
+            'give me admin'
+        ]
+        
+        if any(phrase in content_lower for phrase in blocked_phrases):
+            # Return filtered response
+            filtered_response = {
+                "role": "assistant",
+                "content": "⚠️ I cannot help with admin panel access or passwords. Admin features require secure authentication through proper channels. Please contact support if you need assistance.",
+                "filtered": True,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+            # Save filtered assistant message
+            await db.chat_messages_collection.insert_one({
+                "user_id": user_id,
+                **filtered_response
+            })
+            
+            return filtered_response
+        
         # Save user message
         user_msg = {
             "user_id": user_id,
