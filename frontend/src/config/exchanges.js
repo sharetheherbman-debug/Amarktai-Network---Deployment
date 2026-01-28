@@ -105,8 +105,8 @@ export const isExchangeSupported = (exchangeId) => {
 export const getExchangeOptions = () => {
   return getAllExchanges().map(ex => ({
     value: ex.id,
-    label: `${ex.icon} ${ex.displayName}${ex.comingSoon ? ' (Coming Soon)' : ''}`,
-    disabled: ex.comingSoon,
+    label: `${ex.icon} ${ex.displayName}`,
+    disabled: false,
     exchange: ex
   }));
 };
