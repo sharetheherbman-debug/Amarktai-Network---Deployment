@@ -61,6 +61,9 @@ async def create_transfer(
     """
     Create a fund transfer between providers (Virtual Ledger)
     
+    This endpoint creates virtual ledger entries for tracking transfers between exchanges.
+    For actual exchange transfers, use POST /api/wallet/transfer instead.
+    
     REST-consistent naming: POST /transfers to create, GET /transfers to list.
     
     Records transfer in virtual ledger. If real exchange transfer isn't possible via API,

@@ -35,7 +35,8 @@ class SystemHealth:
                         scheduler_status = "running" if is_running else "stopped"
                 else:
                     scheduler_status = "unknown"
-            except:
+            except Exception as e:
+                logger.warning(f"Could not determine trading_scheduler status: {e}")
                 scheduler_status = "unknown"
                 
             status["services"] = {

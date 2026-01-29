@@ -32,8 +32,8 @@ def check_critical_env_vars() -> Tuple[List[str], List[str]]:
     
     # Critical security config
     jwt_secret = os.getenv('JWT_SECRET', '')
-    if not jwt_secret or 'your-secret' in jwt_secret or 'change' in jwt_secret or len(jwt_secret) < 32:
-        errors.append("JWT_SECRET must be a strong secret (32+ chars, no default values)")
+    if not jwt_secret or 'your-secret' in jwt_secret or 'change-me' in jwt_secret.lower() or len(jwt_secret) < 32:
+        errors.append("JWT_SECRET must be a strong secret (32+ chars, no default/placeholder values)")
     
     encryption_key = os.getenv('API_KEY_ENCRYPTION_KEY', '') or os.getenv('ENCRYPTION_KEY', '')
     if not encryption_key:
