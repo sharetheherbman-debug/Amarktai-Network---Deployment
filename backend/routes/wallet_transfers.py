@@ -53,13 +53,15 @@ async def get_transfers(
         raise HTTPException(status_code=500, detail=f"Failed to retrieve transfers: {str(e)}")
 
 
-@router.post("/transfer/ledger")
+@router.post("/transfers")
 async def create_transfer(
     payload: Dict = Body(...),
     user_id: str = Depends(get_current_user)
 ) -> dict:
     """
-    Create a fund transfer between providers
+    Create a fund transfer between providers (Virtual Ledger)
+    
+    REST-consistent naming: POST /transfers to create, GET /transfers to list.
     
     Records transfer in virtual ledger. If real exchange transfer isn't possible via API,
     status is set to 'manual_required' with instructions for user.

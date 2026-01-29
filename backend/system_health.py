@@ -24,8 +24,22 @@ class SystemHealth:
             }
             
             # 1. Core Services Status
+            # Safe check for trading_scheduler.is_running (could be callable, boolean, or missing)
+            try:
+                if hasattr(trading_scheduler, 'is_running'):
+                    is_running = trading_scheduler.is_running
+                    # Handle if it's a callable
+                    if callable(is_running):
+                        scheduler_status = "running" if is_running() else "stopped"
+                    else:
+                        scheduler_status = "running" if is_running else "stopped"
+                else:
+                    scheduler_status = "unknown"
+            except:
+                scheduler_status = "unknown"
+                
             status["services"] = {
-                "paper_trading": "running" if trading_scheduler.is_running else "stopped",
+                "paper_trading": scheduler_status,
                 "rate_limiter": "active",
                 "risk_engine": "active",
                 "bot_lifecycle": "active",
