@@ -53,7 +53,7 @@ async def get_transfers(
         raise HTTPException(status_code=500, detail=f"Failed to retrieve transfers: {str(e)}")
 
 
-@router.post("/transfer")
+@router.post("/transfer/ledger")
 async def create_transfer(
     payload: Dict = Body(...),
     user_id: str = Depends(get_current_user)
